@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <!-- Meta etiquetas especiales PWA y Apple para mantenerlo a pantalla completa, inmersivo y sin barras de URL -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Stream Deck">
+
+<meta name="mobile-web-app-capable" content="yes">
+    <title>Stream Deck Pro</title>
+    <!-- Importamos el Manifiesto de PWA -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="styles.css">
+
+    
+</head>
+<body>
+    <!-- Pantalla Principal -->
+    <div id="deck-container" class="grid-container"></div>
+
+    <!-- Overlay/Popover Modal -->
+    <div id="overlay" class="overlay hidden">
+        <div id="overlay-container" class="grid-container"></div>
+    </div>
+
+    <!-- Execution Modal (Dynamic Island style) -->
+    <div id="execution-modal" class="execution-modal hidden">
+        <div class="execution-header">
+            <span id="execution-spinner" class="spinner">⚙️</span>
+            <h3 id="execution-title">Ejecutando...</h3>
+        </div>
+        <div id="execution-logs" class="execution-logs"></div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
