@@ -36,6 +36,9 @@ class StreamDeckClient {
     }
 
     async init() {
+        this.setupSocketListeners();
+        this.setupDOMListeners();
+
         // Cargar configuración desde el Backend (Punto 5)
         try {
             const res = await fetch('/api/config');
@@ -57,8 +60,6 @@ class StreamDeckClient {
             console.error('Error cargando configuración:', e);
         }
 
-        this.setupSocketListeners();
-        this.setupDOMListeners();
         this.initMainGrid();
     }
 
@@ -314,7 +315,7 @@ class StreamDeckClient {
             }
         };
 
-        if (now - (this.volUpdateTimes[app] || 0) > 30) {
+        if (now - (this.volUpdateTimes[app] || 0) >= 50) {
             this.volUpdateTimes[app] = now;
             emitVol();
         }
@@ -672,7 +673,7 @@ class StreamDeckClient {
         const now = Date.now();
         const lastUpdate = this.volUpdateTimes['discord_' + userId] || 0;
         
-        if (now - lastUpdate >= 100) {
+        if (now - lastUpdate >= 50) {
             this.socket.emit('discord_set_user_volume', { userId, volume: value }, (result) => {
                 if (result?.ok) return;
                 this.discordConnectionMessage = result?.message || 'No se pudo cambiar el volumen';
@@ -688,7 +689,7 @@ class StreamDeckClient {
                     this.updateDiscordConnectionUI();
                 });
                 this.volUpdateTimes['discord_' + userId] = Date.now();
-            }, 100);
+            }, 50);
         }
     }
 }

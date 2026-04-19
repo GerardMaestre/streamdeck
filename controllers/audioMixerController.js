@@ -1,4 +1,5 @@
 const { default: AudioMixer, DeviceType, AudioSessionState } = require('native-sound-mixer');
+const path = require('path');
 
 // Instancia global del dispositivo de salida
 let defaultDevice;
@@ -9,18 +10,30 @@ let currentDeviceListeners = null;
 const activeSessions = new Map();
 
 // Función para normalizar nombres problemáticos (como Spotify que pone el nombre de la canción en la sesión)
-function getAppLabel(appName) {
-    if (!appName) return 'App';
-    const lower = appName.toLowerCase();
+function getAppLabel(session) {
+    let rawName = session.appName || session.name;
+    if (!rawName) return 'App';
+    
+    // Extraer solo el nombre del archivo si es una ruta completa
+    const exeName = path.basename(rawName);
+    const lower = exeName.toLowerCase();
+    
     if (lower.includes('spotify')) return 'Spotify';
     if (lower.includes('chrome')) return 'Chrome';
     if (lower.includes('msedge') || lower.includes('edge')) return 'Edge';
     if (lower.includes('discord')) return 'Discord';
-    if (lower.includes('steam')) return 'Steam';
+    if (lower.startsWith('steam')) return 'Steam';
     if (lower.includes('obs64') || lower.includes('obs')) return 'OBS';
     if (lower.includes('audiodg')) return 'Windows';
     if (lower.includes('firefox')) return 'Firefox';
-    return appName.replace('.exe', '');
+    if (lower.includes('brave')) return 'Brave';
+    if (lower.includes('wallpaper')) return 'Wallpaper';
+    if (lower.includes('mpc-hc') || lower.includes('mpc-be')) return 'Media Player';
+    
+    // Si no coincide con los grandes, devolvemos el propio nombre del ejecutable (sin .exe)
+    // Capitalizando la primera letra
+    let cleanName = exeName.replace(/\.exe$/i, '');
+    return cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
 }
 
 function detachListenersFromDefaultDevice() {
@@ -128,8 +141,8 @@ function pollSessions(io) {
     // producen decenas de sesiones separadas. Debemos agruparlas bajo la misma etiqueta común.
     const grouped = new Map();
     currentSessions.forEach((session) => {
-        if (!session.name) return;
-        const label = getAppLabel(session.name);
+        if (!session.name && !session.appName) return;
+        const label = getAppLabel(session);
         if (!grouped.has(label)) {
             grouped.set(label, []);
         }
