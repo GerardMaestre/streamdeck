@@ -40,8 +40,12 @@ function detachListenersFromDefaultDevice() {
     if (!defaultDevice || !currentDeviceListeners) return;
 
     try {
-        defaultDevice.removeListener('volume', currentDeviceListeners.onVolume);
-        defaultDevice.removeListener('mute', currentDeviceListeners.onMute);
+        if (currentDeviceListeners.volumeId !== undefined) {
+            defaultDevice.removeListener('volume', currentDeviceListeners.volumeId);
+        }
+        if (currentDeviceListeners.muteId !== undefined) {
+            defaultDevice.removeListener('mute', currentDeviceListeners.muteId);
+        }
     } catch (error) {
         console.error('❌ Error limpiando listeners del dispositivo de audio:', error);
     } finally {
@@ -61,9 +65,10 @@ function assignListenersToDefaultDevice(device, io) {
         io.emit('master_updated', { type: 'mute', value: mute });
     };
 
-    currentDeviceListeners = { onVolume, onMute };
-    device.on('volume', onVolume);
-    device.on('mute', onMute);
+    const volumeId = device.on('volume', onVolume);
+    const muteId = device.on('mute', onMute);
+    
+    currentDeviceListeners = { volumeId, muteId };
 }
 
 function emitAudioMixerError(io, context, error) {
