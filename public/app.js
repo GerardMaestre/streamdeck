@@ -112,6 +112,7 @@ class StreamDeckClient {
 
     openFolder(pageId) {
         this.overlayContainer.innerHTML = '';
+        this.overlayContainer.className = 'grid-container';
 
         let pageData = this.pages[pageId];
 
@@ -217,7 +218,8 @@ class StreamDeckClient {
     // ==========================================
     openMixer() {
         this.overlayContainer.innerHTML = '';
-        
+        this.overlayContainer.className = 'modal-content-wrapper'; // disable grid
+
         const mixerPanel = document.createElement('div');
         mixerPanel.className = 'mixer-panel';
         mixerPanel.id = 'mixer-interface';
@@ -510,7 +512,8 @@ class StreamDeckClient {
     // ==========================================
     openDiscordPanel() {
         this.overlayContainer.innerHTML = '';
-        
+        this.overlayContainer.className = 'modal-content-wrapper'; // disable grid
+
         const discordPanel = document.createElement('div');
         discordPanel.className = 'discord-panel';
         discordPanel.id = 'discord-panel-container';

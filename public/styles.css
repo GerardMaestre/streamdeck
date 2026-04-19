@@ -627,3 +627,102 @@ body {
     text-overflow: ellipsis;
     text-shadow: 0 2px 4px rgba(0,0,0,0.8);
 }
+
+/* ============================================================ */
+/* 📱 TABLET / MOBILE OPTIMIZATION (Responsive Adaptive Grid)   */
+/* ============================================================ */
+@media (max-width: 1400px) and (orientation: landscape), (max-width: 900px) and (orientation: portrait) {
+    /* Liquid Adaptive Grid en tabletas (Respeta diseño pero fluye solapado) */
+    .grid-container {
+        grid-template-columns: repeat(auto-fit, minmax(clamp(120px, 15vw, 160px), 1fr));
+        gap: 15px;
+        padding: 15px;
+        width: 96vw;
+        max-width: 100vw;
+    }
+    
+    /* Mejor touch target para los botones (sin tirar el glassmorphism) */
+    .boton {
+        font-size: 1.35rem; 
+        border-radius: var(--radius-lg); 
+        touch-action: manipulation; /* Evitar zoom accidental por doble toque */
+        /* Efecto feedback mas marcado en tablet en presionar */
+        transition: transform 0.1s;
+    }
+
+    .boton .icon {
+        font-size: 3.2rem; /* Ícono principal grande */
+        margin-bottom: 5px;
+    }
+
+    /* ==== MIXER & DISCORD PANELS PARA PANTALLA TÁCTIL ==== */
+    /* Modales / overlays adaptados a los pulgares en tablet */
+    .mixer-panel, .discord-panel {
+        width: 95vw;        
+        max-width: 1000px;
+        padding: 30px 15px;
+        gap: 20px;
+    }
+
+    .mixer-row {
+        gap: 15px; /* Más espacio para evitar miss-clicks */
+    }
+
+    /* Los faders deben ser anchos para cogerlos fácil con el pulgar */
+    .slider-container {
+        width: 50px !important;    /* 1.5x su antiguo tamaño */
+        height: 240px !important;  /* Más recorrido de volumen */
+        border-radius: 25px;
+    }
+
+    .slider-fill {
+        border-radius: 20px;
+    }
+
+    /* Mute icon y label */
+    .mixer-icon {
+        font-size: 2.2rem;
+        padding: 10px; /* Área de toque del botón mute gigante */
+        background: rgba(255, 255, 255, 0.05); /* Soft hit box cue */
+        border-radius: 50%;
+    }
+
+    .mixer-icon-btn {
+         /* Prevenir selección de texto asquerosa de SO */
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .mixer-label {
+        font-size: 1.1rem; 
+        max-width: 110px;
+        margin-top: 15px;
+    }
+
+    /* El contenedor global, frenar overscrolls típicos móviles de safari/chrome */
+    body {
+        touch-action: pan-y; /* Solo permitir scroll, nada de zoom multidireccional */
+        overscroll-behavior: none; /* Eliminar efecto goma rebote molesto */
+    }
+}
+
+/* ============================================================ */
+/* FIX CONTENEDORES INYECTADOS EN OVERLAY                       */
+/* ============================================================ */
+.modal-content-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100vw;
+    height: 100vh;
+    overflow-y: auto;     
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.mixer-panel, .discord-panel {
+    max-width: 90vw !important;
+    max-height: 90vh !important;      
+    overflow-y: auto;      
+    transform: translateZ(0); 
+    box-sizing: border-box;
+}
