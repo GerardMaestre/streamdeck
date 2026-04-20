@@ -41,9 +41,12 @@
 }
 
 * {
-    -webkit-tap-highlight-color: transparent; /* ELIMINA EL CUADRADO AZUL EN TABLETS */
-    -webkit-touch-callout: none; /* Desactiva menú contextual al mantener pulsado */
-    outline: none !important; /* Elimina bordes de enfoque */
+    -webkit-tap-highlight-color: transparent;
+    /* ELIMINA EL CUADRADO AZUL EN TABLETS */
+    -webkit-touch-callout: none;
+    /* Desactiva menú contextual al mantener pulsado */
+    outline: none !important;
+    /* Elimina bordes de enfoque */
 }
 
 body {
@@ -51,18 +54,19 @@ body {
         radial-gradient(120% 90% at 15% 12%, rgba(102, 212, 255, 0.16), transparent 52%),
         radial-gradient(100% 100% at 88% 84%, rgba(126, 168, 255, 0.18), transparent 58%),
         linear-gradient(150deg, var(--bg-gradient-top), var(--bg-gradient-bottom) 58%, var(--bg-base));
-    margin: 0; 
-    height: 100dvh; 
+    margin: 0;
+    height: 100dvh;
     width: 100vw;
-    display: flex; 
-    justify-content: center; 
-    align-items: center; 
+    display: flex;
+    justify-content: center;
+    align-items: center;
     font-family: 'Avenir Next', 'SF Pro Display', 'Helvetica Neue', sans-serif;
     color: var(--text-primary);
-    user-select: none; 
+    user-select: none;
     overflow: hidden;
     overscroll-behavior: none;
-    touch-action: manipulation; /* Evita el lag de doble click */
+    touch-action: manipulation;
+    /* Evita el lag de doble click */
 }
 
 .grid-container {
@@ -75,7 +79,8 @@ body {
     height: 100%;
     justify-content: center;
     align-items: center;
-    align-content: start; /* REVERTIDO A START */
+    align-content: start;
+    /* REVERTIDO A START */
     min-height: min-content;
 }
 
@@ -88,12 +93,13 @@ body {
     font-weight: bold;
     color: var(--text-primary);
     cursor: pointer;
-    border: 1px solid rgba(255,255,255,0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    transition: transform 0.1s var(--ease-standard); /* Más rápido */
+    transition: transform 0.1s var(--ease-standard);
+    /* Más rápido */
     opacity: 0;
     transform: scale(0.8);
     animation: fadeInScale var(--duration-normal) var(--ease-smooth) forwards;
@@ -128,14 +134,14 @@ body {
     }
 }
 
-.boton:active { 
-    transform: scale(0.92) !important; 
-    border: 1px solid rgba(255,255,255,0.1);
+.boton:active {
+    transform: scale(0.92) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.icon { 
-    font-size: 2.5rem; 
-    margin-bottom: 10px; 
+.icon {
+    font-size: 2.5rem;
+    margin-bottom: 10px;
 }
 
 /* Modal / Overlay */
@@ -181,279 +187,38 @@ body {
 }
 
 @keyframes macOsGenieIn {
-    0% { opacity: 0; transform: translateY(200px) scaleX(0.2) scaleY(0.5); border-radius: 50px; }
-    40% { opacity: 0.8; transform: translateY(-10px) scaleX(1.05) scaleY(1.05); border-radius: 12px; }
-    100% { opacity: 1; transform: translateY(0) scaleX(1) scaleY(1); border-radius: 15px; }
+    0% {
+        opacity: 0;
+        transform: translateY(200px) scaleX(0.2) scaleY(0.5);
+        border-radius: 50px;
+    }
+
+    40% {
+        opacity: 0.8;
+        transform: translateY(-10px) scaleX(1.05) scaleY(1.05);
+        border-radius: 12px;
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateY(0) scaleX(1) scaleY(1);
+        border-radius: 15px;
+    }
 }
 
 @keyframes macOsGenieOut {
-    0% { opacity: 1; transform: translateY(0) scale(1); }
-    100% { opacity: 0; transform: translateY(200px) scaleX(0.2) scaleY(0.5); border-radius: 50px; }
+    0% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translateY(200px) scaleX(0.2) scaleY(0.5);
+        border-radius: 50px;
+    }
 }
 
-/* ---------------------------------
-   MEZCLADOR DE AUDIO (SIMETRÍA MATEMÁTICA PERFECTA)
------------------------------------- */
-/* MEZCLADOR DE AUDIO ADAPTATIVO */
-.mixer-panel {
-    width: auto;
-    max-width: 95vw;
-    max-height: 90dvh;
-    background: var(--glass-panel-strong);
-    backdrop-filter: blur(var(--blur-strong));
-    border: 1px solid var(--glass-border);
-    border-radius: var(--radius-xl);
-    padding: clamp(15px, 4vw, 40px);
-    display: flex !important; /* FORZAMOS FLEX PARA FILAS */
-    flex-direction: row !important; /* FILAS HORIZONTALES */
-    align-items: flex-start;
-    gap: clamp(20px, 4vw, 40px); 
-    position: relative;
-    box-shadow: 0 40px 100px rgba(0,0,0,0.6);
-    overflow-x: auto; /* Permite scroll horizontal si hay muchos canales */
-    overflow-y: hidden;
-}
-
-/* PANEL DE DISCORD ADAPTATIVO */
-.discord-panel {
-    width: 95vw;
-    max-width: 1000px;
-    max-height: 90dvh;
-    background: var(--glass-panel-strong);
-    backdrop-filter: blur(var(--blur-strong));
-    border: 1px solid var(--glass-border);
-    border-radius: var(--radius-xl);
-    padding: clamp(15px, 3vw, 30px);
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-    position: relative;
-    box-shadow: 0 40px 100px rgba(0,0,0,0.6);
-    overflow-y: auto;
-}
-
-.mixer-panel-with-back {
-    padding-top: 68px;
-}
-
-.master-row {
-    flex-shrink: 0;
-    padding: 0;
-    margin: 0;
-}
-
-.app-mixers-container {
-    display: flex;
-    gap: 30px;
-    align-items: flex-end;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding-bottom: 10px;
-    scrollbar-width: none;
-    margin: 0;
-}
-.app-mixers-container::-webkit-scrollbar { display: none; }
-
-.mixer-divider {
-    width: 2px;
-    background: var(--glass-border-soft);
-    margin: 0; 
-    border-radius: 2px;
-    align-self: stretch;
-    min-height: 100%;
-}
-
-.mixer-fullscreen-view {
-    display: flex;
-    justify-content: stretch;
-    align-items: stretch;
-    position: fixed;
-    inset: 0;
-    width: 100vw;
-    height: 100dvh;
-    padding: 0;
-    margin: 0;
-    overflow: hidden;
-    background: #000;
-}
-
-/* Remover pesadez del panel si está a pantalla completa */
-.mixer-panel-fullscreen {
-    background: #000 !important; /* Pantalla negra sólida para rendimiento */
-    backdrop-filter: none !important; /* <--- Crítico, adiós lag de desenfoque */
-    box-shadow: none !important;
-    border: none !important;
-    border-radius: 0 !important;
-    width: 100% !important;
-    max-width: none !important;
-    height: 100% !important;
-    max-height: none !important;
-    padding: clamp(20px, 3.4vw, 34px) clamp(12px, 2.2vw, 24px) clamp(8px, 1.4vw, 14px) clamp(12px, 2.2vw, 24px) !important;
-    box-sizing: border-box !important; /* <--- CRITICO para que no haya barras de scroll */
-    overflow: hidden !important;
-    display: flex !important;
-    flex-direction: row !important;
-    align-items: flex-end !important;
-}
-
-.panel-back-btn-sketch-circle {
-    position: fixed;
-    top: -10px !important;
-    right: -10px !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    transform: none !important;
-    width: 72px;
-    height: 72px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.1);
-    color: white;
-    font-size: 28px;
-    border: 2px solid rgba(255,255,255,0.2);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 2147483647;
-    cursor: pointer;
-}
-
-.mixer-row {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 35px;
-    width: 140px;
-    position: relative;
-    user-select: none;
-    padding: 0;
-    will-change: auto;
-}
-
-.mixer-row.fade-out {
-    opacity: 0;
-    transform: scale(0.8) translateY(20px);
-}
-
-.mixer-icon-btn {
-    will-change: transform, background-color;
-    font-size: 2rem;
-    cursor: pointer;
-    transition: transform 0.2s var(--ease-spring), background-color 0.3s var(--ease-smooth), box-shadow 0.3s var(--ease-smooth);
-    user-select: none;
-    width: 60px;
-    height: 60px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-}
-
-.mixer-icon-btn.muted-active {
-    background: linear-gradient(135deg, rgba(231, 76, 60, 0.95), rgba(192, 57, 43, 0.95));
-    box-shadow: 0 0 15px rgba(231, 76, 60, 0.4);
-}
-
-.mixer-icon-btn.pending {
-    opacity: 0.7;
-    animation: pulseMute 1s infinite alternate;
-}
-
-@keyframes pulseMute {
-    from { transform: scale(1); }
-    to { transform: scale(0.9); }
-}
-
-.mixer-icon-btn:active {
-    transform: scale(0.85);
-}
-
-.mixer-label {
-    color: var(--text-primary);
-    font-size: 0.9rem;
-    font-weight: 500;
-    opacity: 0.9;
-    user-select: none;
-    margin-top: 10px;
-    min-height: 2.4em;
-    height: 2.4em;
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    width: 100%;
-    text-align: center;
-    word-wrap: break-word;
-    line-height: 1.2;
-}
-
-.slider-container {
-    width: 60px !important;
-    height: clamp(160px, 40dvh, 300px) !important;
-    background: #111 !important;
-    border-radius: 30px !important;
-    position: relative !important;
-    cursor: pointer !important;
-    border: 1px solid #333 !important;
-    touch-action: none !important;
-    user-select: none;
-    overflow: visible !important;
-    margin: 25px 0;
-    will-change: auto;
-    transform: translate3d(0, 0, 0);
-    -webkit-transform: translate3d(0, 0, 0);
-}
-
-.slider-fill {
-    position: absolute !important;
-    bottom: 0 !important;
-    left: 0 !important;
-    width: 100% !important;
-    background: #3498db !important;
-    border-radius: 30px !important;
-    transition: none !important;
-    will-change: height;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
-    transform: translate3d(0, 0, 0);
-    -webkit-transform: translate3d(0, 0, 0);
-}
-
-.fader-thumb-mixer {
-    position: absolute !important;
-    left: 50% !important;
-    transform: translate(-50%, 50%) translate3d(0, 0, 0) !important;
-    width: 76px !important;
-    height: 76px !important;
-    background: #fff !important;
-    border: 4px solid #3498db !important;
-    border-radius: 50% !important;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3) !important;
-    transition: none !important;
-    will-change: bottom;
-    z-index: 10;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
-}
-
-.mixer-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: var(--slider-touch-size);
-    height: var(--slider-touch-size);
-    background: transparent;
-    cursor: grab;
-}
-
-.mixer-slider::-webkit-slider-thumb:active {
-    cursor: grabbing;
-}
-
-.mixer-slider::-moz-range-thumb {
-    width: var(--slider-touch-size);
-    height: var(--slider-touch-size);
-    background: transparent;
-    cursor: grab;
-    border: none;
-} 
 
 /* Execution Modal */
 .execution-modal {
@@ -473,7 +238,7 @@ body {
     display: flex;
     flex-direction: column;
     z-index: 2000;
-    border: 1px solid rgba(255,255,255,0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     opacity: 1;
     transition: opacity var(--duration-slow) var(--ease-spring), transform var(--duration-slow) var(--ease-spring);
     will-change: transform, opacity;
@@ -484,7 +249,7 @@ body {
     opacity: 0;
     transform: translate(-50%, -50%) scale(0.84) translateY(16px);
     pointer-events: none;
-    border: 1px solid rgba(255,255,255,0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .execution-header {
@@ -503,14 +268,14 @@ body {
     font-weight: 600;
     font-size: 1.1rem;
     letter-spacing: 0.5px;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
 .spinner {
     font-size: 1.5rem;
     display: inline-block;
     animation: rotate 1.5s linear infinite;
-    filter: drop-shadow(0 0 8px rgba(255,255,255,0.5));
+    filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.5));
 }
 
 .spinner.success {
@@ -519,13 +284,23 @@ body {
 }
 
 @keyframes bouncePop {
-    0% { transform: scale(0.5); }
-    50% { transform: scale(1.3); }
-    100% { transform: scale(1); }
+    0% {
+        transform: scale(0.5);
+    }
+
+    50% {
+        transform: scale(1.3);
+    }
+
+    100% {
+        transform: scale(1);
+    }
 }
 
 @keyframes rotate {
-    100% { transform: rotate(360deg); }
+    100% {
+        transform: rotate(360deg);
+    }
 }
 
 .execution-logs {
@@ -550,31 +325,23 @@ body {
 }
 
 @keyframes slideInLog {
-    to { opacity: 1; transform: translateX(0); }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
 }
 
-.execution-logs::-webkit-scrollbar { width: 6px; }
+.execution-logs::-webkit-scrollbar {
+    width: 6px;
+}
+
 .execution-logs::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.3);
     border-radius: 10px;
 }
 
 /* Discord Panel Styles */
-.discord-panel {
-    background: rgba(28, 42, 62, 0.64);
-    border-radius: 30px;
-    border: 1px solid var(--glass-border);
-    padding: 30px;
-    display: flex;
-    position: relative;
-    flex-direction: column;
-    gap: 30px;
-    border: 1px solid rgba(255,255,255,0.1);
-    width: 85vw;
-    max-width: 700px;
-    max-height: 90vh;
-    max-width: 95vw;
-}
+
 
 .panel-back-btn {
     position: absolute;
@@ -618,362 +385,53 @@ body {
     outline-offset: 2px;
 }
 
-.discord-status {
-    text-align: center;
-    font-size: 0.95rem;
-    font-weight: 600;
-    border-radius: 999px;
-    padding: 8px 14px;
-    margin: 0 auto;
-    min-width: 260px;
-    max-width: 90%;
-    border: 1px solid transparent;
-}
-
-.discord-status-connected { background: var(--state-success-bg); border-color: var(--state-success-border); color: var(--state-success-text); }
-.discord-status-fallback { background: var(--state-info-bg); border-color: var(--state-info-border); color: var(--state-info-text); }
-.discord-status-connecting, .discord-status-reauth { background: var(--state-warn-bg); border-color: var(--state-warn-border); color: var(--state-warn-text); }
-.discord-status-disconnected, .discord-status-error { background: var(--state-error-bg); border-color: var(--state-error-border); color: var(--state-error-text); }
-
-.discord-controls {
-    display: flex;
-    justify-content: center;
-    gap: 30px;
-}
-
-.discord-main-layout {
-    display: flex;
-    align-items: stretch;
-    gap: 22px;
-    min-height: 300px;
-}
-
-.discord-controls-right {
-    flex: 0 0 140px;
-    flex-direction: column;
-    justify-content: center;
-    align-items: stretch;
-    gap: 14px;
-}
-
-.discord-controls-right .discord-btn {
-    width: 100%;
-    height: 96px;
-    border-radius: 24px;
-    font-size: 1.05rem;
-}
-
-.discord-controls-right .discord-btn .d-icon {
-    font-size: 2rem;
-}
-
-.discord-btn {
-    will-change: transform;
-    width: 120px;
-    height: 120px;
-    border-radius: 35px;
-    border: 1px solid rgba(255, 255, 255, 0.22);
-    background: rgba(255, 255, 255, 0.12);
-    color: var(--text-primary);
-    font-size: 1.2rem;
-    font-weight: 600;
-    border: 1px solid rgba(255,255,255,0.1);
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    gap: 10px;
-    cursor: pointer;
-    transition: transform var(--duration-normal) var(--ease-standard), opacity var(--duration-normal) var(--ease-standard);
-}
-
-.discord-btn.disabled {
-    opacity: 0.45;
-    pointer-events: none;
-    filter: grayscale(0.5);
-}
-
-.discord-btn.muted, .discord-btn.deafened {
-    background: rgba(231, 76, 60, 0.8);
-    border-color: rgba(255, 255, 255, 0.4);
-    border: 1px solid rgba(255,255,255,0.1);
-}
-
-.discord-btn:active {
-    transform: scale(0.9) !important;
-}
-
-.discord-btn .d-icon {
-    font-size: 3rem;
-}
-
-#discord-call-mixer {
-    display: flex;
-    flex: 1;
-    min-width: 0;
-    gap: 25px;
-    overflow-x: auto;
-    padding-bottom: 20px;
-    scrollbar-width: none; 
-    min-height: 250px;
-    align-items: flex-start;
-}
-
-#discord-call-mixer::-webkit-scrollbar { display: none; }
-
-.discord-empty {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    color: var(--text-muted);
-    font-size: 0.95rem;
-    padding: 24px 12px;
-    border-radius: 14px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    background: rgba(20, 20, 20, 0.95);
-    -webkit-background: rgba(20, 20, 20, 0.95);
-}
-
-.discord-user-card {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 15px;
-    min-width: 70px;
-    transition: opacity 0.5s var(--ease-standard), transform 0.5s var(--ease-spring);
-}
-
-.discord-user-card.leaving {
-    opacity: 0;
-    transform: scale(0.5) translateY(50px);
-}
-
-.discord-avatar {
-    width: 60px;
-    height: 60px;
-    border-radius: 50%;
-    background: rgba(111, 150, 255, 0.5);
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    object-fit: cover;
-    border: 1px solid rgba(255,255,255,0.1);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-size: 1.5rem;
-}
-
-/* --- VISTA DOMÓTICA "STRICT SKETCH MATCH" (MASTER FRAME) --- */
-/* Esta vista imita exactamente el dibujo del usuario con un marco interior */
-#deck-container.domotica-sketch-match-view {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    height: 100dvh !important;
-    width: 100vw !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    background: #06090e !important;
-    user-select: none !important; /* Evita que se quede pillada la barra */
-    touch-action: none !important;
-}
-
-.domotica-master-frame {
-    width: 95vw;
-    height: 92dvh;
-    background: #0f172a;
-    border-radius: 40px;
-    padding: 25px;
-    display: flex;
-    flex-direction: column;
-    box-sizing: border-box;
-    box-shadow: 0 0 80px rgba(0,0,0,0.8);
-    position: relative;
-    border: 1px solid rgba(255,255,255,0.05);
-    user-select: none !important;
-    touch-action: none !important;
-}
-
-.domotica-sketch-header {
-    height: 70px;
-    display: flex;
-    align-items: center;
-    padding-left: 5px;
-    flex: 0 0 auto;
-}
-
-.back-btn-sketch-circle {
-    width: 65px !important;
-    height: 65px !important;
+/* Botón Circular Premium para Paneles (Sketch Style) */
+.panel-back-btn-sketch-circle {
+    position: fixed !important;
+    top: 20px !important;
+    right: 20px !important;
+    width: 75px !important;
+    height: 75px !important;
+    flex: none !important;
+    aspect-ratio: 1 / 1 !important;
     border-radius: 50% !important;
-    background: #1e293b !important;
-    border: 2px solid rgba(255,255,255,0.1) !important;
-    color: #fff !important;
-    font-size: 2rem !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    cursor: pointer;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.5) !important;
-}
-
-.domotica-sketch-content {
-    display: flex !important;
-    flex: 1 !important;
-    gap: 25px !important;
-    margin-top: 15px;
-    min-height: 0; /* Permite que los hijos no desborden */
-}
-
-/* Tarjeta Izquierda (Slider) - Proporción según dibujo (estratégicamente más estrecha) */
-.domotica-card-fader {
-    flex: 0 0 25% !important; /* Más estrecha para que los botones tengan más aire */
-    background: #111b27 !important; 
-    border-radius: 40px !important;
-    border: 1px solid rgba(255, 255, 255, 0.05) !important;
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: center !important;
-    justify-content: center !important;
-    padding: 30px !important;
-}
-
-.fader-track-pro {
-    width: 60px !important; /* Más estilizada */
-    height: 90% !important;
-    background: #000 !important;
-    border-radius: 30px !important;
-    position: relative !important;
+    background: rgba(30, 41, 59, 0.88) !important;
+    border: 3px solid rgba(255, 255, 255, 0.25) !important;
+    color: white !important;
+    font-size: 2.6rem !important;
+    display: grid !important;
+    place-items: center !important;
     cursor: pointer !important;
-    border: 1px solid rgba(255,255,255,0.05) !important;
+    z-index: 10000 !important;
+    backdrop-filter: blur(14px) !important;
+    -webkit-backdrop-filter: blur(14px) !important;
+    transition: all 0.2s var(--ease-standard) !important;
+    box-shadow: 0 12px 48px rgba(0,0,0,0.6) !important;
+    padding: 0 !important;
+    text-align: center !important;
 }
 
-.fader-fill-pro {
-    position: absolute !important;
-    bottom: 0 !important;
-    left: 0 !important;
-    width: 100% !important;
-    background: linear-gradient(to top, #d35400, #f1c40f) !important;
-    border-radius: 40px !important;
-    transition: none !important; /* CRÍTICO: Sin transiciones */
-    will-change: height;
-}
-
-.fader-thumb-pro {
-    position: absolute !important;
-    left: 50% !important;
-    transform: translate(-50%, 50%) !important;
-    width: 100px !important;
-    height: 100px !important;
-    background: #fff !important;
-    background: radial-gradient(circle, #fff 40%, #f1c40f 100%) !important;
-    border: 4px solid #fff !important;
-    border-radius: 50% !important;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.5) !important;
-    transition: none !important; /* CRÍTICO: Sin transiciones */
-    will-change: bottom;
-}
-
-/* Tarjeta Derecha (Botones 2x2) - Más ancha y prominente */
-.domotica-card-buttons {
-    flex: 1 !important;
-    background: #111b27 !important;
-    border-radius: 40px !important;
-    border: 1px solid rgba(255, 255, 255, 0.05) !important;
-    padding: 35px !important;
-    display: flex !important;
-    flex-direction: column !important;
-}
-
-.domotica-sketch-grid {
-    display: grid !important;
-    grid-template-columns: 1fr 1fr !important;
-    grid-template-rows: 1fr 1fr !important;
-    gap: 30px !important;
-    height: 100% !important;
-}
-
-.domotica-sketch-btn {
-    border-radius: 35px !important;
+.panel-back-btn-sketch-circle:active {
+    transform: scale(0.92) !important;
     background: #1e293b !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-color: var(--accent-cyan) !important;
+}
+
+.panel-back-btn-sketch-circle span {
+    line-height: 1 !important;
     display: flex !important;
-    flex-direction: column !important;
     align-items: center !important;
     justify-content: center !important;
-    gap: 15px !important;
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
-    color: #fff !important;
+    pointer-events: none !important;
+    transform: translateY(-2px); /* Ajuste fino manual para centrado óptico */
 }
 
-.domotica-sketch-btn:active {
-    transform: scale(0.95) !important;
-    background: var(--btn-accent) !important;
-}
-
-.domotica-sketch-btn .k-icon {
-    font-size: clamp(2.5rem, 6vw, 3.5rem) !important;
-}
-
-.domotica-sketch-btn .k-label {
-    font-size: clamp(0.9rem, 1.5vw, 1.2rem) !important;
-    font-weight: 800 !important;
-}
-
-.domotica-sketch-grid {
-    display: grid !important;
-    grid-template-columns: 1fr 1fr !important;
-    grid-template-rows: 1fr 1fr !important;
-    gap: 20px !important;
-    height: 100% !important;
-}
-
-.domotica-sketch-btn {
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: center !important;
-    justify-content: center !important;
-    gap: 15px !important;
-    border-radius: 25px !important;
-    background: rgba(255, 255, 255, 0.04) !important;
-    border: 1px solid var(--glass-border-soft) !important;
-}
-
-.domotica-sketch-btn .k-label {
-    font-size: 1.1rem;
-    font-weight: 800;
-    text-transform: uppercase;
-    text-align: center;
-}
-
-.domotica-sketch-btn:active {
-    transform: scale(0.95);
-    background: var(--btn-accent);
-    box-shadow: 0 0 40px var(--btn-accent);
-}
-
-.discord-slider-fill {
-    background: linear-gradient(0deg, var(--accent-discord-a), var(--accent-discord-b)) !important;
-}
-
-.discord-username {
-    color: var(--text-primary);
-    font-size: 0.9rem;
-    font-weight: 500;
-    max-width: 80px;
-    text-align: center;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.8);
-}
 
 /* ============================================================ */
 /* 📱 TABLET / MOBILE OPTIMIZATION (Responsive Adaptive Grid)   */
 /* ============================================================ */
-@media (max-width: 1400px) and (orientation: landscape), (max-width: 900px) and (orientation: portrait) {
+@media (max-width: 1400px) and (orientation: landscape),
+(max-width: 900px) and (orientation: portrait) {
     .grid-container {
         grid-template-columns: repeat(auto-fit, minmax(clamp(120px, 15vw, 160px), 1fr));
         gap: 15px;
@@ -984,60 +442,17 @@ body {
         align-content: start;
         min-height: min-content;
     }
-    
+
     .boton {
-        font-size: 1.35rem; 
-        border-radius: var(--radius-lg); 
-        touch-action: manipulation; 
+        font-size: 1.35rem;
+        border-radius: var(--radius-lg);
+        touch-action: manipulation;
         transition: transform 0.1s;
     }
 
     .boton .icon {
-        font-size: 3.2rem; 
+        font-size: 3.2rem;
         margin-bottom: 5px;
-    }
-
-    .mixer-panel, .discord-panel {
-        width: 95vw;        
-        max-width: 1000px;
-        padding: 30px 20px;
-        gap: 20px;
-    }
-
-    .mixer-panel-with-back {
-        padding-top: 62px !important;
-    }
-
-    .mixer-row {
-        width: 110px; /* En tablet hacemos la columna más ancha para dedos grandes */
-        gap: 15px; 
-    }
-
-    .app-mixers-container {
-        gap: 20px; 
-    }
-
-    .slider-container {
-        --slider-touch-size: 50px;
-        --slider-track-height: 240px;
-        width: var(--slider-touch-size) !important;    
-        height: var(--slider-track-height) !important;  
-        border-radius: 999px;
-    }
-
-    .slider-fill {
-        border-radius: 20px;
-    }
-
-    .mixer-icon {
-        font-size: 2.2rem;
-        padding: 10px; 
-        background: rgba(255, 255, 255, 0.05); 
-        border-radius: 50%;
-    }
-
-    .mixer-icon-btn {
-        -webkit-tap-highlight-color: transparent;
     }
 
     .panel-back-btn {
@@ -1053,286 +468,8 @@ body {
         right: 10px;
     }
 
-    .discord-main-layout {
-        gap: 14px;
-        min-height: 260px;
-    }
-
-    .discord-controls-right {
-        flex-basis: 112px;
-        gap: 10px;
-    }
-
-    .discord-controls-right .discord-btn {
-        height: 82px;
-        border-radius: 20px;
-        font-size: 0.95rem;
-    }
-
-    .discord-controls-right .discord-btn .d-icon {
-        font-size: 1.6rem;
-    }
-
-    .mixer-label {
-        font-size: 1.05rem; 
-        margin-top: 15px;
-    }
-
     body {
-        touch-action: pan-y; 
-        overscroll-behavior: none; 
+        touch-action: pan-y;
+        overscroll-behavior: none;
     }
-}
-
-/* ============================================================ */
-/* FIX CONTENEDORES INYECTADOS EN OVERLAY                       */
-/* ============================================================ */
-.modal-content-wrapper {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    width: 100%;
-    min-height: 100vh;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    padding-top: 4vh;
-    padding-bottom: 4vh;
-    padding-left: 20px;
-    padding-right: 20px;
-    box-sizing: border-box;
-}
-
-.mixer-panel, .discord-panel {
-    max-width: 95vw !important;
-    max-height: 90vh !important;      
-    overflow-y: auto;      
-    transform: translateZ(0); 
-    box-sizing: border-box;
-}
-
-/* ============================================================ */
-/* ARREGLO PARA MODO RETRATO (TELÉFONOS / VERTICAL)             */
-/* ============================================================ */
-@media (orientation: portrait) {
-    /* DOMÓTICA: Apilar tarjetas si la pantalla es vertical */
-    .domotica-sketch-content {
-        flex-direction: column !important;
-        gap: 15px !important;
-    }
-    
-    .domotica-card-fader {
-        flex: 0 0 30% !important; 
-        width: 100% !important;
-        padding: 20px !important;
-    }
-
-    .fader-track-pro {
-        width: 90% !important;
-        height: 60px !important; 
-        margin: 0 !important;
-    }
-
-    .domotica-card-buttons {
-        flex: 1 !important;
-        width: 100% !important;
-        padding: 15px !important;
-    }
-
-    .domotica-sketch-grid {
-        gap: 20px !important;
-    }
-
-    /* DISCORD: Los botones de mute/deaf bajan */
-    .discord-main-layout {
-        flex-direction: column !important;
-    }
-    .discord-controls-right {
-        flex-direction: row !important;
-        flex: 0 0 auto !important;
-        width: 100% !important;
-        gap: 10px !important;
-    }
-    .discord-controls-right .discord-btn {
-        flex: 1 !important;
-        height: 80px !important;
-    }
-}
-
-/* --- DISCORD SKETCH MATCH VIEW --- */
-.discord-sketch-match-view {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
-    display: flex;
-    flex-direction: column;
-    padding: 40px; /* Más margen para evitar los bordes de la tablet */
-    z-index: 2000;
-    box-sizing: border-box;
-}
-
-.discord-sketch-header {
-    height: 12dvh;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    position: relative;
-    margin-bottom: 30px;
-}
-
-.discord-status-pill {
-    background: linear-gradient(180deg, rgba(74, 222, 128, 0.2), rgba(34, 197, 94, 0.1));
-    border: 2px solid rgba(74, 222, 128, 0.5);
-    color: #4ade80;
-    padding: 15px 60px;
-    border-radius: 60px;
-    font-size: 1.5rem;
-    font-weight: 900;
-    text-transform: uppercase;
-    letter-spacing: 5px;
-    box-shadow: 0 0 40px rgba(74, 222, 128, 0.15);
-}
-
-.discord-sketch-content {
-    display: flex;
-    flex: 1;
-    gap: 30px;
-    overflow: hidden;
-}
-
-/* Mixer de Usuarios (Izquierda) */
-.discord-card-mixer {
-    flex: 3;
-    background: rgba(0, 0, 0, 0.4);
-    border: 2px solid rgba(255, 255, 255, 0.08);
-    border-radius: 30px;
-    padding: 30px;
-    display: flex;
-    gap: 30px;
-    overflow-x: auto;
-    align-items: center;
-    justify-content: center; /* Centrado para el estado vacío */
-    position: relative;
-}
-
-/* Controles Globales (Derecha) */
-.discord-card-tactical {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 25px;
-    justify-content: center;
-}
-
-.discord-tactical-btn {
-    flex: 1;
-    max-height: 220px;
-    background: #1e293b;
-    border: 4px solid #334155;
-    border-radius: 30px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 15px;
-    cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-}
-
-.discord-tactical-btn .t-icon {
-    font-size: 4.5rem; /* Iconos mucho más grandes */
-}
-
-.discord-tactical-btn .t-label {
-    font-weight: 900;
-    font-size: 1.6rem;
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    opacity: 0.9;
-}
-
-.discord-tactical-btn.active {
-    background: linear-gradient(135deg, #ef4444, #dc2626) !important;
-    border-color: #f87171 !important;
-    box-shadow: 0 0 50px rgba(239, 68, 68, 0.5);
-}
-
-.discord-tactical-btn.disabled {
-    opacity: 0.3;
-    pointer-events: none;
-    filter: grayscale(1);
-}
-
-/* User Pro Fader (Copia de Domótica/Mixer) */
-.user-fader-row {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 20px;
-    min-width: 130px;
-    height: 100%;
-    justify-content: space-between;
-}
-
-.user-avatar-circle {
-    width: 80px;
-    height: 80px;
-    border-radius: 50%;
-    background: #334155;
-    border: 4px solid #475569;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 900;
-    font-size: 1.8rem;
-    overflow: hidden;
-    position: relative;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-}
-
-.user-avatar-circle img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.discord-username-tag {
-    color: white;
-    font-weight: 700;
-    font-size: 1rem;
-    text-align: center;
-    width: 130px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    opacity: 0.8;
-}
-
-.discord-back-btn-circle {
-    position: absolute;
-    left: 0; /* Cambiamos a la izquierda para mejor alcance */
-    top: 50%;
-    transform: translateY(-50%);
-    width: 80px; /* Mucho más grande */
-    height: 80px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.1);
-    border: 2px solid rgba(255, 255, 255, 0.2);
-    color: white;
-    font-size: 2.5rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-}
-
-.discord-back-btn-circle:active {
-    background: rgba(255,255,255,0.2);
-    transform: translateY(-50%) scale(0.9);
 }

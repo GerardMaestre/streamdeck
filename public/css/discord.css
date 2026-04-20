@@ -1,0 +1,501 @@
+/* ============================================================ */
+/* 💬 DISCORD — Estilos exclusivos del Panel de Discord         */
+/* ============================================================ */
+
+/* --- PANEL BASE (LEGACY — Modo Tarjeta) --- */
+.discord-panel {
+    background: rgba(28, 42, 62, 0.64);
+    border-radius: 30px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 30px;
+    display: flex;
+    position: relative;
+    flex-direction: column;
+    gap: 30px;
+    width: 85vw;
+    max-width: 95vw !important;
+    max-height: 90vh !important;
+    overflow-y: auto;
+    transform: translateZ(0);
+    box-sizing: border-box;
+}
+
+/* --- STATUS BAR --- */
+.discord-status {
+    text-align: center;
+    font-size: 0.95rem;
+    font-weight: 600;
+    border-radius: 999px;
+    padding: 8px 14px;
+    margin: 0 auto;
+    min-width: 260px;
+    max-width: 90%;
+    border: 1px solid transparent;
+}
+
+.discord-status-connected {
+    background: var(--state-success-bg);
+    border-color: var(--state-success-border);
+    color: var(--state-success-text);
+}
+
+.discord-status-fallback {
+    background: var(--state-info-bg);
+    border-color: var(--state-info-border);
+    color: var(--state-info-text);
+}
+
+.discord-status-connecting,
+.discord-status-reauth {
+    background: var(--state-warn-bg);
+    border-color: var(--state-warn-border);
+    color: var(--state-warn-text);
+}
+
+.discord-status-disconnected,
+.discord-status-error {
+    background: var(--state-error-bg);
+    border-color: var(--state-error-border);
+    color: var(--state-error-text);
+}
+
+/* --- CONTROLES PRINCIPALES --- */
+.discord-controls {
+    display: flex;
+    justify-content: center;
+    gap: 30px;
+}
+
+.discord-main-layout {
+    display: flex;
+    align-items: stretch;
+    gap: 22px;
+    min-height: 300px;
+}
+
+.discord-controls-right {
+    flex: 0 0 140px;
+    flex-direction: column;
+    justify-content: center;
+    align-items: stretch;
+    gap: 14px;
+}
+
+.discord-controls-right .discord-btn {
+    width: 100%;
+    height: 96px;
+    border-radius: 24px;
+    font-size: 1.05rem;
+}
+
+.discord-controls-right .discord-btn .d-icon {
+    font-size: 2rem;
+}
+
+/* --- BOTONES DE ACCIÓN --- */
+.discord-btn {
+    will-change: transform;
+    width: 120px;
+    height: 120px;
+    border-radius: 35px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--text-primary);
+    font-size: 1.2rem;
+    font-weight: 600;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    transition: transform var(--duration-normal) var(--ease-standard), opacity var(--duration-normal) var(--ease-standard);
+}
+
+.discord-btn.disabled {
+    opacity: 0.45;
+    pointer-events: none;
+    filter: grayscale(0.5);
+}
+
+.discord-btn.muted,
+.discord-btn.deafened {
+    background: rgba(231, 76, 60, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.discord-btn:active {
+    transform: scale(0.9) !important;
+}
+
+.discord-btn .d-icon {
+    font-size: 3rem;
+}
+
+/* --- MIXER DE USUARIOS EN LLAMADA (LEGACY) --- */
+#discord-call-mixer {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    gap: 25px;
+    overflow-x: auto;
+    padding-bottom: 20px;
+    scrollbar-width: none;
+    min-height: 250px;
+    align-items: flex-start;
+}
+
+#discord-call-mixer::-webkit-scrollbar {
+    display: none;
+}
+
+/* --- ESTADO VACÍO (reemplaza inline styles de JS) --- */
+.discord-empty {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    padding: 24px 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(20, 20, 20, 0.95);
+}
+
+.discord-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+}
+
+.discord-empty-icon {
+    font-size: 6rem;
+    filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.2));
+}
+
+.discord-empty-icon--dim {
+    opacity: 0.3;
+    filter: none;
+}
+
+.discord-empty-text {
+    font-size: 1.8rem;
+    font-weight: 900;
+    letter-spacing: 3px;
+    opacity: 0.8;
+}
+
+.discord-empty-text--dim {
+    opacity: 0.4;
+}
+
+/* --- USER CARDS (LEGACY) --- */
+.discord-user-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+    min-width: 70px;
+    transition: opacity 0.5s var(--ease-standard), transform 0.5s var(--ease-spring);
+}
+
+.discord-user-card.leaving {
+    opacity: 0;
+    transform: scale(0.5) translateY(50px);
+}
+
+.discord-avatar {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: rgba(111, 150, 255, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    object-fit: cover;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 1.5rem;
+}
+
+/* --- SLIDER VARIANTES DISCORD --- */
+.discord-slider-fill {
+    background: linear-gradient(0deg, var(--accent-discord-a), var(--accent-discord-b)) !important;
+}
+
+.discord-slider-tall {
+    height: 45dvh !important;
+}
+
+.discord-fill-warm {
+    background: linear-gradient(to top, #d35400, #f1c40f) !important;
+    transition: none !important; /* Sin transiciones para evitar lag */
+}
+
+/* --- USERNAME --- */
+.discord-username {
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    font-weight: 500;
+    max-width: 80px;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+/* ============================================================ */
+/* 💬 DISCORD SKETCH MATCH VIEW (Pantalla Completa Tablet)      */
+/* ============================================================ */
+.discord-sketch-match-view {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
+    display: flex;
+    flex-direction: column;
+    padding: 40px;
+    z-index: 2000;
+    box-sizing: border-box;
+}
+
+.discord-sketch-header {
+    height: 12dvh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    margin-bottom: 30px;
+}
+
+.discord-status-pill {
+    background: linear-gradient(180deg, rgba(74, 222, 128, 0.2), rgba(34, 197, 94, 0.1));
+    border: 2px solid rgba(74, 222, 128, 0.5);
+    color: #4ade80;
+    padding: 15px 60px;
+    border-radius: 60px;
+    font-size: 1.5rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 5px;
+    box-shadow: 0 0 40px rgba(74, 222, 128, 0.15);
+}
+
+.discord-sketch-content {
+    display: flex;
+    flex: 1;
+    gap: 30px;
+    overflow: hidden;
+}
+
+/* --- Mixer de Usuarios (Panel Izquierdo) --- */
+.discord-card-mixer {
+    flex: 3;
+    background: rgba(0, 0, 0, 0.4);
+    border: 2px solid rgba(255, 255, 255, 0.08);
+    border-radius: 30px;
+    padding: 30px;
+    display: flex;
+    gap: 30px;
+    overflow-x: auto;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+/* --- Controles Globales (Panel Derecho) --- */
+.discord-card-tactical {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 25px;
+    justify-content: center;
+}
+
+.discord-tactical-btn {
+    flex: 1;
+    max-height: 220px;
+    background: #1e293b;
+    border: 4px solid #334155;
+    border-radius: 30px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.discord-tactical-btn .t-icon {
+    font-size: 4.5rem;
+}
+
+.discord-tactical-btn .t-label {
+    font-weight: 900;
+    font-size: 1.6rem;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    opacity: 0.9;
+}
+
+.discord-tactical-btn.active {
+    background: linear-gradient(135deg, #ef4444, #dc2626) !important;
+    border-color: #f87171 !important;
+    box-shadow: 0 0 50px rgba(239, 68, 68, 0.5);
+}
+
+.discord-tactical-btn.disabled {
+    opacity: 0.3;
+    pointer-events: none;
+    filter: grayscale(1);
+}
+
+/* --- User Pro Fader (Faders de usuarios en llamada) --- */
+.user-fader-row {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+    min-width: 140px;
+    height: 100%;
+    justify-content: center;
+    user-select: none;
+    touch-action: none; /* Crucial para tablets */
+}
+
+.user-avatar-circle {
+    width: 85px;
+    height: 85px;
+    flex: none !important;
+    border-radius: 50%;
+    background: #334155;
+    border: 4px solid #475569;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-size: 2rem;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+.user-avatar-circle img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* Efecto cuando el usuario habla */
+.user-avatar-circle.speaking {
+    border-color: #4ade80 !important;
+    box-shadow: 0 0 20px rgba(74, 222, 128, 0.6), inset 0 0 10px rgba(74, 222, 128, 0.4);
+    transform: scale(1.05);
+}
+
+
+.discord-username-tag {
+    color: white;
+    font-weight: 700;
+    font-size: 1.1rem;
+    text-align: center;
+    width: 140px;
+    flex: none !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.9;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    pointer-events: none;
+}
+
+/* Evitar separación de la bola al arrastrar */
+.user-fader-row.dragging .slider-fill,
+.user-fader-row.dragging .fader-thumb-mixer {
+    transition: none !important;
+}
+
+.discord-back-btn-circle {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    font-size: 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+.discord-back-btn-circle:active {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-50%) scale(0.9);
+}
+
+/* ============================================================ */
+/* 📱 DISCORD RESPONSIVE                                        */
+/* ============================================================ */
+@media (max-width: 1400px) and (orientation: landscape),
+(max-width: 900px) and (orientation: portrait) {
+    .discord-panel {
+        width: 95vw;
+        max-width: 1000px;
+        padding: 30px 20px;
+        gap: 20px;
+    }
+
+    .discord-main-layout {
+        gap: 14px;
+        min-height: 260px;
+    }
+
+    .discord-controls-right {
+        flex-basis: 112px;
+        gap: 10px;
+    }
+
+    .discord-controls-right .discord-btn {
+        height: 82px;
+        border-radius: 20px;
+        font-size: 0.95rem;
+    }
+
+    .discord-controls-right .discord-btn .d-icon {
+        font-size: 1.6rem;
+    }
+}
+
+/* --- Modo Retrato --- */
+@media (orientation: portrait) {
+    .discord-main-layout {
+        flex-direction: column !important;
+    }
+
+    .discord-controls-right {
+        flex-direction: row !important;
+        flex: 0 0 auto !important;
+        width: 100% !important;
+        gap: 10px !important;
+    }
+
+    .discord-controls-right .discord-btn {
+        flex: 1 !important;
+        height: 80px !important;
+    }
+}

@@ -13,9 +13,53 @@
     <title>Stream Deck Pro</title>
     <!-- Importamos el Manifiesto de PWA -->
     <link rel="manifest" href="manifest.json">
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=2.8">
+    <link rel="stylesheet" href="css/domotica.css?v=2.8">
+    <link rel="stylesheet" href="css/mixer.css?v=2.8">
+    <link rel="stylesheet" href="css/discord.css?v=2.8">
 
-    
+    <style>
+        /* INLINE CSS PARA EVITAR CACHE EN TABLETS */
+        .panel-back-btn-sketch-circle {
+            position: fixed !important;
+            top: 25px !important;
+            right: 30px !important;
+            width: 80px !important;
+            height: 80px !important;
+            flex: none !important;
+            aspect-ratio: 1 / 1 !important;
+            border-radius: 50% !important;
+            background: rgba(30, 41, 59, 0.92) !important;
+            border: 3px solid rgba(255, 255, 255, 0.3) !important;
+            color: white !important;
+            font-size: 3rem !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            cursor: pointer !important;
+            z-index: 10000 !important;
+            backdrop-filter: blur(14px) !important;
+            -webkit-backdrop-filter: blur(14px) !important;
+            transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+            box-shadow: 0 12px 48px rgba(0,0,0,0.6) !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+            -webkit-appearance: none;
+        }
+        .panel-back-btn-sketch-circle:active {
+            transform: scale(0.92) !important;
+            background: #1e293b !important;
+        }
+        .panel-back-btn-sketch-circle span {
+            line-height: 1 !important;
+            display: block !important;
+            pointer-events: none !important;
+            transform: translateY(-5px) !important; /* SUBIENDO UN POQUITO MÁS */
+            margin: 0 !important;
+            padding: 0 !important;
+            font-weight: bold !important;
+        }
+    </style>
 </head>
 <body>
     <!-- Pantalla Principal -->
@@ -36,6 +80,6 @@
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
-    <script src="app.js"></script>
+    <script src="app.js?v=2.8"></script>
 </body>
 </html>

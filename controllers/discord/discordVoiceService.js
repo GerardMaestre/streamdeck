@@ -15,6 +15,8 @@ class DiscordVoiceService {
             mute: false,
             deaf: false
         };
+
+        this.speakingUsers = new Set();
     }
 
     init(connectionManager, io) {
@@ -59,7 +61,8 @@ class DiscordVoiceService {
                     avatar: userId && avatarHash
                         ? `https://cdn.discordapp.com/avatars/${userId}/${avatarHash}.png`
                         : null,
-                    volume
+                    volume,
+                    speaking: this.speakingUsers.has(userId)
                 };
             }).filter((user) => user.id);
         } catch (e) {
@@ -126,7 +129,10 @@ class DiscordVoiceService {
         this.connectionManager.removeRpcListenersByEvent(client, [
             'VOICE_SETTINGS_UPDATE',
             'VOICE_CHANNEL_SELECT',
-            'VOICE_STATE_UPDATE'
+            'VOICE_STATE_UPDATE',
+            'SPEAKING',
+            'SPEAKING_START',
+            'SPEAKING_STOP'
         ]);
 
         await client.subscribe('VOICE_SETTINGS_UPDATE', {});
@@ -159,13 +165,63 @@ class DiscordVoiceService {
             if (this.lastKnownChannelId) {
                 try {
                     await client.subscribe('VOICE_STATE_UPDATE', { channel_id: this.lastKnownChannelId });
+                    await client.subscribe('SPEAKING', { channel_id: this.lastKnownChannelId });
+                    await client.subscribe('SPEAKING_START', { channel_id: this.lastKnownChannelId });
+                    await client.subscribe('SPEAKING_STOP', { channel_id: this.lastKnownChannelId });
                 } catch (error) {
-                    console.warn('[Discord Voice] Suscripcion VOICE_STATE_UPDATE fallada:', error.message);
+                    console.warn('[Discord Voice] Suscripción eventos fallida:', error.message);
                 }
             }
 
             await this.publishVoiceUsers();
         });
+
+        // 🛡️ GESTIÓN DE HABLA MULTI-EVENTO (Cazador de eventos)
+        const speakingTimeouts = new Map();
+
+        const setSpeakingState = (uId, isSpeaking) => {
+            if (!this.ioInstance || !uId) return;
+
+            if (speakingTimeouts.has(uId)) {
+                clearTimeout(speakingTimeouts.get(uId));
+                speakingTimeouts.delete(uId);
+            }
+
+            // LOG PARA DEBUG (Lo verás en el terminal)
+            if (isSpeaking) {
+                console.log(`[Discord Voice] 🎙️ Usuario ${uId} HABLANDO`);
+                this.speakingUsers.add(uId);
+            } else {
+                this.speakingUsers.delete(uId);
+            }
+            
+            this.ioInstance.emit('discord_user_speaking', { userId: uId, speaking: isSpeaking });
+
+            if (isSpeaking) {
+                const timeout = setTimeout(() => {
+                    this.speakingUsers.delete(uId);
+                    this.ioInstance.emit('discord_user_speaking', { userId: uId, speaking: false });
+                    speakingTimeouts.delete(uId);
+                }, 1500); 
+                speakingTimeouts.set(uId, timeout);
+            }
+        };
+
+        // Escuchamos TODAS las variantes posibles
+        const handleGenericSpeaking = (data) => {
+            const uId = data.user_id || data.userId;
+            const state = (data.speaking_state !== undefined) ? (data.speaking_state !== 0) : true;
+            setSpeakingState(uId, state);
+        };
+
+        const handleStopSpeaking = (data) => setSpeakingState(data.user_id || data.userId, false);
+
+        client.on('SPEAKING', handleGenericSpeaking);
+        client.on('speaking', handleGenericSpeaking);
+        client.on('SPEAKING_START', handleGenericSpeaking);
+        client.on('speaking-start', handleGenericSpeaking);
+        client.on('SPEAKING_STOP', handleStopSpeaking);
+        client.on('speaking-stop', handleStopSpeaking);
 
         client.on('VOICE_STATE_UPDATE', async () => {
             if (this.connectionManager.rpc !== client) return;
@@ -180,8 +236,11 @@ class DiscordVoiceService {
             if (this.lastKnownChannelId) {
                 try {
                     await client.subscribe('VOICE_STATE_UPDATE', { channel_id: this.lastKnownChannelId });
+                    await client.subscribe('SPEAKING', { channel_id: this.lastKnownChannelId });
+                    await client.subscribe('SPEAKING_START', { channel_id: this.lastKnownChannelId });
+                    await client.subscribe('SPEAKING_STOP', { channel_id: this.lastKnownChannelId });
                 } catch (error) {
-                    console.warn('[Discord Voice] Suscripción inicial VOICE_STATE_UPDATE fallada:', error.message);
+                    console.warn('[Discord Voice] Suscripción inicial events fallada:', error.message);
                 }
             }
         } catch (error) {

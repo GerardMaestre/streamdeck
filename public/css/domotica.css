@@ -1,0 +1,205 @@
+/* ============================================================ */
+/* 🏠 DOMÓTICA — Estilos exclusivos del Panel de Control Hogar  */
+/* ============================================================ */
+
+/* --- VISTA DOMÓTICA "STRICT SKETCH MATCH" (MASTER FRAME) --- */
+#deck-container.domotica-sketch-match-view {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    height: 100dvh !important;
+    width: 100vw !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #06090e !important;
+    user-select: none !important;
+    touch-action: none !important;
+}
+
+.domotica-master-frame {
+    width: 100vw !important;
+    height: 100dvh !important;
+    background: #06080b !important;
+    border-radius: 0 !important;
+    padding: clamp(20px, 5vw, 60px) !important;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    box-shadow: none !important;
+    position: relative;
+    border: none !important;
+    user-select: none !important;
+    touch-action: none !important;
+}
+
+/* Botón volver estilo Sketch (usado solo en Domótica dentro del masterFrame) */
+.domotica-master-frame .back-btn-sketch-circle {
+    width: 65px !important;
+    height: 65px !important;
+    border-radius: 50% !important;
+    background: #1e293b !important;
+    border: 2px solid rgba(255, 255, 255, 0.1) !important;
+    color: #fff !important;
+    font-size: 2rem !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* --- CONTENEDOR DE DIVISIÓN (Slider + Botones) --- */
+.domotica-sketch-content {
+    display: flex !important;
+    flex: 1 !important;
+    gap: 25px !important;
+    margin-top: 15px;
+    min-height: 0;
+}
+
+/* --- TARJETA IZQUIERDA (Slider de Brillo) --- */
+.domotica-card-fader {
+    flex: 0 0 clamp(100px, 22%, 240px) !important;
+    background: #0f172a !important;
+    border-radius: var(--radius-xl) !important;
+    border: 1px solid rgba(255, 255, 255, 0.05) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 40px !important;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+}
+
+/* --- FADER PRO (Domótica) --- */
+.fader-track-pro {
+    width: 72px !important;
+    height: 100% !important;
+    background: #000 !important;
+    border-radius: 40px !important;
+    position: relative !important;
+    cursor: pointer !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow: inset 0 4px 12px rgba(0, 0, 0, 0.8), 0 1px 1px rgba(255, 255, 255, 0.05);
+}
+
+.fader-fill-pro {
+    position: absolute !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    background: linear-gradient(to top, #d35400, #f1c40f) !important;
+    border-radius: 40px !important;
+    transform-origin: bottom !important;
+    transform: scaleY(0);
+    transition: none !important;
+    will-change: transform;
+}
+
+.fader-thumb-pro {
+    position: absolute !important;
+    left: 50% !important;
+    bottom: 0 !important;
+    transform: translate(-50%, 50%);
+    width: 110px !important;
+    height: 110px !important;
+    background: radial-gradient(circle at 35% 35%, #fff 20%, #f1c40f 100%) !important;
+    border: 3px solid #fff !important;
+    border-radius: 50% !important;
+    box-shadow:
+        0 15px 35px rgba(0, 0, 0, 0.6),
+        0 0 25px rgba(241, 196, 15, 0.4),
+        inset 0 -4px 8px rgba(0, 0, 0, 0.2) !important;
+    transition: none !important;
+    will-change: transform;
+}
+
+/* --- TARJETA DERECHA (Botones 2x2) --- */
+.domotica-card-buttons {
+    flex: 1 !important;
+    background: #0f172a !important;
+    border-radius: var(--radius-xl) !important;
+    border: 1px solid rgba(255, 255, 255, 0.05) !important;
+    padding: clamp(20px, 4vw, 50px) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+}
+
+/* --- GRID DE BOTONES --- */
+.domotica-sketch-grid {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    grid-template-rows: 1fr 1fr !important;
+    gap: 20px !important;
+    height: 100% !important;
+}
+
+/* --- BOTONES DE ACCIÓN --- */
+.domotica-sketch-btn {
+    border-radius: var(--radius-lg) !important;
+    background: rgba(255, 255, 255, 0.03) !important;
+    border: 1px solid var(--glass-border-soft) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 15px !important;
+    transition: all 0.2s var(--ease-smooth) !important;
+    color: var(--text-primary) !important;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.domotica-sketch-btn .k-icon {
+    font-size: clamp(2.8rem, 7vw, 4rem) !important;
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+}
+
+.domotica-sketch-btn .k-label {
+    font-size: 1rem !important;
+    font-weight: 800 !important;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    opacity: 0.85;
+}
+
+.domotica-sketch-btn:active {
+    transform: scale(0.94) translateY(4px) !important;
+    background: var(--btn-accent) !important;
+    border-color: rgba(255, 255, 255, 0.4) !important;
+    box-shadow: 0 0 40px var(--btn-accent), inset 0 0 20px rgba(0, 0, 0, 0.2);
+}
+
+/* ============================================================ */
+/* 📱 DOMÓTICA RESPONSIVE — Modo Retrato                        */
+/* ============================================================ */
+@media (orientation: portrait) {
+    .domotica-sketch-content {
+        flex-direction: column !important;
+        gap: 15px !important;
+    }
+
+    .domotica-card-fader {
+        flex: 0 0 30% !important;
+        width: 100% !important;
+        padding: 20px !important;
+    }
+
+    .fader-track-pro {
+        width: 90% !important;
+        height: 60px !important;
+        margin: 0 !important;
+    }
+
+    .domotica-card-buttons {
+        flex: 1 !important;
+        width: 100% !important;
+        padding: 15px !important;
+    }
+
+    .domotica-sketch-grid {
+        gap: 20px !important;
+    }
+}

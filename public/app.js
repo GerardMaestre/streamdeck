@@ -4,18 +4,18 @@ class StreamDeckClient {
         this.socket = io();
         this.pages = {};
         this.currentPage = 'main';
-        
+
         this.container = document.getElementById('deck-container');
         this.overlay = document.getElementById('overlay');
         this.overlayContainer = document.getElementById('overlay-container');
-        
+
         this.lastMixerState = null;
-        
+
         // --- SISTEMAS DE BLOQUEO ANTI-REBOTE (OPTIMISTIC UI) ---
         this.activeSliders = new Set();
-        this.activeMutes = new Set(); 
+        this.activeMutes = new Set();
         this.muteTimers = {};
-        
+
         this.pendingVolUpdates = {};
         this.volUpdateTimes = {};
         this.volUpdateTimers = {};
@@ -29,7 +29,7 @@ class StreamDeckClient {
 
         // IDs de Domótica (Luces)
         this.tuyaDevices = ["bf02a8f057179a10753ram", "bf63d2743895e42709akue", "bf9d385783be51f82cef86"];
-        
+
         // Recuperar última intensidad guardada o usar 100 por defecto
         const savedIntensity = localStorage.getItem('lastTuyaIntensity');
         this.lastTuyaIntensity = savedIntensity ? parseInt(savedIntensity) : 100;
@@ -64,7 +64,7 @@ class StreamDeckClient {
             } catch (err) {
                 this.scriptsByFolder = {};
             }
-        } catch (e) {}
+        } catch (e) { }
 
         this.initMainGrid();
     }
@@ -95,8 +95,32 @@ class StreamDeckClient {
         this.container.innerHTML = '';
         this.container.className = 'grid-container';
 
+        // Botón Volver Premium (Cuerpo del Documento para evitar caché/interferencias)
+        const oldBtn = document.getElementById('panel-back-button');
+        if (oldBtn) oldBtn.remove();
+
+        const backBtn = document.createElement('button');
+        backBtn.id = 'panel-back-button';
+        backBtn.className = 'panel-back-btn-sketch-circle';
+        backBtn.innerHTML = '<span>←</span>';
+        backBtn.addEventListener('pointerup', (e) => {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            backBtn.remove();
+
+            const shield = document.createElement('div');
+            shield.className = 'pointer-shield';
+            document.body.appendChild(shield);
+            setTimeout(() => shield.remove(), 500);
+
+            setTimeout(() => {
+                this.currentPage = 'main';
+                this.renderGrid();
+            }, 100);
+        });
+        document.body.appendChild(backBtn);
+
         const fragment = document.createDocumentFragment();
-        fragment.appendChild(this.createBackButton(12));
 
         const title = document.createElement('h2');
         title.className = 'section-title';
@@ -160,31 +184,30 @@ class StreamDeckClient {
         const masterFrame = document.createElement('div');
         masterFrame.className = 'domotica-master-frame';
 
-        // 1. Cabecera (Botón Volver)
-        const header = document.createElement('div');
-        header.className = 'domotica-sketch-header';
-        
+        // Botón Volver Premium (Cuerpo del Documento para evitar caché/interferencias)
+        const oldBtn = document.getElementById('panel-back-button');
+        if (oldBtn) oldBtn.remove();
+
         const backBtn = document.createElement('button');
-        backBtn.className = 'back-btn-sketch-circle';
-        backBtn.innerHTML = '←'; 
+        backBtn.id = 'panel-back-button';
+        backBtn.className = 'panel-back-btn-sketch-circle';
+        backBtn.innerHTML = '<span>←</span>';
         backBtn.addEventListener('pointerup', (e) => {
             e.preventDefault();
             e.stopImmediatePropagation();
-            
-            // ESCUDO ANTI-PENETRACIÓN TOTAL
+            backBtn.remove();
+
             const shield = document.createElement('div');
-            shield.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9999; cursor:default;';
+            shield.className = 'pointer-shield';
             document.body.appendChild(shield);
             setTimeout(() => shield.remove(), 500);
 
-            // Delay estratégico para que la tablet consuma el evento
             setTimeout(() => {
                 this.currentPage = 'main';
                 this.renderGrid();
             }, 100);
         });
-        header.appendChild(backBtn);
-        masterFrame.appendChild(header);
+        document.body.appendChild(backBtn);
 
         // 2. Contenedor de División
         const contentArea = document.createElement('div');
@@ -193,17 +216,18 @@ class StreamDeckClient {
         // --- IZQUIERDA: TARJETA SLIDER ---
         const sliderCard = document.createElement('div');
         sliderCard.className = 'domotica-card-fader';
-        
+
         const faderTrack = document.createElement('div');
         faderTrack.className = 'fader-track-pro';
 
         const faderFill = document.createElement('div');
         faderFill.className = 'fader-fill-pro';
-        faderFill.style.height = `${this.lastTuyaIntensity}%`;
+        faderFill.style.transform = `scaleY(${this.lastTuyaIntensity / 100})`;
 
         const faderThumb = document.createElement('div');
         faderThumb.className = 'fader-thumb-pro';
-        faderThumb.style.bottom = `${this.lastTuyaIntensity}%`;
+        // Inicialización aproximada (se corregirá en el primer movimiento o resize)
+        faderThumb.style.transform = `translate(-50%, -${this.lastTuyaIntensity}%)`;
 
         faderTrack.appendChild(faderFill);
         faderTrack.appendChild(faderThumb);
@@ -214,19 +238,22 @@ class StreamDeckClient {
             const y = e.clientY - trackRect.top;
             let percent = 100 - (y / trackRect.height) * 100;
             percent = Math.max(1, Math.min(100, Math.round(percent)));
-            
+
             if (percent === this.lastTuyaIntensity) return;
             this.lastTuyaIntensity = percent;
             localStorage.setItem('lastTuyaIntensity', percent);
-            
-            // Visual instantáneo
-            faderFill.style.height = `${percent}%`;
-            faderThumb.style.bottom = `${percent}%`;
-            
+
+            // Visual instantáneo (GPU Accelerado)
+            requestAnimationFrame(() => {
+                faderFill.style.transform = `scaleY(${percent / 100})`;
+                // Usamos 50% para que el centro de la bola coincida con el valor
+                faderThumb.style.transform = `translate(-50%, calc(50% - ${(percent / 100) * trackRect.height}px))`;
+            });
+
             // Emisión de red diferida pero con valor ACTUAL
-            const currentVal = percent; 
+            const currentVal = percent;
             const tuyaVal = Math.round(10 + (currentVal / 100) * 990);
-            
+
             this.scheduleThrottledEmit('tuya_brightness', () => {
                 this.socket.emit('tuya_command', {
                     deviceIds: this.tuyaDevices,
@@ -236,15 +263,19 @@ class StreamDeckClient {
             }, 350);
         };
 
-        faderTrack.addEventListener('pointerdown', (e) => {
+        faderThumb.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
             trackRect = faderTrack.getBoundingClientRect();
-            faderTrack.setPointerCapture(e.pointerId);
+            faderThumb.setPointerCapture(e.pointerId);
             updateFader(e);
-            faderTrack.addEventListener('pointermove', updateFader);
+            faderThumb.addEventListener('pointermove', updateFader);
         });
-        faderTrack.addEventListener('pointerup', (e) => {
-            faderTrack.releasePointerCapture(e.pointerId);
-            faderTrack.removeEventListener('pointermove', updateFader);
+
+        faderThumb.addEventListener('pointerup', (e) => {
+            if (faderThumb.hasPointerCapture && faderThumb.hasPointerCapture(e.pointerId)) {
+                faderThumb.releasePointerCapture(e.pointerId);
+            }
+            faderThumb.removeEventListener('pointermove', updateFader);
         });
 
         sliderCard.appendChild(faderTrack);
@@ -269,10 +300,10 @@ class StreamDeckClient {
             btn.className = 'domotica-sketch-btn';
             btn.style.setProperty('--btn-accent', c.color);
             btn.innerHTML = `<span class="k-icon">${c.icon}</span><span class="k-label">${c.label}</span>`;
-            
+
             btn.addEventListener('pointerdown', () => {
                 if (navigator.vibrate) navigator.vibrate(40);
-                const payload = c.action === 'tuya_scene_toggle' 
+                const payload = c.action === 'tuya_scene_toggle'
                     ? { deviceIds: this.tuyaDevices, code: 'switch_led', value: c.value }
                     : { deviceIds: this.tuyaDevices, code: c.code, value: c.value };
                 this.socket.emit('tuya_command', payload);
@@ -286,18 +317,27 @@ class StreamDeckClient {
 
         masterFrame.appendChild(contentArea);
         this.container.appendChild(masterFrame);
+
+        // --- FIX DE INICIALIZACIÓN (PREMIUM FLUIDITY) ---
+        // Esperamos al siguiente frame para medir el track y posicionar la bola correctamente
+        requestAnimationFrame(() => {
+            const trackRect = faderTrack.getBoundingClientRect();
+            if (trackRect.height > 0) {
+                faderThumb.style.transform = `translate(-50%, calc(50% - ${(this.lastTuyaIntensity / 100) * trackRect.height}px))`;
+            }
+        });
     }
 
     updateTuyaIntensityServer(value) {
         const tuyaVal = Math.round(10 + (value / 100) * 990);
-        
+
         this.scheduleThrottledEmit('tuya_brightness', () => {
             this.socket.emit('tuya_command', {
                 deviceIds: this.tuyaDevices,
                 code: 'bright_value_v2',
                 value: tuyaVal
             });
-        }, 350); 
+        }, 350);
     }
 
     getPageData(pageId) {
@@ -347,7 +387,7 @@ class StreamDeckClient {
     createBackButton(index) {
         const backBtn = document.createElement('button');
         backBtn.className = 'boton btn-streamdeck';
-        backBtn.style.background = 'linear-gradient(145deg, #2c3e50, #34495e)';
+        backBtn.classList.add('btn-back-gradient');
         backBtn.style.animationDelay = `${index * 0.05}s`;
         backBtn.innerHTML = '<span class="icon">⬅️</span>Volver';
 
@@ -380,9 +420,9 @@ class StreamDeckClient {
     createButton(btnData, index) {
         const btn = document.createElement('button');
         btn.className = 'boton btn-streamdeck';
-        btn.style.background = btnData.color || '#333';
-        btn.style.animationDelay = `${index * 0.05}s`; 
-        
+        if (btnData.color) btn.style.background = btnData.color;
+        btn.style.animationDelay = `${index * 0.05}s`;
+
         btn.innerHTML = `<span class="icon">${btnData.icon}</span>${btnData.label}`;
 
         btn.addEventListener('click', () => {
@@ -447,7 +487,7 @@ class StreamDeckClient {
                 this.requestWakeLock();
             }
         });
-        
+
         window.streamDeck = this;
     }
 
@@ -456,19 +496,19 @@ class StreamDeckClient {
             if ('wakeLock' in navigator) {
                 this.wakeLock = await navigator.wakeLock.request('screen');
             }
-        } catch (err) {}
+        } catch (err) { }
     }
 
     getIconForApp(appName, isMaster) {
-        const shadow = 'filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));';
-        
-        if (isMaster) return `<span style="font-size:2rem; ${shadow}">🎧</span>`;
+        const shadowClass = 'mixer-icon-shadow';
+
+        if (isMaster) return `<span class="${shadowClass}" style="font-size:2rem;">🎧</span>`;
 
         const name = appName.toLowerCase();
-        
+
         const fallbackSVG = `<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="18" rx="4" ry="4" fill="rgba(255,255,255,0.03)"></rect><path d="M2 8h20"></path><circle cx="6" cy="5.5" r="1" fill="rgba(255,255,255,0.6)" stroke="none"></circle><circle cx="10" cy="5.5" r="1" fill="rgba(255,255,255,0.6)" stroke="none"></circle></svg>`;
         const fallbackSrc = `data:image/svg+xml;base64,${btoa(fallbackSVG)}`;
-        const fallbackHTML = `<img src="${fallbackSrc}" style="width: 34px; height: 34px; ${shadow}" />`;
+        const fallbackHTML = `<img src="${fallbackSrc}" class="${shadowClass}" style="width: 34px; height: 34px;" />`;
 
         const iconMap = {
             'spotify': 'spotify/1DB954',
@@ -499,17 +539,17 @@ class StreamDeckClient {
             'slack': 'slack/4A154B'
         };
 
-        if (name.includes('qemu') || name.includes('game') || name.includes('juego') || name.includes('emulator')) return `<span style="font-size:2.2rem; ${shadow}">🎮</span>`;
-        if (name.includes('wallpaper')) return `<span style="font-size:2.2rem; ${shadow}">🖼️</span>`;
-        if (name.includes('sunshine') || name.includes('stream')) return `<span style="font-size:2.2rem; ${shadow}">☀️</span>`;
-        if (name.includes('music') || name.includes('audio') || name.includes('player')) return `<span style="font-size:2.2rem; ${shadow}">🎵</span>`;
-        if (name.includes('video') || name.includes('movie') || name.includes('media')) return `<span style="font-size:2.2rem; ${shadow}">🎬</span>`;
-        if (name.includes('web') || name.includes('browser')) return `<span style="font-size:2.2rem; ${shadow}">🌐</span>`;
-        if (name.includes('driver') || name.includes('system') || name.includes('host') || name.includes('update')) return `<span style="font-size:2.2rem; ${shadow}">⚙️</span>`;
+        if (name.includes('qemu') || name.includes('game') || name.includes('juego') || name.includes('emulator')) return `<span class="${shadowClass}" style="font-size:2.2rem;">🎮</span>`;
+        if (name.includes('wallpaper')) return `<span class="${shadowClass}" style="font-size:2.2rem;">🖼️</span>`;
+        if (name.includes('sunshine') || name.includes('stream')) return `<span class="${shadowClass}" style="font-size:2.2rem;">☀️</span>`;
+        if (name.includes('music') || name.includes('audio') || name.includes('player')) return `<span class="${shadowClass}" style="font-size:2.2rem;">🎵</span>`;
+        if (name.includes('video') || name.includes('movie') || name.includes('media')) return `<span class="${shadowClass}" style="font-size:2.2rem;">🎬</span>`;
+        if (name.includes('web') || name.includes('browser')) return `<span class="${shadowClass}" style="font-size:2.2rem;">🌐</span>`;
+        if (name.includes('driver') || name.includes('system') || name.includes('host') || name.includes('update')) return `<span class="${shadowClass}" style="font-size:2.2rem;">⚙️</span>`;
 
         for (const key in iconMap) {
             if (name.includes(key)) {
-                return `<img src="https://cdn.simpleicons.org/${iconMap[key]}" style="width: 32px; height: 32px; ${shadow}" onerror="this.onerror=null; this.src='${fallbackSrc}';" />`;
+                return `<img src="https://cdn.simpleicons.org/${iconMap[key]}" class="${shadowClass}" style="width: 32px; height: 32px;" onerror="this.onerror=null; this.src='${fallbackSrc}';" />`;
             }
         }
 
@@ -523,36 +563,40 @@ class StreamDeckClient {
         const mixerPanel = document.createElement('div');
         mixerPanel.className = 'mixer-panel mixer-panel-fullscreen';
         mixerPanel.id = 'mixer-interface';
-        
+
         mixerPanel.innerHTML = `
             <div id="master-mixer" class="mixer-row master-row"></div>
             <div class="mixer-divider"></div>
             <div id="app-mixers" class="app-mixers-container"></div>
         `;
 
+        // Botón Volver Premium (Cuerpo del Documento para evitar caché/interferencias)
+        const oldBtn = document.getElementById('panel-back-button');
+        if (oldBtn) oldBtn.remove();
+
         const backBtn = document.createElement('button');
+        backBtn.id = 'panel-back-button';
         backBtn.className = 'panel-back-btn-sketch-circle';
-        backBtn.innerHTML = '←'; 
+        backBtn.innerHTML = '<span>←</span>';
         backBtn.addEventListener('pointerup', (e) => {
             e.preventDefault();
             e.stopImmediatePropagation();
-            
-            // ESCUDO ANTI-PENETRACIÓN TOTAL
+            backBtn.remove();
+
             const shield = document.createElement('div');
-            shield.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9999; cursor:default;';
+            shield.className = 'pointer-shield';
             document.body.appendChild(shield);
             setTimeout(() => shield.remove(), 500);
 
-            // Volver al menú principal
             setTimeout(() => {
                 this.currentPage = 'main';
                 this.renderGrid();
             }, 100);
         });
+        document.body.appendChild(backBtn);
 
-        mixerPanel.appendChild(backBtn);
         this.container.appendChild(mixerPanel);
-        
+
         if (this.lastMixerState) {
             this.renderInitialMixer();
         }
@@ -561,9 +605,9 @@ class StreamDeckClient {
     createMixerRow(appData, isMaster = false) {
         const id = isMaster ? 'global' : appData.name;
         const labelName = isMaster ? 'Master' : appData.name;
-        
+
         const iconHTML = this.getIconForApp(labelName, isMaster);
-        const opacity = appData.mute ? '0.4' : '1';
+        const mutedWrapperClass = appData.mute ? ' mixer-icon-wrapper--muted' : '';
         const vol = Number(appData.volume);
         const mutedClass = appData.mute ? ' muted-active' : '';
 
@@ -573,86 +617,76 @@ class StreamDeckClient {
 
         row.innerHTML = `
             <div class="mixer-icon-btn${mutedClass}" onpointerup="window.streamDeck.toggleMute('${id}', ${isMaster})">
-                <div id="icon-wrapper-${id}" style="opacity:${opacity}; display:flex; justify-content:center; align-items:center; width:100%; height:100%;">
+                <div id="icon-wrapper-${id}" class="mixer-icon-wrapper${mutedWrapperClass}">
                     ${iconHTML}
                 </div>
             </div>
-            <div class="slider-container" id="track-${id}">
-                <div class="slider-fill" id="slider-fill-${id}" style="height: ${vol}%"></div>
-                <div class="fader-thumb-mixer" id="thumb-${id}" style="bottom: ${vol}%"></div>
+            <div class="slider-container" data-app="${appData.name}">
+                <div class="slider-fill" style="transform: scaleY(${vol / 100})"></div>
+                <div class="fader-thumb-mixer" style="bottom: ${vol}%"></div>
             </div>
             <div class="mixer-label">${labelName}</div>
         `;
 
-        const track = row.querySelector('.slider-container');
-        const fill = row.querySelector('.slider-fill');
-        const thumb = row.querySelector('.fader-thumb-mixer');
-        const wrapper = row.querySelector(`#icon-wrapper-${id}`);
+        const container = row.querySelector('.slider-container');
+        const fill = container.querySelector('.slider-fill');
+        const thumb = container.querySelector('.fader-thumb-mixer');
+        fill.style.height = `${vol}%`;
+        thumb.style.bottom = `${vol}%`;
 
-        // CACHÉ LOCAL (Pattern Domótica)
-        this.mixerRefs[id] = { track, fill, thumb, wrapper };
+        let containerRect = null;
 
-        let trackRect = null;
-        let isUpdating = false;
+        const updateUI = (e) => {
+            if (!containerRect) containerRect = container.getBoundingClientRect();
+            let y = e.clientY - containerRect.top;
+            let percent = 100 - (y / containerRect.height) * 100;
+            percent = Math.max(0, Math.min(100, Math.round(percent)));
 
-        const updateMix = (e) => {
-            if (!trackRect) trackRect = track.getBoundingClientRect();
-            
-            const y = e.clientY - trackRect.top;
-            let percent = 100 - (y / trackRect.height) * 100;
-            percent = Math.max(0, Math.min(100, Math.round(percent))); // EXACTO COMO DOMÓTICA
-            
-            if (percent === this[`last_mixer_${id}`]) return;
+            // 1. Visual (SIN LATENCIA)
+            fill.style.transform = `scaleY(${percent / 100})`;
+            thumb.style.bottom = `${percent}%`;
             this[`last_mixer_${id}`] = percent;
-            
-            if (!isUpdating) {
-                isUpdating = true;
-                requestAnimationFrame(() => {
-                    // Visual INSTANTÁNEO y sincronizado con el refresco de pantalla
-                    fill.style.height = `${percent}%`;
-                    thumb.style.bottom = `${percent}%`;
-                    isUpdating = false;
-                });
-            }
-            
-            // Emisión throttleada a 350ms
-            const queueKey = isMaster ? 'mix_master' : `mix_${id}`;
-            this.pendingVolUpdates[queueKey] = percent;
 
-            this.scheduleThrottledEmit(queueKey, () => {
-                const valToEmit = Math.round(this.pendingVolUpdates[queueKey]);
+            // 2. Network (Throttled)
+            this.pendingVolUpdates[id] = percent;
+            this.scheduleThrottledEmit(id, () => {
+                const val = Math.round(this.pendingVolUpdates[id]);
                 if (isMaster) {
-                    this.socket.emit('set_master_volume', valToEmit);
+                    this.socket.emit('set_master_volume', val);
                 } else {
-                    this.socket.emit('set_session_volume', { app: id, value: valToEmit });
+                    this.socket.emit('set_session_volume', { app: id, value: val });
                 }
-            }, 350);
+            }, 100);
         };
 
-        track.addEventListener('pointerdown', (e) => {
+        const onPointerDown = (e) => {
             e.preventDefault();
-            trackRect = track.getBoundingClientRect();
-            track.setPointerCapture(e.pointerId);
-            this.activeSliders.add(id); // BLOQUEA updates del servidor
-            updateMix(e);
-            track.addEventListener('pointermove', updateMix);
-        });
+            const row = container.closest('.mixer-row');
+            if (row) row.classList.add('dragging'); // Modo Zero Lag
+            
+            containerRect = container.getBoundingClientRect();
+            thumb.setPointerCapture(e.pointerId);
+            thumb.addEventListener('pointermove', updateUI);
+            updateUI(e);
+        };
+
+        thumb.addEventListener('pointerdown', onPointerDown);
 
         const releaseSlider = (e) => {
-            if (track.hasPointerCapture && track.hasPointerCapture(e.pointerId)) {
-                track.releasePointerCapture(e.pointerId);
+            if (thumb.hasPointerCapture && thumb.hasPointerCapture(e.pointerId)) {
+                thumb.releasePointerCapture(e.pointerId);
             }
-            track.removeEventListener('pointermove', updateMix);
-            
+            thumb.removeEventListener('pointermove', updateUI);
+
             // Grace period: permite que el último update se procese
             setTimeout(() => {
                 this.activeSliders.delete(id); // DESBLOQUEA updates después
             }, 150);
-            trackRect = null;
+            containerRect = null;
         };
 
-        track.addEventListener('pointerup', releaseSlider);
-        track.addEventListener('pointercancel', releaseSlider);
+        thumb.addEventListener('pointerup', releaseSlider);
+        thumb.addEventListener('pointercancel', releaseSlider);
 
         return row;
     }
@@ -674,11 +708,31 @@ class StreamDeckClient {
                 renderizadas.add(session.name);
             }
         });
+
+        // --- FIX DE INICIALIZACIÓN MIXER (PREMIUM FLUIDITY) ---
+        requestAnimationFrame(() => {
+            Object.keys(this.mixerRefs).forEach(id => {
+                const refs = this.mixerRefs[id];
+                if (!refs) return;
+                const trackRect = refs.track.getBoundingClientRect();
+                if (trackRect.height > 0) {
+                    let vol = 0;
+                    if (id === 'global') {
+                        vol = this.lastMixerState.master.volume;
+                    } else {
+                        const sess = this.lastMixerState.sessions.find(s => s.name === id);
+                        if (sess) vol = sess.volume;
+                    }
+                    refs.fill.style.transform = `scaleY(${vol / 100})`;
+                    refs.thumb.style.bottom = `${vol}%`;
+                }
+            });
+        });
     }
 
     scheduleThrottledEmit(key, emitFn, intervalMs = this.volumeEmitIntervalMs) {
         if (!this.volUpdateFunctions) this.volUpdateFunctions = {};
-        
+
         // Siempre guardamos la última versión de la función (el último valor)
         this.volUpdateFunctions[key] = emitFn;
 
@@ -746,10 +800,10 @@ class StreamDeckClient {
 
         if (nextMuteState) {
             iconContainer.classList.add('muted-active');
-            wrapper.style.opacity = '0.4';
+            wrapper.classList.add('mixer-icon-wrapper--muted');
         } else {
             iconContainer.classList.remove('muted-active');
-            wrapper.style.opacity = '1';
+            wrapper.classList.remove('mixer-icon-wrapper--muted');
         }
 
         // Ya no hace falta la clase "pending" que generaba el parpadeo
@@ -826,6 +880,16 @@ class StreamDeckClient {
             this.renderDiscordMixer();
         });
 
+        this.socket.on('discord_user_speaking', (data) => {
+            const row = document.querySelector(`.user-fader-row[data-user-id="${data.userId}"]`);
+            if (row) {
+                const avatarCircle = row.querySelector('.user-avatar-circle');
+                if (avatarCircle) {
+                    avatarCircle.classList.toggle('speaking', !!data.speaking);
+                }
+            }
+        });
+
         this.socket.on('mixer_initial_state', (state) => {
             this.lastMixerState = state;
             this.renderInitialMixer();
@@ -879,7 +943,7 @@ class StreamDeckClient {
             });
             this.executionLogs.scrollTo({ top: this.executionLogs.scrollHeight, behavior: 'smooth' });
         });
-        
+
         this.socket.on('script_success', () => {
             clearTimeout(this.executionHideTimeout);
             this.executionSpinner.style.animation = '';
@@ -901,11 +965,11 @@ class StreamDeckClient {
             this.executionTitle.textContent = '¡Error!';
             if (err && (err.message || err.code)) {
                 const div = document.createElement('div');
-                div.style.color = 'red';
+                div.className = 'log-error';
                 div.textContent = err.message ? err.message : `Código ${err.code}`;
                 this.executionLogs.appendChild(div);
             } else {
-                this.executionLogs.innerHTML += '<div style="color: red;">[Script terminó con error]</div>';
+                this.executionLogs.innerHTML += '<div class="log-error">[Script terminó con error]</div>';
             }
             this.executionLogs.scrollTo({ top: this.executionLogs.scrollHeight, behavior: 'smooth' });
 
@@ -915,26 +979,26 @@ class StreamDeckClient {
         });
     }
 
-    updateSliderUI(id, data) {        
+    updateSliderUI(id, data) {
         const refs = this.mixerRefs[id];
-        if (!refs) return; 
+        if (!refs) return;
 
         if (data.type === 'volume') {
-            if (!this.activeSliders.has(id)) { // BLOQUEA si está arrastrando
-                const percent = data.value;
-                refs.fill.style.height = `${percent}%`;
-                refs.thumb.style.bottom = `${percent}%`;
-                this[`last_mixer_${id}`] = percent; // SINCRONIZA estado local
+            if (!this.activeSliders.has(id)) {
+                const h = Number(data.value);
+                refs.fill.style.transform = `scaleY(${h / 100})`;
+                refs.thumb.style.bottom = `${h}%`;
+                this[`last_mixer_${id}`] = h;
             }
         } else if (data.type === 'mute') {
             if (this.activeMutes.has(id)) return;
             const iconContainer = refs.wrapper.closest('.mixer-icon-btn');
             if (data.value) {
                 if (iconContainer) iconContainer.classList.add('muted-active');
-                refs.wrapper.style.opacity = '0.4'; 
+                refs.wrapper.classList.add('mixer-icon-wrapper--muted');
             } else {
                 if (iconContainer) iconContainer.classList.remove('muted-active');
-                refs.wrapper.style.opacity = '1'; 
+                refs.wrapper.classList.remove('mixer-icon-wrapper--muted');
             }
         }
     }
@@ -946,35 +1010,40 @@ class StreamDeckClient {
         // 1. HEADER (Status + Close)
         const header = document.createElement('div');
         header.className = 'discord-sketch-header';
-        
+
         const statusPill = document.createElement('div');
         statusPill.id = 'discord-status-pill';
         statusPill.className = 'discord-status-pill';
         statusPill.textContent = this.discordConnectionStatus === 'connected' ? 'CONECTADO' : 'DESCONECTADO';
-        
-        const backBtn = document.createElement('div');
-        backBtn.className = 'discord-back-btn-circle';
-        backBtn.innerHTML = '←';
+
+        // Botón Volver Premium (Cuerpo del Documento para evitar caché/interferencias)
+        const oldBtn = document.getElementById('panel-back-button');
+        if (oldBtn) oldBtn.remove();
+
+        const backBtn = document.createElement('button');
+        backBtn.id = 'panel-back-button';
+        backBtn.className = 'panel-back-btn-sketch-circle';
+        backBtn.innerHTML = '<span>←</span>';
         backBtn.addEventListener('pointerup', (e) => {
             e.preventDefault();
             e.stopImmediatePropagation();
+            if (backBtn.parentNode) backBtn.remove();
             
             // ESCUDO ANTI-PENETRACIÓN TOTAL (Huawei Tablet Fix)
             const shield = document.createElement('div');
-            shield.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9999; cursor:default;';
+            shield.className = 'pointer-shield';
             document.body.appendChild(shield);
             setTimeout(() => shield.remove(), 500);
 
             // Feedback visual + Delay para que el evento no traspase
-            backBtn.style.background = 'rgba(255,255,255,0.3)';
             setTimeout(() => {
                 this.overlay.classList.add('hidden');
-                backBtn.style.background = '';
             }, 100);
         });
+        document.body.appendChild(backBtn);
 
         header.appendChild(statusPill);
-        header.appendChild(backBtn);
+        // header.appendChild(backBtn); // Ya no se añade al header, sino al overlayContainer directamente
 
         // 2. CONTENT (Split View)
         const contentGrid = document.createElement('div');
@@ -1025,7 +1094,7 @@ class StreamDeckClient {
     toggleDiscordMute() {
         if (!['connected', 'fallback'].includes(this.discordConnectionStatus)) return;
         if (navigator.vibrate) navigator.vibrate(50);
-        
+
         // Optimistic UI para Discord también
         this.discordMute = !this.discordMute;
         this.updateDiscordButtons();
@@ -1085,29 +1154,34 @@ class StreamDeckClient {
         if (!mixerContainer) return;
 
         if (this.discordConnectionStatus !== 'connected') {
-            const connectMsg = this.discordConnectionStatus === 'fallback' 
-                ? 'MODO BÁSICO ACTIVADO' 
+            const connectMsg = this.discordConnectionStatus === 'fallback'
+                ? 'MODO BÁSICO ACTIVADO'
                 : 'ESPERANDO A DISCORD...';
             const connectIcon = this.discordConnectionStatus === 'fallback' ? '⚠️' : '📡';
 
             mixerContainer.innerHTML = `
-                <div class="discord-empty-state" style="display:flex; flex-direction:column; align-items:center; gap:20px;">
-                    <div style="font-size: 6rem; filter: drop-shadow(0 0 10px rgba(255,255,255,0.2));">${connectIcon}</div>
-                    <div style="font-size: 1.8rem; font-weight: 900; letter-spacing:3px; opacity:0.8;">${connectMsg}</div>
+                <div class="discord-empty-state">
+                    <div class="discord-empty-icon">${connectIcon}</div>
+                    <div class="discord-empty-text">${connectMsg}</div>
                 </div>`;
             return;
         }
 
         if (!Array.isArray(this.discordUsers) || this.discordUsers.length === 0) {
             mixerContainer.innerHTML = `
-                <div class="discord-empty-state" style="display:flex; flex-direction:column; align-items:center; gap:20px;">
-                    <div style="font-size: 6rem; opacity:0.3;">🔇</div>
-                    <div style="font-size: 1.8rem; font-weight: 900; letter-spacing:3px; opacity:0.4;">CANAL VACÍO</div>
+                <div class="discord-empty-state">
+                    <div class="discord-empty-icon discord-empty-icon--dim">🔇</div>
+                    <div class="discord-empty-text discord-empty-text--dim">CANAL VACÍO</div>
                 </div>`;
             return;
         }
 
-        // --- MOTOR DE RENDIMIENTO DISCORD (Custom Faders) ---
+        // 0. Limpiar estado vacío si hay usuarios
+        const emptyState = mixerContainer.querySelector('.discord-empty-state');
+        if (emptyState) {
+            mixerContainer.innerHTML = '';
+        }
+
         const existingUsers = Array.from(mixerContainer.querySelectorAll('.user-fader-row'));
         const nextIds = new Set(this.discordUsers.map(u => u.id));
 
@@ -1124,23 +1198,24 @@ class StreamDeckClient {
         this.discordUsers.forEach(user => {
             const id = user.id;
             let row = mixerContainer.querySelector(`.user-fader-row[data-user-id="${id}"]`);
-            
+
             if (!row) {
                 row = document.createElement('div');
                 row.className = 'user-fader-row';
                 row.dataset.userId = id;
-                
-                const avatarHTML = user.avatar 
+
+                const avatarHTML = user.avatar
                     ? `<img src="${user.avatar}">`
                     : `<span>${user.username.charAt(0).toUpperCase()}</span>`;
 
                 const initialVol = Number(user.volume);
                 const fillHeight = (initialVol / 200) * 100;
+                const isSpeaking = user.speaking ? ' speaking' : '';
 
                 row.innerHTML = `
-                    <div class="user-avatar-circle">${avatarHTML}</div>
-                    <div class="slider-container" style="height: 50dvh !important;">
-                        <div class="slider-fill" style="height: ${fillHeight}%; background: linear-gradient(to top, #d35400, #f1c40f) !important;"></div>
+                    <div class="user-avatar-circle${isSpeaking}">${avatarHTML}</div>
+                    <div class="slider-container discord-slider-tall">
+                        <div class="slider-fill discord-fill-warm" style="transform: scaleY(${fillHeight / 100})"></div>
                         <div class="fader-thumb-mixer" style="bottom: ${fillHeight}%"></div>
                     </div>
                     <div class="discord-username-tag">${user.username}</div>
@@ -1156,13 +1231,13 @@ class StreamDeckClient {
                     const y = e.clientY - trackRect.top;
                     let percentRaw = 100 - (y / trackRect.height) * 100;
                     percentRaw = Math.max(0, Math.min(100, Math.round(percentRaw)));
-                    
-                    // 1. Visual
-                    fill.style.height = `${percentRaw}%`;
+
+                    // 1. Visual (SIN LATENCIA)
+                    fill.style.transform = `scaleY(${percentRaw / 100})`;
                     thumb.style.bottom = `${percentRaw}%`;
 
                     // 2. Logic (Discord is 0-200)
-                    const discordVol = Math.round(percentRaw * 2); 
+                    const discordVol = Math.round(percentRaw * 2);
                     if (discordVol === this[`last_d_${id}`]) return;
                     this[`last_d_${id}`] = discordVol;
 
@@ -1176,46 +1251,56 @@ class StreamDeckClient {
                     }, 350);
                 };
 
-                track.addEventListener('pointerdown', (e) => {
+                thumb.addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    row.classList.add('dragging'); // Inicia modo Zero Lag
                     trackRect = track.getBoundingClientRect();
-                    track.setPointerCapture(e.pointerId);
+                    thumb.setPointerCapture(e.pointerId);
                     this.markDiscordSliderActive(id);
                     updateDiscordVol(e);
-                    
+
                     const moveH = (m) => updateDiscordVol(m);
                     const stopH = (u) => {
-                        track.releasePointerCapture(u.pointerId);
-                        track.removeEventListener('pointermove', moveH);
-                        track.removeEventListener('pointerup', stopH);
+                        row.classList.remove('dragging'); // Fin modo Zero Lag
+                        if (thumb.hasPointerCapture && thumb.hasPointerCapture(u.pointerId)) {
+                            thumb.releasePointerCapture(u.pointerId);
+                        }
+                        thumb.removeEventListener('pointermove', moveH);
+                        thumb.removeEventListener('pointerup', stopH);
                         this.unmarkDiscordSliderActive(id);
                         trackRect = null;
                     };
-                    track.addEventListener('pointermove', moveH);
-                    track.addEventListener('pointerup', stopH);
+                    thumb.addEventListener('pointermove', moveH);
+                    thumb.addEventListener('pointerup', stopH);
                 });
 
                 mixerContainer.appendChild(row);
             } else {
                 // Actualización externa si no se está tocando
+                const avatarCircle = row.querySelector('.user-avatar-circle');
+                if (avatarCircle) {
+                    avatarCircle.classList.toggle('speaking', !!user.speaking);
+                }
+
                 if (!this.activeSliders.has('discord_' + id)) {
                     const fill = row.querySelector('.slider-fill');
                     const thumb = row.querySelector('.fader-thumb-mixer');
                     const h = (user.volume / 200) * 100;
-                    fill.style.height = `${h}%`;
+                    fill.style.transform = `scaleY(${h / 100})`;
                     thumb.style.bottom = `${h}%`;
                 }
             }
         });
     }
 
-    markDiscordSliderActive(userId) { 
-        this.activeSliders.add('discord_' + userId); 
+    markDiscordSliderActive(userId) {
+        this.activeSliders.add('discord_' + userId);
     }
-    
-    unmarkDiscordSliderActive(userId) { 
+
+    unmarkDiscordSliderActive(userId) {
         setTimeout(() => {
             this.activeSliders.delete('discord_' + userId);
-        }, 500); 
+        }, 500);
     }
 
     updateDiscordVolumeServer(userId, value) {
@@ -1239,10 +1324,7 @@ class StreamDeckClient {
 
 const btnFullscreen = document.createElement('div');
 btnFullscreen.innerHTML = '🔲';
-btnFullscreen.style.cssText = `
-    position: fixed; top: 10px; right: 10px; font-size: 24px;
-    opacity: 0.3; z-index: 9999; cursor: pointer;
-`;
+btnFullscreen.className = 'btn-fullscreen';
 document.body.appendChild(btnFullscreen);
 
 btnFullscreen.addEventListener('click', () => {
@@ -1251,7 +1333,7 @@ btnFullscreen.addEventListener('click', () => {
         if (elem.requestFullscreen) elem.requestFullscreen();
         else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
         else if (elem.msRequestFullscreen) elem.msRequestFullscreen();
-        btnFullscreen.style.opacity = '0'; 
+        btnFullscreen.classList.add('btn-fullscreen--hidden');
     }
 });
 
