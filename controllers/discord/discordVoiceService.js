@@ -94,7 +94,10 @@ class DiscordVoiceService {
         try {
             const rpc = this.connectionManager.rpc;
             const settings = await rpc.getVoiceSettings();
-            this.ioInstance.emit('discord_voice_settings', { mute: !!settings.mute, deaf: !!settings.deaf });
+            this.ioInstance.emit('discord_voice_settings', { 
+                mute: !!(settings.self_mute || settings.mute), 
+                deaf: !!(settings.self_deaf || settings.deaf) 
+            });
         } catch (error) {
             console.warn('[Discord Voice] No se pudo obtener estado de voz:', error.message);
         }
@@ -126,7 +129,10 @@ class DiscordVoiceService {
 
         client.on('VOICE_SETTINGS_UPDATE', (data) => {
             if (!this.ioInstance || this.connectionManager.rpc !== client) return;
-            this.ioInstance.emit('discord_voice_settings', { mute: !!data.mute, deaf: !!data.deaf });
+            this.ioInstance.emit('discord_voice_settings', { 
+                mute: !!(data.self_mute || data.mute), 
+                deaf: !!(data.self_deaf || data.deaf) 
+            });
         });
 
         client.on('VOICE_CHANNEL_SELECT', async (data) => {
@@ -188,7 +194,8 @@ class DiscordVoiceService {
 
             const rpc = this.connectionManager.rpc;
             const settings = await rpc.getVoiceSettings();
-            await rpc.setVoiceSettings({ mute: !settings.mute });
+            // Usamos settings.mute (que es el estado actual reportado por Discord) para invertir el estado
+            await rpc.setVoiceSettings({ self_mute: !settings.mute });
             await this.publishVoiceSettings();
             return { ok: true };
 
@@ -212,7 +219,7 @@ class DiscordVoiceService {
 
             const rpc = this.connectionManager.rpc;
             const settings = await rpc.getVoiceSettings();
-            await rpc.setVoiceSettings({ deaf: !settings.deaf });
+            await rpc.setVoiceSettings({ self_deaf: !settings.deaf });
             await this.publishVoiceSettings();
             return { ok: true };
             
@@ -257,7 +264,10 @@ class DiscordVoiceService {
 
             const rpc = this.connectionManager.rpc;
             const settings = await rpc.getVoiceSettings();
-            socket.emit('discord_voice_settings', { mute: !!settings.mute, deaf: !!settings.deaf });
+            socket.emit('discord_voice_settings', { 
+                mute: !!(settings.self_mute || settings.mute), 
+                deaf: !!(settings.self_deaf || settings.deaf) 
+            });
 
             if (!this.lastKnownChannelId) {
                 socket.emit('discord_voice_users', []);

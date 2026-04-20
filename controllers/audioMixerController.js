@@ -245,10 +245,10 @@ function handleSocketCommands(socket) {
         }
     });
 
-    socket.on('toggle_master_mute', (isMuted) => {
-        console.log('📨 Evento socket: toggle_master_mute ->', isMuted);
+    socket.on('toggle_master_mute', () => {
+        console.log('📨 Evento socket: toggle_master_mute (toggle)');
         try {
-            if (defaultDevice) defaultDevice.mute = isMuted;
+            if (defaultDevice) defaultDevice.mute = !defaultDevice.mute;
         } catch (error) {
             console.error('❌ Error aplicando toggle_master_mute:', error);
             socket.emit('server_error', { context: 'toggle_master_mute', message: error?.message || String(error) });

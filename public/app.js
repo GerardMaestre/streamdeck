@@ -1,5 +1,6 @@
 class StreamDeckClient {
     constructor() {
+        if (window.streamDeck) return window.streamDeck;
         this.socket = io();
         this.pages = {};
         this.currentPage = 'main';
@@ -15,6 +16,9 @@ class StreamDeckClient {
         this.pendingVolUpdates = {};
         this.volUpdateTimes = {};
         this.volUpdateTimers = {};
+
+        // Control de Listeners para evitar duplicados (Event Listener Leak)
+        this.listenersInitialized = false;
 
         // Estado del Discord
         this.discordMute = false;
@@ -407,16 +411,15 @@ class StreamDeckClient {
     }
 
     toggleMute(app, isMaster) {
-        const id = isMaster ? 'global' : app;
-        const slider = document.getElementById(`slider-${id}`);
-        if (!slider) return;
-
-        const iconBtn = document.getElementById(`icon-${id}`);
-        const isCurrentlyMuted = iconBtn.textContent === '🔇';
-        
         if (isMaster) {
-            this.socket.emit('toggle_master_mute', !isCurrentlyMuted);
+            const iconBtn = document.getElementById(`icon-global`);
+            if (iconBtn) iconBtn.parentElement.classList.add('pending');
+            this.socket.emit('toggle_master_mute');
         } else {
+            const id = app;
+            const iconBtn = document.getElementById(`icon-${id}`);
+            if (iconBtn) iconBtn.parentElement.classList.add('pending');
+            const isCurrentlyMuted = iconBtn && iconBtn.textContent === '🔇';
             this.socket.emit('toggle_session_mute', { app, isMuted: !isCurrentlyMuted });
         }
     }
@@ -428,7 +431,10 @@ class StreamDeckClient {
         clearTimeout(this.executionHideTimeout);
         this.executionModal.classList.remove('hidden');
         this.executionModal.classList.remove('closing');
-        this.executionLogs.innerHTML = '';
+        
+        // Limpieza de logs previa para asegurar idempotencia total
+        if (this.executionLogs) this.executionLogs.innerHTML = '';
+        
         this.executionSpinner.textContent = '⚙️';
         this.executionSpinner.classList.remove('success');
         this.executionSpinner.style.animation = 'rotate 1.5s linear infinite';
@@ -457,6 +463,9 @@ class StreamDeckClient {
     // SOCKET LISTENERS
     // ==========================================
     setupSocketListeners() {
+        if (this.listenersInitialized) return;
+        this.listenersInitialized = true;
+
         this.socket.on('discord_connection_state', (state) => {
             this.discordConnectionStatus = state?.status || 'disconnected';
             this.discordConnectionMessage = state?.message || 'Sin conexión con Discord';
@@ -497,6 +506,9 @@ class StreamDeckClient {
                 const existingRow = document.getElementById(`mixer-row-${sessionData.name}`);
                 if (existingRow) {
                     existingRow.classList.remove('fade-out');
+                    // Actualizar valores si ya existe pero estaba oculto o es un re-añadido
+                    this.updateSliderUI(sessionData.name, { type: 'volume', value: sessionData.volume });
+                    this.updateSliderUI(sessionData.name, { type: 'mute', value: sessionData.mute });
                 } else {
                     appsContainer.appendChild(this.createMixerRow(sessionData));
                 }
@@ -514,12 +526,20 @@ class StreamDeckClient {
         });
 
         this.socket.on('script_log', (payload) => {
+            if (!this.executionLogs) return;
+            
             const text = payload.data || '';
             const lines = text.split('\n');
             lines.forEach(line => {
-                if (line.trim().length === 0) return;
+                const cleanLine = line.trim();
+                if (cleanLine.length === 0) return;
+                
+                // Evitar duplicar la misma línea de log si llega repetida (idempotencia básica)
+                const lastLog = this.executionLogs.lastElementChild;
+                if (lastLog && lastLog.textContent === `> ${cleanLine}`) return;
+
                 const div = document.createElement('div');
-                div.textContent = `> ${line.trim()}`;
+                div.textContent = `> ${cleanLine}`;
                 this.executionLogs.appendChild(div);
             });
             this.executionLogs.scrollTo({ top: this.executionLogs.scrollHeight, behavior: 'smooth' });
@@ -570,9 +590,18 @@ class StreamDeckClient {
         } else if (iconBtn && data.type === 'mute') {
             const row = document.getElementById(`mixer-row-${id}`);
             if(!row) return;
-            const iconStr = row.dataset.originalIcon;
+            // La Escucha "Inteligente": Actualización visual tras confirmación del servidor
             iconBtn.textContent = data.value ? '🔇' : iconStr;
-            iconBtn.style.opacity = data.value ? '0.5' : '1';
+            
+            // Aplicar feedback visual de "Activado"
+            const iconContainer = iconBtn.parentElement; // .mixer-icon-btn
+            iconContainer.classList.remove('pending'); // Limpiar estado pendiente
+            if (data.value) {
+                iconContainer.classList.add('muted-active');
+            } else {
+                iconContainer.classList.remove('muted-active');
+            }
+            iconBtn.style.opacity = '1';
         }
     }
 
