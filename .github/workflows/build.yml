@@ -24,13 +24,16 @@ jobs:
     - name: Configurar Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '22' # Versión requerida por @electron/rebuild y otras dependencias
+        node-version: '22'
         cache: 'npm'
 
     - name: Instalar dependencias
+      # Usamos install directamente. Al haber quitado el 'postinstall' del package.json, 
+      # este paso será mucho más rápido y no debería quedarse bloqueado.
       run: npm install
 
     - name: Compilar ejecutable con Electron Builder
+      # Electron-builder se encargará de reconstruir los módulos nativos aquí.
       run: npm run build
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
