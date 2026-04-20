@@ -40,9 +40,8 @@ class StreamDeckClient {
         this.executionTitle = document.getElementById('execution-title');
         this.executionHideTimeout = null;
         this.wakeLock = null;
-        this.volumeEmitIntervalMs = 16;
+        this.volumeEmitIntervalMs = 350; // Mismo que Domótica para consistency
         this.mixerRefs = {}; // Caché de referencias DOM para el mixer
-        this.lastUpdateTime = {}; // Throttle de recepción
 
         this.init();
     }
@@ -518,12 +517,11 @@ class StreamDeckClient {
     }
 
     openMixer() {
-        this.overlayContainer.innerHTML = '';
-        this.overlayContainer.className = 'modal-content-wrapper'; 
+        this.container.innerHTML = '';
+        this.container.className = 'mixer-fullscreen-view';
 
         const mixerPanel = document.createElement('div');
-        mixerPanel.className = 'mixer-panel';
-        mixerPanel.classList.add('mixer-panel-with-back');
+        mixerPanel.className = 'mixer-panel mixer-panel-fullscreen';
         mixerPanel.id = 'mixer-interface';
         
         mixerPanel.innerHTML = `
@@ -532,10 +530,28 @@ class StreamDeckClient {
             <div id="app-mixers" class="app-mixers-container"></div>
         `;
 
-        mixerPanel.appendChild(this.createPanelBackButton('panel-back-btn-right'));
+        const backBtn = document.createElement('button');
+        backBtn.className = 'panel-back-btn-sketch-circle';
+        backBtn.innerHTML = '←'; 
+        backBtn.addEventListener('pointerup', (e) => {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            
+            // ESCUDO ANTI-PENETRACIÓN TOTAL
+            const shield = document.createElement('div');
+            shield.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9999; cursor:default;';
+            document.body.appendChild(shield);
+            setTimeout(() => shield.remove(), 500);
 
-        this.overlayContainer.appendChild(mixerPanel);
-        this.overlay.classList.remove('hidden');
+            // Volver al menú principal
+            setTimeout(() => {
+                this.currentPage = 'main';
+                this.renderGrid();
+            }, 100);
+        });
+
+        mixerPanel.appendChild(backBtn);
+        this.container.appendChild(mixerPanel);
         
         if (this.lastMixerState) {
             this.renderInitialMixer();
@@ -557,7 +573,7 @@ class StreamDeckClient {
 
         row.innerHTML = `
             <div class="mixer-icon-btn${mutedClass}" onpointerup="window.streamDeck.toggleMute('${id}', ${isMaster})">
-                <div id="icon-wrapper-${id}" style="opacity:${opacity}; display:flex; justify-content:center; align-items:center; width:100%; height:100%; transition: opacity 0.3s ease;">
+                <div id="icon-wrapper-${id}" style="opacity:${opacity}; display:flex; justify-content:center; align-items:center; width:100%; height:100%;">
                     ${iconHTML}
                 </div>
             </div>
@@ -577,22 +593,29 @@ class StreamDeckClient {
         this.mixerRefs[id] = { track, fill, thumb, wrapper };
 
         let trackRect = null;
+        let isUpdating = false;
+
         const updateMix = (e) => {
             if (!trackRect) trackRect = track.getBoundingClientRect();
             
             const y = e.clientY - trackRect.top;
             let percent = 100 - (y / trackRect.height) * 100;
-            percent = Math.max(0, Math.min(100, Math.round(percent)));
+            percent = Math.max(0, Math.min(100, Math.round(percent))); // EXACTO COMO DOMÓTICA
             
-            // 1. Bloqueo de duplicados
-            if (percent === this[`last_${id}`]) return;
-            this[`last_${id}`] = percent;
-
-            // 2. Visual INSTANTÁNEO (Sin funciones externas)
-            fill.style.height = `${percent}%`;
-            thumb.style.bottom = `${percent}%`;
+            if (percent === this[`last_mixer_${id}`]) return;
+            this[`last_mixer_${id}`] = percent;
             
-            // 3. Emisión RED Throttleada (CALCO DE DOMÓTICA - 350ms)
+            if (!isUpdating) {
+                isUpdating = true;
+                requestAnimationFrame(() => {
+                    // Visual INSTANTÁNEO y sincronizado con el refresco de pantalla
+                    fill.style.height = `${percent}%`;
+                    thumb.style.bottom = `${percent}%`;
+                    isUpdating = false;
+                });
+            }
+            
+            // Emisión throttleada a 350ms
             const queueKey = isMaster ? 'mix_master' : `mix_${id}`;
             this.pendingVolUpdates[queueKey] = percent;
 
@@ -603,26 +626,33 @@ class StreamDeckClient {
                 } else {
                     this.socket.emit('set_session_volume', { app: id, value: valToEmit });
                 }
-            }, 350); // Mismo throttle que Domótica para no ahogar la tablet
+            }, 350);
         };
 
         track.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
             trackRect = track.getBoundingClientRect();
             track.setPointerCapture(e.pointerId);
-            this.markSliderActive(id);
+            this.activeSliders.add(id); // BLOQUEA updates del servidor
             updateMix(e);
-            
-            const moveHandler = (m) => updateMix(m);
-            const stopHandler = (u) => {
-                track.releasePointerCapture(u.pointerId);
-                track.removeEventListener('pointermove', moveHandler);
-                track.removeEventListener('pointerup', stopHandler);
-                this.unmarkSliderActive(id);
-                trackRect = null;
-            };
-            track.addEventListener('pointermove', moveHandler);
-            track.addEventListener('pointerup', stopHandler);
+            track.addEventListener('pointermove', updateMix);
         });
+
+        const releaseSlider = (e) => {
+            if (track.hasPointerCapture && track.hasPointerCapture(e.pointerId)) {
+                track.releasePointerCapture(e.pointerId);
+            }
+            track.removeEventListener('pointermove', updateMix);
+            
+            // Grace period: permite que el último update se procese
+            setTimeout(() => {
+                this.activeSliders.delete(id); // DESBLOQUEA updates después
+            }, 150);
+            trackRect = null;
+        };
+
+        track.addEventListener('pointerup', releaseSlider);
+        track.addEventListener('pointercancel', releaseSlider);
 
         return row;
     }
@@ -644,16 +674,6 @@ class StreamDeckClient {
                 renderizadas.add(session.name);
             }
         });
-    }
-
-    markSliderActive(id) { 
-        this.activeSliders.add(id); 
-    }
-    
-    unmarkSliderActive(id) { 
-        setTimeout(() => {
-            this.activeSliders.delete(id);
-        }, 500); 
     }
 
     scheduleThrottledEmit(key, emitFn, intervalMs = this.volumeEmitIntervalMs) {
@@ -896,19 +916,15 @@ class StreamDeckClient {
     }
 
     updateSliderUI(id, data) {        
-        // THROTTLE RECEPTOR (60fps máximo para no saturar la tablet)
-        const now = Date.now();
-        if (now - (this.lastUpdateTime[id] || 0) < 16) return;
-        this.lastUpdateTime[id] = now;
-
         const refs = this.mixerRefs[id];
         if (!refs) return; 
 
         if (data.type === 'volume') {
-            if (!this.activeSliders.has(id)) {
+            if (!this.activeSliders.has(id)) { // BLOQUEA si está arrastrando
                 const percent = data.value;
                 refs.fill.style.height = `${percent}%`;
                 refs.thumb.style.bottom = `${percent}%`;
+                this[`last_mixer_${id}`] = percent; // SINCRONIZA estado local
             }
         } else if (data.type === 'mute') {
             if (this.activeMutes.has(id)) return;

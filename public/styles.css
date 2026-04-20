@@ -245,8 +245,9 @@ body {
 .app-mixers-container {
     display: flex;
     gap: 30px;
-    align-items: flex-start;
+    align-items: flex-end;
     overflow-x: auto;
+    overflow-y: hidden;
     padding-bottom: 10px;
     scrollbar-width: none;
     margin: 0;
@@ -262,15 +263,70 @@ body {
     min-height: 100%;
 }
 
+.mixer-fullscreen-view {
+    display: flex;
+    justify-content: stretch;
+    align-items: stretch;
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    padding: 0;
+    margin: 0;
+    overflow: hidden;
+    background: #000;
+}
+
+/* Remover pesadez del panel si está a pantalla completa */
+.mixer-panel-fullscreen {
+    background: #000 !important; /* Pantalla negra sólida para rendimiento */
+    backdrop-filter: none !important; /* <--- Crítico, adiós lag de desenfoque */
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: 100% !important;
+    max-height: none !important;
+    padding: clamp(20px, 3.4vw, 34px) clamp(12px, 2.2vw, 24px) clamp(8px, 1.4vw, 14px) clamp(12px, 2.2vw, 24px) !important;
+    box-sizing: border-box !important; /* <--- CRITICO para que no haya barras de scroll */
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: flex-end !important;
+}
+
+.panel-back-btn-sketch-circle {
+    position: fixed;
+    top: -10px !important;
+    right: -10px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    transform: none !important;
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    font-size: 28px;
+    border: 2px solid rgba(255,255,255,0.2);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2147483647;
+    cursor: pointer;
+}
+
 .mixer-row {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 35px; /* Aumentamos el gap para que el thumb no solape */
+    gap: 35px;
     width: 140px;
     position: relative;
     user-select: none;
-    padding: 10px 0;
+    padding: 0;
+    will-change: auto;
 }
 
 .mixer-row.fade-out {
@@ -294,7 +350,7 @@ body {
 
 .mixer-icon-btn.muted-active {
     background: linear-gradient(135deg, rgba(231, 76, 60, 0.95), rgba(192, 57, 43, 0.95));
-    box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4), inset 0 0 10px rgba(255,255,255,0.1);
+    box-shadow: 0 0 15px rgba(231, 76, 60, 0.4);
 }
 
 .mixer-icon-btn.pending {
@@ -318,7 +374,11 @@ body {
     opacity: 0.9;
     user-select: none;
     margin-top: 10px;
-    min-height: 20px;
+    min-height: 2.4em;
+    height: 2.4em;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
     width: 100%;
     text-align: center;
     word-wrap: break-word;
@@ -333,10 +393,13 @@ body {
     position: relative !important;
     cursor: pointer !important;
     border: 1px solid #333 !important;
-    touch-action: none;
+    touch-action: none !important;
     user-select: none;
     overflow: visible !important;
-    margin: 25px 0; /* Margen de seguridad para el thumb */
+    margin: 25px 0;
+    will-change: auto;
+    transform: translate3d(0, 0, 0);
+    -webkit-transform: translate3d(0, 0, 0);
 }
 
 .slider-fill {
@@ -348,21 +411,27 @@ body {
     border-radius: 30px !important;
     transition: none !important;
     will-change: height;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    transform: translate3d(0, 0, 0);
+    -webkit-transform: translate3d(0, 0, 0);
 }
 
 .fader-thumb-mixer {
     position: absolute !important;
     left: 50% !important;
-    transform: translate(-50%, 50%) !important;
+    transform: translate(-50%, 50%) translate3d(0, 0, 0) !important;
     width: 76px !important;
     height: 76px !important;
     background: #fff !important;
     border: 4px solid #3498db !important;
     border-radius: 50% !important;
-    box-shadow: none !important;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3) !important;
     transition: none !important;
     will-change: bottom;
     z-index: 10;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
 }
 
 .mixer-slider::-webkit-slider-thumb {
@@ -1266,4 +1335,4 @@ body {
 .discord-back-btn-circle:active {
     background: rgba(255,255,255,0.2);
     transform: translateY(-50%) scale(0.9);
-}
+}
