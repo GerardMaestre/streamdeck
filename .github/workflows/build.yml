@@ -21,7 +21,7 @@ jobs:
     - name: Configurar Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '18' # Usa la versión de Node.js con la que desarrollaste (18 o 20 recomendadas)
+        node-version: '22' # Versión requerida por @electron/rebuild y otras dependencias
         cache: 'npm'
 
     - name: Instalar dependencias
