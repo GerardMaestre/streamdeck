@@ -8,7 +8,9 @@ const redirectUri = process.env.DISCORD_REDIRECT_URI || 'http://localhost';
 const LOGIN_SCOPES = ['rpc', 'rpc.voice.read', 'rpc.voice.write'];
 const DEFAULT_RECONNECT_MS = 10000;
 const FALLBACK_RETRY_MS = 60000;
-const LOGIN_ATTEMPT_TIMEOUT_MS = 20000;
+// BUG FIX #4: LOGIN_ATTEMPT_TIMEOUT_MS estaba declarada pero nunca usada.
+// Los timeouts reales están en buildLoginAttempts() (20000ms y 45000ms).
+// Eliminada para evitar confusión.
 const RPC_DYNAMIC_EVENTS = ['VOICE_SETTINGS_UPDATE', 'VOICE_CHANNEL_SELECT', 'VOICE_STATE_UPDATE'];
 
 class DiscordConnectionManager {
@@ -20,13 +22,13 @@ class DiscordConnectionManager {
         this.lastDiscordLaunchAttemptAt = 0;
         this.fallbackMode = false;
         this.voiceControlAvailable = false;
-        
+
         this.connectionState = {
             status: 'disconnected',
             message: 'Discord no conectado'
         };
 
-        // Callbacks to be hooked by Voice Service
+        // Callbacks registrados por DiscordVoiceService
         this.onConnected = () => {};
         this.onDisconnected = () => {};
         this.onFallback = () => {};
@@ -53,7 +55,7 @@ class DiscordConnectionManager {
 
     isAuthLoginError(message = '') {
         const lower = String(message).toLowerCase();
-        return lower.includes('401') || lower.includes('unauthorized') || 
+        return lower.includes('401') || lower.includes('unauthorized') ||
                lower.includes('invalid') || lower.includes('not authenticated');
     }
 
@@ -78,11 +80,11 @@ class DiscordConnectionManager {
     destroyRpcClient(client) {
         if (!client) return;
 
-        // Parche de seguridad para discord-rpc: Evita crasheo Hard de Node
-        // cuando el socket IPC ha muerto pero el client intenta enviar el opcode de cierre.
+        // Parche de seguridad para discord-rpc: evita crash de Node cuando el socket IPC
+        // ha muerto pero el client intenta enviar el opcode de cierre.
         if (client.transport && !client.transport.socket) {
-            client.transport.send = () => {}; 
-            client.transport.close = () => {}; // <-- monkeypatch close
+            client.transport.send = () => {};
+            client.transport.close = () => {};
         }
 
         this.removeRpcListenersByEvent(client, ['disconnected', ...RPC_DYNAMIC_EVENTS]);
@@ -108,7 +110,7 @@ class DiscordConnectionManager {
         if (process.platform !== 'win32') return;
         const now = Date.now();
         if (now - this.lastDiscordLaunchAttemptAt < 60000) return;
-        
+
         this.lastDiscordLaunchAttemptAt = now;
         exec('start "" "discord://"', (error) => {
             if (error) {
@@ -120,7 +122,8 @@ class DiscordConnectionManager {
     buildLoginAttempts() {
         const attempts = [];
         const redirectCandidates = [redirectUri, 'http://localhost', 'http://127.0.0.1']
-            .filter(Boolean).filter((value, index, list) => list.indexOf(value) === index);
+            .filter(Boolean)
+            .filter((value, index, list) => list.indexOf(value) === index);
 
         for (const candidate of redirectCandidates) {
             attempts.push({
@@ -210,7 +213,7 @@ class DiscordConnectionManager {
             currentClient.on('disconnected', () => {
                 if (this.rpc !== currentClient) return;
                 this.updateConnectionState('disconnected', 'Discord desconectado. Reintentando...');
-                
+
                 try {
                     this.onDisconnected();
                 } catch (e) {
@@ -264,8 +267,11 @@ class DiscordConnectionManager {
         if (authError || lowerMessage.includes('rpc_connection_timeout') || lowerMessage.includes('discord_login_timeout')) {
             this.fallbackMode = true;
             this.voiceControlAvailable = false;
-            this.updateConnectionState('fallback', authError ? 'Modo básico activo: auto-reconexión...' : 'Discord no responde: reconectando...');
-            
+            this.updateConnectionState(
+                'fallback',
+                authError ? 'Modo básico activo: auto-reconexión...' : 'Discord no responde: reconectando...'
+            );
+
             try {
                 this.onFallback();
             } catch (e) {
@@ -273,8 +279,11 @@ class DiscordConnectionManager {
             }
 
             if (!authError) this.maybeLaunchDiscordDesktop();
-            
-            this.scheduleReconnect(authError ? FALLBACK_RETRY_MS : 15000, { allowInFallback: true, forceFreshAuth: authError });
+
+            this.scheduleReconnect(
+                authError ? FALLBACK_RETRY_MS : 15000,
+                { allowInFallback: true, forceFreshAuth: authError }
+            );
             return;
         }
 

@@ -234,9 +234,6 @@ class StreamDeckClient {
         } catch (err) {}
     }
 
-    // ==========================================
-    // SISTEMA DE LOGOS BLINDADO (Anti Imagen Rota)
-    // ==========================================
     getIconForApp(appName, isMaster) {
         const shadow = 'filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));';
         
@@ -244,7 +241,6 @@ class StreamDeckClient {
 
         const name = appName.toLowerCase();
         
-        // Cifrado Base64 del SVG: Garantiza al 100% que no habrá fallos de comillas en el HTML
         const fallbackSVG = `<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="18" rx="4" ry="4" fill="rgba(255,255,255,0.03)"></rect><path d="M2 8h20"></path><circle cx="6" cy="5.5" r="1" fill="rgba(255,255,255,0.6)" stroke="none"></circle><circle cx="10" cy="5.5" r="1" fill="rgba(255,255,255,0.6)" stroke="none"></circle></svg>`;
         const fallbackSrc = `data:image/svg+xml;base64,${btoa(fallbackSVG)}`;
         const fallbackHTML = `<img src="${fallbackSrc}" style="width: 34px; height: 34px; ${shadow}" />`;
@@ -278,7 +274,6 @@ class StreamDeckClient {
             'slack': 'slack/4A154B'
         };
 
-        // Reglas directas con emojis nativos por si fallan las de Internet
         if (name.includes('qemu') || name.includes('game') || name.includes('juego') || name.includes('emulator')) return `<span style="font-size:2.2rem; ${shadow}">🎮</span>`;
         if (name.includes('wallpaper')) return `<span style="font-size:2.2rem; ${shadow}">🖼️</span>`;
         if (name.includes('sunshine') || name.includes('stream')) return `<span style="font-size:2.2rem; ${shadow}">☀️</span>`;
@@ -289,7 +284,6 @@ class StreamDeckClient {
 
         for (const key in iconMap) {
             if (name.includes(key)) {
-                // El inyector blindado con Base64. Jamás verás un icono de imagen rota.
                 return `<img src="https://cdn.simpleicons.org/${iconMap[key]}" style="width: 32px; height: 32px; ${shadow}" onerror="this.onerror=null; this.src='${fallbackSrc}';" />`;
             }
         }
@@ -297,9 +291,6 @@ class StreamDeckClient {
         return fallbackHTML;
     }
 
-    // ==========================================
-    // MEZCLADOR DE AUDIO
-    // ==========================================
     openMixer() {
         this.overlayContainer.innerHTML = '';
         this.overlayContainer.className = 'modal-content-wrapper'; 
@@ -378,8 +369,16 @@ class StreamDeckClient {
         });
     }
 
-    markSliderActive(id) { this.activeSliders.add(id); }
-    unmarkSliderActive(id) { this.activeSliders.delete(id); }
+    // FIX: El buffer es fundamental para evitar el "jitter" o efecto rebote de los sliders por retraso de API
+    markSliderActive(id) { 
+        this.activeSliders.add(id); 
+    }
+    
+    unmarkSliderActive(id) { 
+        setTimeout(() => {
+            this.activeSliders.delete(id);
+        }, 500); 
+    }
 
     scheduleThrottledEmit(key, emitFn, intervalMs = this.volumeEmitIntervalMs) {
         const now = Date.now();
@@ -445,9 +444,6 @@ class StreamDeckClient {
         }
     }
 
-    // ==========================================
-    // MODAL EJECUCIÓN
-    // ==========================================
     showExecutionModal() {
         clearTimeout(this.executionHideTimeout);
         this.executionModal.classList.remove('hidden');
@@ -477,9 +473,6 @@ class StreamDeckClient {
         }, 560);
     }
 
-    // ==========================================
-    // SOCKET LISTENERS
-    // ==========================================
     setupSocketListeners() {
         if (this.listenersInitialized) return;
         this.listenersInitialized = true;
@@ -617,9 +610,6 @@ class StreamDeckClient {
         }
     }
 
-    // ==========================================
-    // DISCORD RPC PANEL
-    // ==========================================
     openDiscordPanel() {
         this.overlayContainer.innerHTML = '';
         this.overlayContainer.className = 'modal-content-wrapper';
@@ -767,10 +757,16 @@ class StreamDeckClient {
         });
     }
 
-    markDiscordSliderActive(userId) { this.activeSliders.add('discord_' + userId); }
+    // FIX: Al igual que en el panel master, garantizamos un bloqueo temporal al arrastrar
+    // para que la API de Discord no lo empuje mientras reajustas.
+    markDiscordSliderActive(userId) { 
+        this.activeSliders.add('discord_' + userId); 
+    }
+    
     unmarkDiscordSliderActive(userId) { 
-        this.activeSliders.delete('discord_' + userId);
-        setTimeout(() => this.activeSliders.delete('discord_' + userId), 120); 
+        setTimeout(() => {
+            this.activeSliders.delete('discord_' + userId);
+        }, 500); 
     }
 
     updateDiscordVolumeServer(userId, value) {

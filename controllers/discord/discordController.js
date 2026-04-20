@@ -3,8 +3,8 @@
  * Refactorizado bajo la regla Single Responsibility y Zero-Crash
  */
 
-const discordConnectionManager = require('./discord/discordConnectionManager');
-const discordVoiceService = require('./discord/discordVoiceService');
+const discordConnectionManager = require('./discordConnectionManager');
+const discordVoiceService = require('./discordVoiceService');
 
 const initDiscordRPC = (io) => {
     try {

@@ -2,15 +2,15 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const fs = require('fs');
-const { emitErrorToFrontend, getErrorMessage } = require('./controllers/utils');
+const { emitErrorToFrontend, getErrorMessage } = require('./controllers/utils/utils');
 
 // Importar controladores (Lógica modularizada)
-const { initAudioMixer, sendInitialState, handleSocketCommands } = require('./controllers/audioMixerController');
-const { abrirAplicacionOWeb } = require('./controllers/appController');
-const { ejecutarMacro, controlMultimedia } = require('./controllers/macroController');
-const { hacerCaptura } = require('./controllers/captureController');
-const { ejecutarScript, ejecutarScriptDinamico, listarScripts } = require('./controllers/scriptController');
-const { initDiscordRPC, requestInitialDiscordState, discordToggleMute, discordToggleDeaf, discordSetUserVolume } = require('./controllers/discordController');
+const { initAudioMixer, sendInitialState, handleSocketCommands } = require('./controllers/audio/audioMixerController');
+const { abrirAplicacionOWeb } = require('./controllers/app/appController');
+const { ejecutarMacro, controlMultimedia } = require('./controllers/macros/macroController');
+const { hacerCaptura } = require('./controllers/capture/captureController');
+const { ejecutarScript, ejecutarScriptDinamico, listarScripts } = require('./controllers/scripts/scriptController');
+const { initDiscordRPC, requestInitialDiscordState, discordToggleMute, discordToggleDeaf, discordSetUserVolume } = require('./controllers/discord/discordController');
 
 const app = express();
 const server = http.createServer(app);

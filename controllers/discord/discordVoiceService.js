@@ -1,11 +1,16 @@
-const { ejecutarMacro } = require('../macroController');
+const { ejecutarMacro } = require('../macros/macroController');
+
+// Helper: normaliza el estado de mute/deaf leyendo ambos campos que puede devolver
+// la API de Discord (self_mute/mute y self_deaf/deaf), igual que hacen los event handlers.
+function parseMute(settings)  { return !!(settings.self_mute || settings.mute); }
+function parseDeaf(settings)  { return !!(settings.self_deaf || settings.deaf); }
 
 class DiscordVoiceService {
     constructor() {
         this.connectionManager = null;
         this.ioInstance = null;
         this.lastKnownChannelId = null;
-        
+
         this.fallbackVoiceState = {
             mute: false,
             deaf: false
@@ -16,7 +21,6 @@ class DiscordVoiceService {
         this.connectionManager = connectionManager;
         this.ioInstance = io;
 
-        // Hooks toward connectionManager
         this.connectionManager.onConnected = async (client) => {
             try {
                 await this.setupRpcSubscriptions(client);
@@ -34,7 +38,6 @@ class DiscordVoiceService {
             this.publishFallbackSettings();
         };
 
-        // Fire connecting sequence start
         this.connectionManager.setIoInstance(io);
         this.connectionManager.connect();
     }
@@ -53,7 +56,9 @@ class DiscordVoiceService {
                 return {
                     id: userId,
                     username,
-                    avatar: userId && avatarHash ? `https://cdn.discordapp.com/avatars/${userId}/${avatarHash}.png` : null,
+                    avatar: userId && avatarHash
+                        ? `https://cdn.discordapp.com/avatars/${userId}/${avatarHash}.png`
+                        : null,
                     volume
                 };
             }).filter((user) => user.id);
@@ -94,9 +99,9 @@ class DiscordVoiceService {
         try {
             const rpc = this.connectionManager.rpc;
             const settings = await rpc.getVoiceSettings();
-            this.ioInstance.emit('discord_voice_settings', { 
-                mute: !!(settings.self_mute || settings.mute), 
-                deaf: !!(settings.self_deaf || settings.deaf) 
+            this.ioInstance.emit('discord_voice_settings', {
+                mute: parseMute(settings),
+                deaf: parseDeaf(settings)
             });
         } catch (error) {
             console.warn('[Discord Voice] No se pudo obtener estado de voz:', error.message);
@@ -119,8 +124,8 @@ class DiscordVoiceService {
 
     async setupRpcSubscriptions(client) {
         this.connectionManager.removeRpcListenersByEvent(client, [
-            'VOICE_SETTINGS_UPDATE', 
-            'VOICE_CHANNEL_SELECT', 
+            'VOICE_SETTINGS_UPDATE',
+            'VOICE_CHANNEL_SELECT',
             'VOICE_STATE_UPDATE'
         ]);
 
@@ -129,23 +134,36 @@ class DiscordVoiceService {
 
         client.on('VOICE_SETTINGS_UPDATE', (data) => {
             if (!this.ioInstance || this.connectionManager.rpc !== client) return;
-            this.ioInstance.emit('discord_voice_settings', { 
-                mute: !!(data.self_mute || data.mute), 
-                deaf: !!(data.self_deaf || data.deaf) 
+            this.ioInstance.emit('discord_voice_settings', {
+                mute: parseMute(data),
+                deaf: parseDeaf(data)
             });
         });
 
         client.on('VOICE_CHANNEL_SELECT', async (data) => {
             if (this.connectionManager.rpc !== client) return;
-            this.lastKnownChannelId = data?.channel_id || null;
+
+            const previousChannelId = this.lastKnownChannelId;
+            const nextChannelId = data?.channel_id || null;
+
+            if (previousChannelId && previousChannelId !== nextChannelId) {
+                try {
+                    await client.unsubscribe('VOICE_STATE_UPDATE', { channel_id: previousChannelId });
+                } catch (error) {
+                    console.warn('[Discord Voice] No se pudo desuscribir del canal anterior:', error.message);
+                }
+            }
+
+            this.lastKnownChannelId = nextChannelId;
 
             if (this.lastKnownChannelId) {
                 try {
                     await client.subscribe('VOICE_STATE_UPDATE', { channel_id: this.lastKnownChannelId });
                 } catch (error) {
-                    console.warn('[Discord Voice] Suscripcion parcial fallada (VOICE_STATE_UPDATE):', error.message);
+                    console.warn('[Discord Voice] Suscripcion VOICE_STATE_UPDATE fallada:', error.message);
                 }
             }
+
             await this.publishVoiceUsers();
         });
 
@@ -154,15 +172,16 @@ class DiscordVoiceService {
             await this.publishVoiceUsers();
         });
 
+        // Obtener el canal de voz actual al conectar
         try {
             const selectedVoiceChannel = await client.request('GET_SELECTED_VOICE_CHANNEL');
             this.lastKnownChannelId = selectedVoiceChannel?.id || selectedVoiceChannel?.channel_id || null;
-            
+
             if (this.lastKnownChannelId) {
                 try {
                     await client.subscribe('VOICE_STATE_UPDATE', { channel_id: this.lastKnownChannelId });
                 } catch (error) {
-                    console.warn('[Discord Voice] Suscripción inicial fallada (VOICE_STATE_UPDATE):', error.message);
+                    console.warn('[Discord Voice] Suscripción inicial VOICE_STATE_UPDATE fallada:', error.message);
                 }
             }
         } catch (error) {
@@ -194,8 +213,9 @@ class DiscordVoiceService {
 
             const rpc = this.connectionManager.rpc;
             const settings = await rpc.getVoiceSettings();
-            // Usamos settings.mute (que es el estado actual reportado por Discord) para invertir el estado
-            await rpc.setVoiceSettings({ self_mute: !settings.mute });
+
+            // FIX: SET_VOICE_SETTINGS solo acepta 'mute' y 'deaf' (no self_mute)
+            await rpc.setVoiceSettings({ mute: !parseMute(settings) });
             await this.publishVoiceSettings();
             return { ok: true };
 
@@ -219,10 +239,12 @@ class DiscordVoiceService {
 
             const rpc = this.connectionManager.rpc;
             const settings = await rpc.getVoiceSettings();
-            await rpc.setVoiceSettings({ self_deaf: !settings.deaf });
+
+            // FIX: SET_VOICE_SETTINGS solo acepta 'deaf' 
+            await rpc.setVoiceSettings({ deaf: !parseDeaf(settings) });
             await this.publishVoiceSettings();
             return { ok: true };
-            
+
         } catch (error) {
             console.error('[Discord Voice] Fallo Deaf:', error.message);
             return { ok: false, message: error.message };
@@ -248,7 +270,7 @@ class DiscordVoiceService {
 
     async requestInitialState(socket) {
         if (!socket) return;
-        
+
         try {
             socket.emit('discord_connection_state', this.connectionManager.connectionState);
 
@@ -264,9 +286,9 @@ class DiscordVoiceService {
 
             const rpc = this.connectionManager.rpc;
             const settings = await rpc.getVoiceSettings();
-            socket.emit('discord_voice_settings', { 
-                mute: !!(settings.self_mute || settings.mute), 
-                deaf: !!(settings.self_deaf || settings.deaf) 
+            socket.emit('discord_voice_settings', {
+                mute: parseMute(settings),
+                deaf: parseDeaf(settings)
             });
 
             if (!this.lastKnownChannelId) {
@@ -277,7 +299,7 @@ class DiscordVoiceService {
             const channelInfo = await rpc.getChannel(this.lastKnownChannelId);
             const users = this.mapUsersFromChannel(channelInfo).filter((u) => u.id !== rpc.user.id);
             socket.emit('discord_voice_users', users);
-            
+
         } catch (error) {
             console.warn('[Discord Voice] Recuperación estado inicial fallida:', error.message);
             socket.emit('discord_voice_users', []);

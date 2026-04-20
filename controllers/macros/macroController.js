@@ -1,5 +1,5 @@
 const os = require('os');
-const { getErrorMessage, runExecCommand } = require('./utils');
+const { getErrorMessage, runExecCommand } = require('../utils/utils');
 
 const isWindows = () => os.platform() === 'win32';
 

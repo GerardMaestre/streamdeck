@@ -2,7 +2,7 @@ const screenshot = require('screenshot-desktop');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
-const { getErrorMessage, runExecCommand } = require('./utils');
+const { getErrorMessage, runExecCommand } = require('../utils/utils');
 
 // Obtener la carpeta de Imágenes/Capturas de pantalla del usuario de Windows
 const carpetaCapturas = path.join(os.homedir(), 'Pictures', 'Screenshots');
