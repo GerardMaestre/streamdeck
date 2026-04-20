@@ -14,6 +14,9 @@ jobs:
     # de audio de Windows (native-sound-mixer). ¡Debe compilarse en Windows!
     runs-on: windows-latest
 
+    permissions:
+      contents: write
+
     steps:
     - name: Descargar el código fuente
       uses: actions/checkout@v4
@@ -32,9 +35,25 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Subir el .exe para descargar
+    - name: Subir el .exe para descargar (Artifact)
       uses: actions/upload-artifact@v4
       with:
         name: StreamDeckPro-Windows-EXE
         path: dist/*.exe
-        retention-days: 7 # El archivo estará disponible para descargar durante 7 días
+        retention-days: 7
+
+    - name: Crear Release de GitHub
+      uses: softprops/action-gh-release@v2
+      if: github.ref == 'refs/heads/main'
+      with:
+        files: dist/*.exe
+        tag_name: v1.0.${{ github.run_number }}
+        name: Stream Deck Pro v1.0.${{ github.run_number }}
+        body: |
+          Compilación automática de Stream Deck Pro.
+          Versión: 1.0.${{ github.run_number }}
+          Fecha: ${{ github.event.head_commit.timestamp }}
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
