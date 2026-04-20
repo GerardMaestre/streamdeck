@@ -10,7 +10,12 @@ class StreamDeckClient {
         this.overlayContainer = document.getElementById('overlay-container');
         
         this.lastMixerState = null;
+        
+        // --- SISTEMAS DE BLOQUEO ANTI-REBOTE (OPTIMISTIC UI) ---
         this.activeSliders = new Set();
+        this.activeMutes = new Set(); 
+        this.muteTimers = {};
+        
         this.pendingVolUpdates = {};
         this.volUpdateTimes = {};
         this.volUpdateTimers = {};
@@ -369,7 +374,6 @@ class StreamDeckClient {
         });
     }
 
-    // FIX: El buffer es fundamental para evitar el "jitter" o efecto rebote de los sliders por retraso de API
     markSliderActive(id) { 
         this.activeSliders.add(id); 
     }
@@ -431,15 +435,45 @@ class StreamDeckClient {
         fillElement.classList.toggle('fill-empty', clamped <= 0.001);
     }
 
+    // 🔥 FIX DEFINITIVO PARA EL REBOTE DE MUTE (Optimistic UI)
     toggleMute(app, isMaster) {
+        const id = isMaster ? 'global' : app;
+        const wrapper = document.getElementById(id === 'global' ? 'icon-wrapper-global' : `icon-wrapper-${id}`) || document.getElementById(`icon-${id}`);
+        if (!wrapper) return;
+
+        const iconContainer = wrapper.closest('.mixer-icon-btn');
+        if (!iconContainer) return;
+
+        // 1. Asumimos que la acción es instantánea (Optimistic UI)
+        const isCurrentlyMuted = iconContainer.classList.contains('muted-active');
+        const nextMuteState = !isCurrentlyMuted;
+
+        if (nextMuteState) {
+            iconContainer.classList.add('muted-active');
+            wrapper.style.opacity = '0.4';
+        } else {
+            iconContainer.classList.remove('muted-active');
+            wrapper.style.opacity = '1';
+        }
+
+        // Ya no hace falta la clase "pending" que generaba el parpadeo
+        iconContainer.classList.remove('pending');
+
+        // 2. Aplicamos un "Escudo" o Bloqueo por 1.5 segundos
+        // Esto ignora las respuestas tardías del servidor que intenten "deshacer" visualmente el click.
+        this.activeMutes.add(id);
+
+        if (this.muteTimers[id]) {
+            clearTimeout(this.muteTimers[id]);
+        }
+        this.muteTimers[id] = setTimeout(() => {
+            this.activeMutes.delete(id);
+        }, 1500);
+
+        // 3. Enviamos la orden real al servidor por debajo
         if (isMaster) {
-            const iconBtn = document.getElementById(`icon-wrapper-global`) || document.getElementById('icon-global');
-            if (iconBtn) iconBtn.closest('.mixer-icon-btn').classList.add('pending');
             this.socket.emit('toggle_master_mute');
         } else {
-            const id = app;
-            const iconWrapper = document.getElementById(`icon-wrapper-${id}`);
-            if (iconWrapper) iconWrapper.closest('.mixer-icon-btn').classList.add('pending');
             this.socket.emit('toggle_session_mute', { app });
         }
     }
@@ -590,10 +624,15 @@ class StreamDeckClient {
         const wrapper = document.getElementById(id === 'global' ? 'icon-wrapper-global' : `icon-wrapper-${id}`) || document.getElementById(`icon-${id}`);
         const fill = document.getElementById(`slider-fill-${id}`);
         
-        if (slider && data.type === 'volume' && !this.activeSliders.has(id)) {
-            slider.value = data.value;
-            this.setSliderFillScale(fill, data.value / 100);
+        if (slider && data.type === 'volume') {
+            if (!this.activeSliders.has(id)) {
+                slider.value = data.value;
+                this.setSliderFillScale(fill, data.value / 100);
+            }
         } else if (wrapper && data.type === 'mute') {
+            // 🔥 ESCUDO ACTIVO: Si hemos tocado este botón hace menos de 1.5s, ignoramos al servidor.
+            if (this.activeMutes.has(id)) return;
+
             const row = document.getElementById(`mixer-row-${id}`);
             if(!row) return;
 
@@ -650,20 +689,36 @@ class StreamDeckClient {
     toggleDiscordMute() {
         if (!['connected', 'fallback'].includes(this.discordConnectionStatus)) return;
         if (navigator.vibrate) navigator.vibrate(50);
+        
+        // Optimistic UI para Discord también
+        this.discordMute = !this.discordMute;
+        this.updateDiscordButtons();
+
         this.socket.emit('discord_toggle_mute', (result) => {
-            if (result?.ok) return;
-            this.discordConnectionMessage = result?.message || 'No se pudo alternar mute';
-            this.updateDiscordConnectionUI();
+            if (result && !result.ok) {
+                this.discordMute = !this.discordMute; // revertimos si falla
+                this.updateDiscordButtons();
+                this.discordConnectionMessage = result?.message || 'No se pudo alternar mute';
+                this.updateDiscordConnectionUI();
+            }
         });
     }
 
     toggleDiscordDeaf() {
         if (!['connected', 'fallback'].includes(this.discordConnectionStatus)) return;
         if (navigator.vibrate) navigator.vibrate(50);
+
+        // Optimistic UI para Discord
+        this.discordDeaf = !this.discordDeaf;
+        this.updateDiscordButtons();
+
         this.socket.emit('discord_toggle_deaf', (result) => {
-            if (result?.ok) return;
-            this.discordConnectionMessage = result?.message || 'No se pudo alternar ensordecer';
-            this.updateDiscordConnectionUI();
+            if (result && !result.ok) {
+                this.discordDeaf = !this.discordDeaf; // revertimos si falla
+                this.updateDiscordButtons();
+                this.discordConnectionMessage = result?.message || 'No se pudo alternar ensordecer';
+                this.updateDiscordConnectionUI();
+            }
         });
     }
 
@@ -757,8 +812,6 @@ class StreamDeckClient {
         });
     }
 
-    // FIX: Al igual que en el panel master, garantizamos un bloqueo temporal al arrastrar
-    // para que la API de Discord no lo empuje mientras reajustas.
     markDiscordSliderActive(userId) { 
         this.activeSliders.add('discord_' + userId); 
     }

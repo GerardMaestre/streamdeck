@@ -2,8 +2,11 @@
   "name": "mi-streamdeck",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "main.js",
   "scripts": {
+    "start": "electron .",
+    "rebuild": "electron-rebuild",
+    "dist": "electron-builder",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -22,5 +25,41 @@
     "screenshot-desktop": "^1.15.3",
     "socket.io": "^4.8.3",
     "win-audio": "^3.0.5"
+  },
+  "devDependencies": {
+    "electron": "^41.2.1",
+    "electron-builder": "^26.8.1",
+    "electron-rebuild": "^3.2.9"
+  },
+  "build": {
+    "appId": "com.gerardmaestre.streamdeckpro",
+    "productName": "Stream Deck Pro",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "server.js",
+      "public/**/*",
+      "controllers/**/*",
+      "icon.png"
+    ],
+    "extraResources": [
+      "config.json",
+      "mis_scripts/**/*",
+      "icon.png"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Stream Deck Pro"
+    }
   }
 }

@@ -5,10 +5,11 @@ const {
     isPathInsideBase,
     logControllerError,
     runSpawnCommand,
-    safeSocketEmit
+    safeSocketEmit,
+    getDataPath
 } = require('../utils/utils');
 
-const baseScriptsPath = path.join(__dirname, '..', '..', 'mis_scripts');
+const baseScriptsPath = getDataPath('mis_scripts');
 
 const scripts = {
     purgar_ram: path.join(baseScriptsPath, '02_Optimizacion_Gaming', 'Purgar_ram.py'),

@@ -1,5 +1,29 @@
 const { exec, spawn } = require('child_process');
 const path = require('path');
+const fs = require('fs');
+
+/**
+ * Resuelve rutas de forma dinámica para que funcionen tanto en desarrollo
+ * como en la aplicación empaquetada (Portable/Instalador).
+ * Prioriza archivos al lado del ejecutable para permitir edición del usuario.
+ */
+const getDataPath = (relativePath) => {
+    // Caso 1: Al lado del ejecutable (Para Portable/EXE que el usuario quiere editar)
+    if (process.execPath && !process.execPath.includes('node.exe')) {
+        const nextToExePath = path.join(path.dirname(process.execPath), relativePath);
+        if (fs.existsSync(nextToExePath)) return nextToExePath;
+    }
+
+    // Caso 2: Dentro de la carpeta de recursos de Electron (Empaquetado por defecto)
+    if (process.resourcesPath) {
+        const bundledPath = path.join(process.resourcesPath, relativePath);
+        if (fs.existsSync(bundledPath)) return bundledPath;
+    }
+
+    // Caso 3: Ruta local de desarrollo (Raíz del proyecto)
+    return path.resolve(__dirname, '../../', relativePath);
+};
+
 
 const getErrorMessage = (error) => {
     if (!error) return 'Error desconocido';
@@ -128,5 +152,6 @@ module.exports = {
     logControllerError,
     runExecCommand,
     runSpawnCommand,
-    safeSocketEmit
+    safeSocketEmit,
+    getDataPath
 };

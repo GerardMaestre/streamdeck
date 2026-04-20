@@ -2,7 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const fs = require('fs');
-const { emitErrorToFrontend, getErrorMessage } = require('./controllers/utils/utils');
+const { emitErrorToFrontend, getErrorMessage, getDataPath } = require('./controllers/utils/utils');
 
 // Importar controladores (Lógica modularizada)
 const { initAudioMixer, sendInitialState, handleSocketCommands } = require('./controllers/audio/audioMixerController');
@@ -16,12 +16,13 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-app.use(express.static('public'));
+app.use(express.static(getDataPath('public')));
 
 // Endpoint para entregar el JSON de configuración de los botones
 app.get('/api/config', (req, res) => {
     try {
-        const configData = fs.readFileSync('./config.json', 'utf8');
+        const configPath = getDataPath('config.json');
+        const configData = fs.readFileSync(configPath, 'utf8');
         res.json(JSON.parse(configData));
     } catch(err) {
         console.error('Error leyendo config.json', err);
