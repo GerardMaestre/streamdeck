@@ -4,7 +4,7 @@
  * y añade un icono en la bandeja del sistema de Windows.
  */
 
-const { app, Tray, Menu, shell, nativeImage } = require('electron');
+const { app, Tray, Menu, shell, nativeImage, dialog } = require('electron');
 const path = require('path');
 const os = require('os');
 
@@ -45,10 +45,13 @@ app.whenReady().then(() => {
     // Esto ejecuta tu código backend de Node.js en segundo plano
     try {
         console.log('[App Bandeja] Iniciando servidor Node.js...');
-        // IMPORTANTE: Cambia 'server.js' o 'index.js' por el nombre del archivo principal de tu backend
         require('./server.js'); 
     } catch (error) {
         console.error('[App Bandeja] Error al iniciar el servidor:', error);
+        dialog.showErrorBox(
+            'Error al iniciar el Servidor',
+            `No se pudo arrancar el motor de Stream Deck Pro.\n\nDetalles: ${error.message}`
+        );
     }
 
     // 3. Configurar el icono de la bandeja

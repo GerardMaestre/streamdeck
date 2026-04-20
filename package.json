@@ -48,6 +48,13 @@
       "mis_scripts/**/*",
       "icon.png"
     ],
+    "asarUnpack": [
+      "**/node_modules/robotjs/**/*",
+      "**/node_modules/native-sound-mixer/**/*",
+      "**/node_modules/win-audio/**/*",
+      "**/node_modules/audio-mixer/**/*",
+      "**/node_modules/loudness/**/*"
+    ],
     "win": {
       "target": [
         "nsis",

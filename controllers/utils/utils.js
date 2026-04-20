@@ -8,20 +8,31 @@ const fs = require('fs');
  * Prioriza archivos al lado del ejecutable para permitir edición del usuario.
  */
 const getDataPath = (relativePath) => {
+    let resolvedPath;
+
     // Caso 1: Al lado del ejecutable (Para Portable/EXE que el usuario quiere editar)
     if (process.execPath && !process.execPath.includes('node.exe')) {
         const nextToExePath = path.join(path.dirname(process.execPath), relativePath);
-        if (fs.existsSync(nextToExePath)) return nextToExePath;
+        if (fs.existsSync(nextToExePath)) {
+            resolvedPath = nextToExePath;
+        }
     }
 
-    // Caso 2: Dentro de la carpeta de recursos de Electron (Empaquetado por defecto)
-    if (process.resourcesPath) {
+    if (!resolvedPath && process.resourcesPath) {
+        // Caso 2: Dentro de la carpeta de recursos de Electron (Empaquetado por defecto)
         const bundledPath = path.join(process.resourcesPath, relativePath);
-        if (fs.existsSync(bundledPath)) return bundledPath;
+        if (fs.existsSync(bundledPath)) {
+            resolvedPath = bundledPath;
+        }
     }
 
-    // Caso 3: Ruta local de desarrollo (Raíz del proyecto)
-    return path.resolve(__dirname, '../../', relativePath);
+    if (!resolvedPath) {
+        // Caso 3: Ruta local de desarrollo (Raíz del proyecto)
+        resolvedPath = path.resolve(__dirname, '../../', relativePath);
+    }
+
+    console.log(`[Rutas] Buscando ${relativePath} -> ${resolvedPath}`);
+    return resolvedPath;
 };
 
 
