@@ -1,0 +1,40 @@
+name: Compilar Stream Deck Pro
+
+# Esto le dice a GitHub que ejecute la compilación cada vez que hagas "push" 
+# a la rama "main" o "master".
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build:
+    # IMPORTANTE: Usamos windows-latest porque dependes de librerías nativas 
+    # de audio de Windows (native-sound-mixer). ¡Debe compilarse en Windows!
+    runs-on: windows-latest
+
+    steps:
+    - name: Descargar el código fuente
+      uses: actions/checkout@v4
+
+    - name: Configurar Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18' # Usa la versión de Node.js con la que desarrollaste (18 o 20 recomendadas)
+        cache: 'npm'
+
+    - name: Instalar dependencias
+      run: npm install
+
+    - name: Compilar ejecutable con Electron Builder
+      run: npm run build
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Subir el .exe para descargar
+      uses: actions/upload-artifact@v4
+      with:
+        name: StreamDeckPro-Windows-EXE
+        path: dist/*.exe
+        retention-days: 7 # El archivo estará disponible para descargar durante 7 días
