@@ -11,6 +11,13 @@ const { ejecutarMacro, controlMultimedia } = require('./controllers/macros/macro
 const { hacerCaptura } = require('./controllers/capture/captureController');
 const { ejecutarScript, ejecutarScriptDinamico, listarScripts } = require('./controllers/scripts/scriptController');
 const { initDiscordRPC, requestInitialDiscordState, discordToggleMute, discordToggleDeaf, discordSetUserVolume } = require('./controllers/discord/discordController');
+const { sendTuyaCommand, controlMultipleDevices } = require('./controllers/tuyaController');
+
+// --- CACHE DE SISTEMA ---
+let configCache = null;
+let scriptsCache = null;
+let lastScriptsUpdate = 0;
+const SCRIPTS_CACHE_TTL = 30000; // 30 segundos
 
 const app = express();
 const server = http.createServer(app);
@@ -21,9 +28,12 @@ app.use(express.static(getDataPath('public')));
 // Endpoint para entregar el JSON de configuración de los botones
 app.get('/api/config', (req, res) => {
     try {
+        if (configCache) return res.json(configCache);
+
         const configPath = getDataPath('config.json');
         const configData = fs.readFileSync(configPath, 'utf8');
-        res.json(JSON.parse(configData));
+        configCache = JSON.parse(configData);
+        res.json(configCache);
     } catch(err) {
         console.error('Error leyendo config.json', err);
         res.status(500).json({ error: 'No se pudo cargar la configuración.' });
@@ -120,6 +130,53 @@ io.on('connection', (socket) => {
         if (typeof ack === 'function' && result !== null) ack(result);
     });
 
+    // --- TUYA LIGHT CONTROL ---
+    socket.on('tuya_light_toggle', async (payload, ack) => {
+        const { deviceId, status } = payload;
+        const result = await runSafely(
+            socket, 
+            'tuya_light_toggle', 
+            () => sendTuyaCommand(deviceId, 'switch_led', status),
+            ack
+        );
+        
+        if (typeof ack === 'function' && result !== null) {
+            ack({ ok: result });
+        }
+    });
+
+    socket.on('tuya_scene_toggle', async (payload, ack) => {
+        const { deviceIds, status } = payload;
+        const result = await runSafely(
+            socket, 
+            'tuya_scene_toggle', 
+            () => controlMultipleDevices(deviceIds, 'switch_led', status),
+            ack
+        );
+        
+        if (typeof ack === 'function' && result !== null) {
+            ack({ ok: result });
+        }
+    });
+
+    // Nueva ruta para comandos genéricos (Ej: Cambiar de escena o brillo)
+    socket.on('tuya_command', async (payload, ack) => {
+        const { deviceId, deviceIds, code, value } = payload;
+        
+        const action = async () => {
+            if (deviceIds && Array.isArray(deviceIds)) {
+                return await controlMultipleDevices(deviceIds, code, value);
+            } else {
+                return await sendTuyaCommand(deviceId, code, value);
+            }
+        };
+
+        const result = await runSafely(socket, 'tuya_command', action, ack);
+        if (typeof ack === 'function' && result !== null) {
+            ack({ ok: result });
+        }
+    });
+
     socket.on('disconnect', () => {
         console.log('📴 Centro de mando desconectado');
     });
@@ -160,7 +217,14 @@ server.listen(PORT, () => {
 // Endpoint para listar scripts disponibles en el directorio `mis_scripts`
 app.get('/api/scripts', async (req, res) => {
     try {
+        const now = Date.now();
+        if (scriptsCache && (now - lastScriptsUpdate < SCRIPTS_CACHE_TTL)) {
+            return res.json(scriptsCache);
+        }
+
         const data = await listarScripts();
+        scriptsCache = data;
+        lastScriptsUpdate = now;
         res.json(data);
     } catch (err) {
         console.error('Error listando scripts', err);

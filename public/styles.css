@@ -40,13 +40,20 @@
     --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+* {
+    -webkit-tap-highlight-color: transparent; /* ELIMINA EL CUADRADO AZUL EN TABLETS */
+    -webkit-touch-callout: none; /* Desactiva menú contextual al mantener pulsado */
+    outline: none !important; /* Elimina bordes de enfoque */
+}
+
 body {
     background:
         radial-gradient(120% 90% at 15% 12%, rgba(102, 212, 255, 0.16), transparent 52%),
         radial-gradient(100% 100% at 88% 84%, rgba(126, 168, 255, 0.18), transparent 58%),
         linear-gradient(150deg, var(--bg-gradient-top), var(--bg-gradient-bottom) 58%, var(--bg-base));
     margin: 0; 
-    height: 100vh; 
+    height: 100dvh; 
+    width: 100vw;
     display: flex; 
     justify-content: center; 
     align-items: center; 
@@ -54,19 +61,21 @@ body {
     color: var(--text-primary);
     user-select: none; 
     overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: manipulation; /* Evita el lag de doble click */
 }
 
 .grid-container {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(clamp(80px, 15vw, 150px), 1fr));
     grid-auto-rows: 1fr;
-    gap: 10px;
-    padding: 10px;
-    width: 95vw;
-    max-width: 100%;
+    gap: clamp(10px, 2vw, 20px);
+    padding: clamp(10px, 3vw, 25px);
+    width: 96vw;
+    height: 100%;
     justify-content: center;
     align-items: center;
-    align-content: start;
+    align-content: start; /* REVERTIDO A START */
     min-height: min-content;
 }
 
@@ -75,7 +84,7 @@ body {
     aspect-ratio: 1 / 1;
     border: none;
     border-radius: var(--radius-md);
-    font-size: 1.2rem;
+    font-size: clamp(0.9rem, 1.5vw, 1.35rem);
     font-weight: bold;
     color: var(--text-primary);
     cursor: pointer;
@@ -84,10 +93,15 @@ body {
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    transition: transform var(--duration-fast) var(--ease-standard);
+    transition: transform 0.1s var(--ease-standard); /* Más rápido */
     opacity: 0;
     transform: scale(0.8);
     animation: fadeInScale var(--duration-normal) var(--ease-smooth) forwards;
+    touch-action: manipulation;
+}
+
+.boton:active {
+    transform: scale(0.92) !important;
 }
 
 .btn-streamdeck {
@@ -180,16 +194,42 @@ body {
 /* ---------------------------------
    MEZCLADOR DE AUDIO (SIMETRÍA MATEMÁTICA PERFECTA)
 ------------------------------------ */
+/* MEZCLADOR DE AUDIO ADAPTATIVO */
 .mixer-panel {
-    background: rgba(20, 20, 20, 0.95);
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--glass-border-soft);
-    padding: 30px; 
-    display: flex;
+    width: auto;
+    max-width: 95vw;
+    max-height: 90dvh;
+    background: var(--glass-panel-strong);
+    backdrop-filter: blur(var(--blur-strong));
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-xl);
+    padding: clamp(15px, 4vw, 40px);
+    display: flex !important; /* FORZAMOS FLEX PARA FILAS */
+    flex-direction: row !important; /* FILAS HORIZONTALES */
     align-items: flex-start;
-    gap: 30px; 
+    gap: clamp(20px, 4vw, 40px); 
     position: relative;
-    border: 1px solid rgba(255,255,255,0.1);
+    box-shadow: 0 40px 100px rgba(0,0,0,0.6);
+    overflow-x: auto; /* Permite scroll horizontal si hay muchos canales */
+    overflow-y: hidden;
+}
+
+/* PANEL DE DISCORD ADAPTATIVO */
+.discord-panel {
+    width: 95vw;
+    max-width: 1000px;
+    max-height: 90dvh;
+    background: var(--glass-panel-strong);
+    backdrop-filter: blur(var(--blur-strong));
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-xl);
+    padding: clamp(15px, 3vw, 30px);
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    position: relative;
+    box-shadow: 0 40px 100px rgba(0,0,0,0.6);
+    overflow-y: auto;
 }
 
 .mixer-panel-with-back {
@@ -222,15 +262,15 @@ body {
     min-height: 100%;
 }
 
-/* 🔥 CRÍTICO: Bloqueamos el ancho de cada columna para que el Master y los Apps ocupen exactamente lo mismo, forzando la simetría */
 .mixer-row {
-    width: 100px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 15px;
-    transition: opacity var(--duration-normal) var(--ease-standard), transform var(--duration-normal) var(--ease-standard);
-    flex-shrink: 0; 
+    gap: 35px; /* Aumentamos el gap para que el thumb no solape */
+    width: 140px;
+    position: relative;
+    user-select: none;
+    padding: 10px 0;
 }
 
 .mixer-row.fade-out {
@@ -271,7 +311,6 @@ body {
     transform: scale(0.85);
 }
 
-/* 🔥 CRÍTICO: Si el texto es más ancho que 100px, saltará de línea en vez de engordar la caja y romper el centrado */
 .mixer-label {
     color: var(--text-primary);
     font-size: 0.9rem;
@@ -287,54 +326,43 @@ body {
 }
 
 .slider-container {
-    --slider-touch-size: 36px;
-    --slider-track-height: 220px;
-    position: relative;
-    width: var(--slider-touch-size);
-    height: var(--slider-track-height);
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255,255,255,0.1);
-    display: flex;
-    justify-content: center;
-    align-items: flex-end;
-    overflow: hidden;
+    width: 60px !important;
+    height: clamp(160px, 40dvh, 300px) !important;
+    background: #111 !important;
+    border-radius: 30px !important;
+    position: relative !important;
+    cursor: pointer !important;
+    border: 1px solid #333 !important;
+    touch-action: none;
+    user-select: none;
+    overflow: visible !important;
+    margin: 25px 0; /* Margen de seguridad para el thumb */
 }
 
 .slider-fill {
-    width: 100%;
-    height: 0%; 
-    background: rgba(255, 255, 255, 0.98);
-    border-radius: 999px;
-    border: 1px solid rgba(255,255,255,0.08);
-    pointer-events: none;
-    transition: height 160ms var(--ease-standard);
+    position: absolute !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    background: #3498db !important;
+    border-radius: 30px !important;
+    transition: none !important;
     will-change: height;
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    box-sizing: border-box;
 }
 
-.slider-fill.fill-empty {
-    opacity: 0;
-    border-color: transparent;
-}
-
-.mixer-slider {
-    -webkit-appearance: none;
-    appearance: none;
-    background: transparent;
-    width: var(--slider-track-height); 
-    height: var(--slider-touch-size); 
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%) rotate(-90deg);
-    outline: none;
-    z-index: 5;
-    margin: 0;
-    cursor: pointer;
+.fader-thumb-mixer {
+    position: absolute !important;
+    left: 50% !important;
+    transform: translate(-50%, 50%) !important;
+    width: 76px !important;
+    height: 76px !important;
+    background: #fff !important;
+    border: 4px solid #3498db !important;
+    border-radius: 50% !important;
+    box-shadow: none !important;
+    transition: none !important;
+    will-change: bottom;
+    z-index: 10;
 }
 
 .mixer-slider::-webkit-slider-thumb {
@@ -668,6 +696,195 @@ body {
     font-size: 1.5rem;
 }
 
+/* --- VISTA DOMÓTICA "STRICT SKETCH MATCH" (MASTER FRAME) --- */
+/* Esta vista imita exactamente el dibujo del usuario con un marco interior */
+#deck-container.domotica-sketch-match-view {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    height: 100dvh !important;
+    width: 100vw !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #06090e !important;
+    user-select: none !important; /* Evita que se quede pillada la barra */
+    touch-action: none !important;
+}
+
+.domotica-master-frame {
+    width: 95vw;
+    height: 92dvh;
+    background: #0f172a;
+    border-radius: 40px;
+    padding: 25px;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    box-shadow: 0 0 80px rgba(0,0,0,0.8);
+    position: relative;
+    border: 1px solid rgba(255,255,255,0.05);
+    user-select: none !important;
+    touch-action: none !important;
+}
+
+.domotica-sketch-header {
+    height: 70px;
+    display: flex;
+    align-items: center;
+    padding-left: 5px;
+    flex: 0 0 auto;
+}
+
+.back-btn-sketch-circle {
+    width: 65px !important;
+    height: 65px !important;
+    border-radius: 50% !important;
+    background: #1e293b !important;
+    border: 2px solid rgba(255,255,255,0.1) !important;
+    color: #fff !important;
+    font-size: 2rem !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5) !important;
+}
+
+.domotica-sketch-content {
+    display: flex !important;
+    flex: 1 !important;
+    gap: 25px !important;
+    margin-top: 15px;
+    min-height: 0; /* Permite que los hijos no desborden */
+}
+
+/* Tarjeta Izquierda (Slider) - Proporción según dibujo (estratégicamente más estrecha) */
+.domotica-card-fader {
+    flex: 0 0 25% !important; /* Más estrecha para que los botones tengan más aire */
+    background: #111b27 !important; 
+    border-radius: 40px !important;
+    border: 1px solid rgba(255, 255, 255, 0.05) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 30px !important;
+}
+
+.fader-track-pro {
+    width: 60px !important; /* Más estilizada */
+    height: 90% !important;
+    background: #000 !important;
+    border-radius: 30px !important;
+    position: relative !important;
+    cursor: pointer !important;
+    border: 1px solid rgba(255,255,255,0.05) !important;
+}
+
+.fader-fill-pro {
+    position: absolute !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    background: linear-gradient(to top, #d35400, #f1c40f) !important;
+    border-radius: 40px !important;
+    transition: none !important; /* CRÍTICO: Sin transiciones */
+    will-change: height;
+}
+
+.fader-thumb-pro {
+    position: absolute !important;
+    left: 50% !important;
+    transform: translate(-50%, 50%) !important;
+    width: 100px !important;
+    height: 100px !important;
+    background: #fff !important;
+    background: radial-gradient(circle, #fff 40%, #f1c40f 100%) !important;
+    border: 4px solid #fff !important;
+    border-radius: 50% !important;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5) !important;
+    transition: none !important; /* CRÍTICO: Sin transiciones */
+    will-change: bottom;
+}
+
+/* Tarjeta Derecha (Botones 2x2) - Más ancha y prominente */
+.domotica-card-buttons {
+    flex: 1 !important;
+    background: #111b27 !important;
+    border-radius: 40px !important;
+    border: 1px solid rgba(255, 255, 255, 0.05) !important;
+    padding: 35px !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+.domotica-sketch-grid {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    grid-template-rows: 1fr 1fr !important;
+    gap: 30px !important;
+    height: 100% !important;
+}
+
+.domotica-sketch-btn {
+    border-radius: 35px !important;
+    background: #1e293b !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 15px !important;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    color: #fff !important;
+}
+
+.domotica-sketch-btn:active {
+    transform: scale(0.95) !important;
+    background: var(--btn-accent) !important;
+}
+
+.domotica-sketch-btn .k-icon {
+    font-size: clamp(2.5rem, 6vw, 3.5rem) !important;
+}
+
+.domotica-sketch-btn .k-label {
+    font-size: clamp(0.9rem, 1.5vw, 1.2rem) !important;
+    font-weight: 800 !important;
+}
+
+.domotica-sketch-grid {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    grid-template-rows: 1fr 1fr !important;
+    gap: 20px !important;
+    height: 100% !important;
+}
+
+.domotica-sketch-btn {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 15px !important;
+    border-radius: 25px !important;
+    background: rgba(255, 255, 255, 0.04) !important;
+    border: 1px solid var(--glass-border-soft) !important;
+}
+
+.domotica-sketch-btn .k-label {
+    font-size: 1.1rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    text-align: center;
+}
+
+.domotica-sketch-btn:active {
+    transform: scale(0.95);
+    background: var(--btn-accent);
+    box-shadow: 0 0 40px var(--btn-accent);
+}
+
 .discord-slider-fill {
     background: linear-gradient(0deg, var(--accent-discord-a), var(--accent-discord-b)) !important;
 }
@@ -824,3 +1041,229 @@ body {
     transform: translateZ(0); 
     box-sizing: border-box;
 }
+
+/* ============================================================ */
+/* ARREGLO PARA MODO RETRATO (TELÉFONOS / VERTICAL)             */
+/* ============================================================ */
+@media (orientation: portrait) {
+    /* DOMÓTICA: Apilar tarjetas si la pantalla es vertical */
+    .domotica-sketch-content {
+        flex-direction: column !important;
+        gap: 15px !important;
+    }
+    
+    .domotica-card-fader {
+        flex: 0 0 30% !important; 
+        width: 100% !important;
+        padding: 20px !important;
+    }
+
+    .fader-track-pro {
+        width: 90% !important;
+        height: 60px !important; 
+        margin: 0 !important;
+    }
+
+    .domotica-card-buttons {
+        flex: 1 !important;
+        width: 100% !important;
+        padding: 15px !important;
+    }
+
+    .domotica-sketch-grid {
+        gap: 20px !important;
+    }
+
+    /* DISCORD: Los botones de mute/deaf bajan */
+    .discord-main-layout {
+        flex-direction: column !important;
+    }
+    .discord-controls-right {
+        flex-direction: row !important;
+        flex: 0 0 auto !important;
+        width: 100% !important;
+        gap: 10px !important;
+    }
+    .discord-controls-right .discord-btn {
+        flex: 1 !important;
+        height: 80px !important;
+    }
+}
+
+/* --- DISCORD SKETCH MATCH VIEW --- */
+.discord-sketch-match-view {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
+    display: flex;
+    flex-direction: column;
+    padding: 40px; /* Más margen para evitar los bordes de la tablet */
+    z-index: 2000;
+    box-sizing: border-box;
+}
+
+.discord-sketch-header {
+    height: 12dvh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    margin-bottom: 30px;
+}
+
+.discord-status-pill {
+    background: linear-gradient(180deg, rgba(74, 222, 128, 0.2), rgba(34, 197, 94, 0.1));
+    border: 2px solid rgba(74, 222, 128, 0.5);
+    color: #4ade80;
+    padding: 15px 60px;
+    border-radius: 60px;
+    font-size: 1.5rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 5px;
+    box-shadow: 0 0 40px rgba(74, 222, 128, 0.15);
+}
+
+.discord-sketch-content {
+    display: flex;
+    flex: 1;
+    gap: 30px;
+    overflow: hidden;
+}
+
+/* Mixer de Usuarios (Izquierda) */
+.discord-card-mixer {
+    flex: 3;
+    background: rgba(0, 0, 0, 0.4);
+    border: 2px solid rgba(255, 255, 255, 0.08);
+    border-radius: 30px;
+    padding: 30px;
+    display: flex;
+    gap: 30px;
+    overflow-x: auto;
+    align-items: center;
+    justify-content: center; /* Centrado para el estado vacío */
+    position: relative;
+}
+
+/* Controles Globales (Derecha) */
+.discord-card-tactical {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 25px;
+    justify-content: center;
+}
+
+.discord-tactical-btn {
+    flex: 1;
+    max-height: 220px;
+    background: #1e293b;
+    border: 4px solid #334155;
+    border-radius: 30px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+}
+
+.discord-tactical-btn .t-icon {
+    font-size: 4.5rem; /* Iconos mucho más grandes */
+}
+
+.discord-tactical-btn .t-label {
+    font-weight: 900;
+    font-size: 1.6rem;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    opacity: 0.9;
+}
+
+.discord-tactical-btn.active {
+    background: linear-gradient(135deg, #ef4444, #dc2626) !important;
+    border-color: #f87171 !important;
+    box-shadow: 0 0 50px rgba(239, 68, 68, 0.5);
+}
+
+.discord-tactical-btn.disabled {
+    opacity: 0.3;
+    pointer-events: none;
+    filter: grayscale(1);
+}
+
+/* User Pro Fader (Copia de Domótica/Mixer) */
+.user-fader-row {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    min-width: 130px;
+    height: 100%;
+    justify-content: space-between;
+}
+
+.user-avatar-circle {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: #334155;
+    border: 4px solid #475569;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-size: 1.8rem;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+}
+
+.user-avatar-circle img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.discord-username-tag {
+    color: white;
+    font-weight: 700;
+    font-size: 1rem;
+    text-align: center;
+    width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.8;
+}
+
+.discord-back-btn-circle {
+    position: absolute;
+    left: 0; /* Cambiamos a la izquierda para mejor alcance */
+    top: 50%;
+    transform: translateY(-50%);
+    width: 80px; /* Mucho más grande */
+    height: 80px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    font-size: 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+}
+
+.discord-back-btn-circle:active {
+    background: rgba(255,255,255,0.2);
+    transform: translateY(-50%) scale(0.9);
+}

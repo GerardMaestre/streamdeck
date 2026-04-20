@@ -27,6 +27,13 @@ class StreamDeckClient {
         this.discordConnectionStatus = 'disconnected';
         this.discordConnectionMessage = 'Sin conexión con Discord';
 
+        // IDs de Domótica (Luces)
+        this.tuyaDevices = ["bf02a8f057179a10753ram", "bf63d2743895e42709akue", "bf9d385783be51f82cef86"];
+        
+        // Recuperar última intensidad guardada o usar 100 por defecto
+        const savedIntensity = localStorage.getItem('lastTuyaIntensity');
+        this.lastTuyaIntensity = savedIntensity ? parseInt(savedIntensity) : 100;
+
         this.executionModal = document.getElementById('execution-modal');
         this.executionLogs = document.getElementById('execution-logs');
         this.executionSpinner = document.getElementById('execution-spinner');
@@ -34,6 +41,8 @@ class StreamDeckClient {
         this.executionHideTimeout = null;
         this.wakeLock = null;
         this.volumeEmitIntervalMs = 16;
+        this.mixerRefs = {}; // Caché de referencias DOM para el mixer
+        this.lastUpdateTime = {}; // Throttle de recepción
 
         this.init();
     }
@@ -68,6 +77,7 @@ class StreamDeckClient {
     renderGrid(pageId = 'main') {
         this.currentPage = pageId;
         this.container.innerHTML = '';
+        this.container.className = 'grid-container'; // Limpiamos clases de vistas especiales
 
         const pageData = this.getPageData(pageId);
         const shouldInjectBack = pageId !== 'main';
@@ -80,6 +90,215 @@ class StreamDeckClient {
             const visualIndex = shouldInjectBack ? index + 1 : index;
             this.container.appendChild(this.createButton(btnData, visualIndex));
         });
+    }
+    // --- DISCORD PANEL ---
+    renderDiscordPanel() {
+        this.container.innerHTML = '';
+        this.container.className = 'grid-container';
+
+        const fragment = document.createDocumentFragment();
+        fragment.appendChild(this.createBackButton(12));
+
+        const title = document.createElement('h2');
+        title.className = 'section-title';
+        title.textContent = 'Control de Discord';
+        fragment.appendChild(title);
+
+        const card = document.createElement('div');
+        card.className = 'discord-main-card glass';
+
+        const statusRow = document.createElement('div');
+        statusRow.className = 'discord-status-row';
+        statusRow.innerHTML = `
+            <div class="status-indicator ${this.discordConnectionStatus}"></div>
+            <span class="status-text">${this.discordConnectionMessage}</span>
+        `;
+        card.appendChild(statusRow);
+
+        const controlGrid = document.createElement('div');
+        controlGrid.className = 'discord-controls-grid';
+
+        const btnMute = document.createElement('button');
+        btnMute.className = `discord-btn glass ${this.discordMute ? 'active' : ''}`;
+        btnMute.id = 'discord-btn-mute';
+        btnMute.innerHTML = `<span class="d-icon">${this.discordMute ? '🔇' : '🎙️'}</span><span class="d-label">Mute</span>`;
+        btnMute.addEventListener('click', () => this.toggleDiscordMute());
+        controlGrid.appendChild(btnMute);
+
+        const btnDeaf = document.createElement('button');
+        btnDeaf.className = `discord-btn glass ${this.discordDeaf ? 'active' : ''}`;
+        btnDeaf.id = 'discord-btn-deaf';
+        btnDeaf.innerHTML = `<span class="d-icon">${this.discordDeaf ? '🎧' : '🔊'}</span><span class="d-label">Deafen</span>`;
+        btnDeaf.addEventListener('click', () => this.toggleDiscordDeafen());
+        controlGrid.appendChild(btnDeaf);
+
+        card.appendChild(controlGrid);
+
+        const usersList = document.createElement('div');
+        usersList.className = 'discord-users-list';
+        this.discordUsers.forEach(u => {
+            const userItem = document.createElement('div');
+            userItem.className = 'user-item';
+            userItem.innerHTML = `
+                <img src="${u.avatar}" class="user-avatar" />
+                <span class="user-name">${u.name}</span>
+                <span class="user-mic ${u.speaking ? 'speaking' : ''}">🎙️</span>
+            `;
+            usersList.appendChild(userItem);
+        });
+        card.appendChild(usersList);
+
+        fragment.appendChild(card);
+        this.container.appendChild(fragment);
+    }
+
+    // --- DOMÓTICA INTEGRADA (STRICT SKETCH MATCH) ---
+    renderDomoticaModernView() {
+        this.container.innerHTML = '';
+        this.container.className = 'grid-container domotica-sketch-match-view';
+
+        // 0. Marco maestro del dibujo
+        const masterFrame = document.createElement('div');
+        masterFrame.className = 'domotica-master-frame';
+
+        // 1. Cabecera (Botón Volver)
+        const header = document.createElement('div');
+        header.className = 'domotica-sketch-header';
+        
+        const backBtn = document.createElement('button');
+        backBtn.className = 'back-btn-sketch-circle';
+        backBtn.innerHTML = '←'; 
+        backBtn.addEventListener('pointerup', (e) => {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            
+            // ESCUDO ANTI-PENETRACIÓN TOTAL
+            const shield = document.createElement('div');
+            shield.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9999; cursor:default;';
+            document.body.appendChild(shield);
+            setTimeout(() => shield.remove(), 500);
+
+            // Delay estratégico para que la tablet consuma el evento
+            setTimeout(() => {
+                this.currentPage = 'main';
+                this.renderGrid();
+            }, 100);
+        });
+        header.appendChild(backBtn);
+        masterFrame.appendChild(header);
+
+        // 2. Contenedor de División
+        const contentArea = document.createElement('div');
+        contentArea.className = 'domotica-sketch-content';
+
+        // --- IZQUIERDA: TARJETA SLIDER ---
+        const sliderCard = document.createElement('div');
+        sliderCard.className = 'domotica-card-fader';
+        
+        const faderTrack = document.createElement('div');
+        faderTrack.className = 'fader-track-pro';
+
+        const faderFill = document.createElement('div');
+        faderFill.className = 'fader-fill-pro';
+        faderFill.style.height = `${this.lastTuyaIntensity}%`;
+
+        const faderThumb = document.createElement('div');
+        faderThumb.className = 'fader-thumb-pro';
+        faderThumb.style.bottom = `${this.lastTuyaIntensity}%`;
+
+        faderTrack.appendChild(faderFill);
+        faderTrack.appendChild(faderThumb);
+
+        let trackRect = null;
+        const updateFader = (e) => {
+            if (!trackRect) trackRect = faderTrack.getBoundingClientRect();
+            const y = e.clientY - trackRect.top;
+            let percent = 100 - (y / trackRect.height) * 100;
+            percent = Math.max(1, Math.min(100, Math.round(percent)));
+            
+            if (percent === this.lastTuyaIntensity) return;
+            this.lastTuyaIntensity = percent;
+            localStorage.setItem('lastTuyaIntensity', percent);
+            
+            // Visual instantáneo
+            faderFill.style.height = `${percent}%`;
+            faderThumb.style.bottom = `${percent}%`;
+            
+            // Emisión de red diferida pero con valor ACTUAL
+            const currentVal = percent; 
+            const tuyaVal = Math.round(10 + (currentVal / 100) * 990);
+            
+            this.scheduleThrottledEmit('tuya_brightness', () => {
+                this.socket.emit('tuya_command', {
+                    deviceIds: this.tuyaDevices,
+                    code: 'bright_value_v2',
+                    value: tuyaVal
+                });
+            }, 350);
+        };
+
+        faderTrack.addEventListener('pointerdown', (e) => {
+            trackRect = faderTrack.getBoundingClientRect();
+            faderTrack.setPointerCapture(e.pointerId);
+            updateFader(e);
+            faderTrack.addEventListener('pointermove', updateFader);
+        });
+        faderTrack.addEventListener('pointerup', (e) => {
+            faderTrack.releasePointerCapture(e.pointerId);
+            faderTrack.removeEventListener('pointermove', updateFader);
+        });
+
+        sliderCard.appendChild(faderTrack);
+        contentArea.appendChild(sliderCard);
+
+        // --- DERECHA: TARJETA BOTONES ---
+        const buttonsCard = document.createElement('div');
+        buttonsCard.className = 'domotica-card-buttons';
+
+        const controlGrid = document.createElement('div');
+        controlGrid.className = 'domotica-sketch-grid';
+
+        const controls = [
+            { label: 'ENCENDER', value: true, action: 'tuya_scene_toggle', icon: '🌟', color: '#2ecc71' },
+            { label: 'APAGAR', value: false, action: 'tuya_scene_toggle', icon: '🌑', color: '#e74c3c' },
+            { label: 'BLANCO', value: 'white', code: 'work_mode', icon: '⚪', color: '#ecf0f1' },
+            { label: 'ESCENA', value: 'scene', code: 'work_mode', icon: '🔮', color: '#9b59b6' }
+        ];
+
+        controls.forEach(c => {
+            const btn = document.createElement('button');
+            btn.className = 'domotica-sketch-btn';
+            btn.style.setProperty('--btn-accent', c.color);
+            btn.innerHTML = `<span class="k-icon">${c.icon}</span><span class="k-label">${c.label}</span>`;
+            
+            btn.addEventListener('pointerdown', () => {
+                if (navigator.vibrate) navigator.vibrate(40);
+                const payload = c.action === 'tuya_scene_toggle' 
+                    ? { deviceIds: this.tuyaDevices, code: 'switch_led', value: c.value }
+                    : { deviceIds: this.tuyaDevices, code: c.code, value: c.value };
+                this.socket.emit('tuya_command', payload);
+            });
+
+            controlGrid.appendChild(btn);
+        });
+
+        buttonsCard.appendChild(controlGrid);
+        contentArea.appendChild(buttonsCard);
+
+        masterFrame.appendChild(contentArea);
+        this.container.appendChild(masterFrame);
+    }
+
+    updateTuyaIntensityServer(value) {
+        const tuyaVal = Math.round(10 + (value / 100) * 990);
+        
+        this.scheduleThrottledEmit('tuya_brightness', () => {
+            this.socket.emit('tuya_command', {
+                deviceIds: this.tuyaDevices,
+                code: 'bright_value_v2',
+                value: tuyaVal
+            });
+        }, 350); 
     }
 
     getPageData(pageId) {
@@ -178,6 +397,8 @@ class StreamDeckClient {
                 this.openMixer();
             } else if (btnData.type === 'discord_panel') {
                 this.openDiscordPanel();
+            } else if (btnData.type === 'domotica_panel') {
+                this.renderDomoticaModernView();
             } else if (btnData.type === 'action') {
                 if (btnData.payload) {
                     this.socket.emit(btnData.action, btnData.payload);
@@ -327,8 +548,7 @@ class StreamDeckClient {
         
         const iconHTML = this.getIconForApp(labelName, isMaster);
         const opacity = appData.mute ? '0.4' : '1';
-        const initialFillScale = Math.max(0, Math.min(1, Number(appData.volume) / 100));
-        const initialFillEmptyClass = initialFillScale <= 0.001 ? ' fill-empty' : '';
+        const vol = Number(appData.volume);
         const mutedClass = appData.mute ? ' muted-active' : '';
 
         const row = document.createElement('div');
@@ -336,22 +556,74 @@ class StreamDeckClient {
         row.id = `mixer-row-${id}`;
 
         row.innerHTML = `
-            <div class="mixer-icon-btn${mutedClass}" onclick="window.streamDeck.toggleMute('${id}', ${isMaster})">
+            <div class="mixer-icon-btn${mutedClass}" onpointerup="window.streamDeck.toggleMute('${id}', ${isMaster})">
                 <div id="icon-wrapper-${id}" style="opacity:${opacity}; display:flex; justify-content:center; align-items:center; width:100%; height:100%; transition: opacity 0.3s ease;">
                     ${iconHTML}
                 </div>
             </div>
-            <div class="slider-container">
-                <input type="range" class="mixer-slider ${isMaster?'master-slider':''}" id="slider-${id}" 
-                    min="0" max="100" value="${appData.volume}" 
-                    onpointerdown="window.streamDeck.markSliderActive('${id}')"
-                    onpointerup="window.streamDeck.unmarkSliderActive('${id}')"
-                    onpointercancel="window.streamDeck.unmarkSliderActive('${id}')"
-                    oninput="window.streamDeck.updateVolumeServer('${id}', this.value, ${isMaster})" >
-                <div class="slider-fill${initialFillEmptyClass}" id="slider-fill-${id}" style="height: ${(initialFillScale*100).toFixed(2)}%"></div>
+            <div class="slider-container" id="track-${id}">
+                <div class="slider-fill" id="slider-fill-${id}" style="height: ${vol}%"></div>
+                <div class="fader-thumb-mixer" id="thumb-${id}" style="bottom: ${vol}%"></div>
             </div>
             <div class="mixer-label">${labelName}</div>
         `;
+
+        const track = row.querySelector('.slider-container');
+        const fill = row.querySelector('.slider-fill');
+        const thumb = row.querySelector('.fader-thumb-mixer');
+        const wrapper = row.querySelector(`#icon-wrapper-${id}`);
+
+        // CACHÉ LOCAL (Pattern Domótica)
+        this.mixerRefs[id] = { track, fill, thumb, wrapper };
+
+        let trackRect = null;
+        const updateMix = (e) => {
+            if (!trackRect) trackRect = track.getBoundingClientRect();
+            
+            const y = e.clientY - trackRect.top;
+            let percent = 100 - (y / trackRect.height) * 100;
+            percent = Math.max(0, Math.min(100, Math.round(percent)));
+            
+            // 1. Bloqueo de duplicados
+            if (percent === this[`last_${id}`]) return;
+            this[`last_${id}`] = percent;
+
+            // 2. Visual INSTANTÁNEO (Sin funciones externas)
+            fill.style.height = `${percent}%`;
+            thumb.style.bottom = `${percent}%`;
+            
+            // 3. Emisión RED Throttleada (CALCO DE DOMÓTICA - 350ms)
+            const queueKey = isMaster ? 'mix_master' : `mix_${id}`;
+            this.pendingVolUpdates[queueKey] = percent;
+
+            this.scheduleThrottledEmit(queueKey, () => {
+                const valToEmit = Math.round(this.pendingVolUpdates[queueKey]);
+                if (isMaster) {
+                    this.socket.emit('set_master_volume', valToEmit);
+                } else {
+                    this.socket.emit('set_session_volume', { app: id, value: valToEmit });
+                }
+            }, 350); // Mismo throttle que Domótica para no ahogar la tablet
+        };
+
+        track.addEventListener('pointerdown', (e) => {
+            trackRect = track.getBoundingClientRect();
+            track.setPointerCapture(e.pointerId);
+            this.markSliderActive(id);
+            updateMix(e);
+            
+            const moveHandler = (m) => updateMix(m);
+            const stopHandler = (u) => {
+                track.releasePointerCapture(u.pointerId);
+                track.removeEventListener('pointermove', moveHandler);
+                track.removeEventListener('pointerup', stopHandler);
+                this.unmarkSliderActive(id);
+                trackRect = null;
+            };
+            track.addEventListener('pointermove', moveHandler);
+            track.addEventListener('pointerup', stopHandler);
+        });
+
         return row;
     }
 
@@ -385,6 +657,11 @@ class StreamDeckClient {
     }
 
     scheduleThrottledEmit(key, emitFn, intervalMs = this.volumeEmitIntervalMs) {
+        if (!this.volUpdateFunctions) this.volUpdateFunctions = {};
+        
+        // Siempre guardamos la última versión de la función (el último valor)
+        this.volUpdateFunctions[key] = emitFn;
+
         const now = Date.now();
         const last = this.volUpdateTimes[key] || 0;
         const elapsed = now - last;
@@ -392,7 +669,9 @@ class StreamDeckClient {
         const runEmit = () => {
             this.volUpdateTimes[key] = Date.now();
             this.volUpdateTimers[key] = null;
-            emitFn();
+            if (this.volUpdateFunctions[key]) {
+                this.volUpdateFunctions[key]();
+            }
         };
 
         if (elapsed >= intervalMs) {
@@ -405,15 +684,12 @@ class StreamDeckClient {
         }
 
         if (!this.volUpdateTimers[key]) {
-            this.volUpdateTimers[key] = setTimeout(runEmit, Math.max(0, intervalMs - elapsed));
+            this.volUpdateTimers[key] = setTimeout(runEmit, Math.max(1, intervalMs - elapsed));
         }
     }
 
     updateVolumeServer(app, value, isMaster) {
         const id = isMaster ? 'global' : app;
-        const fill = document.getElementById(`slider-fill-${id}`);
-        this.setSliderFillScale(fill, value / 100);
-
         const queueKey = isMaster ? 'mix_master' : `mix_${app}`;
         this.pendingVolUpdates[queueKey] = Number(value);
 
@@ -620,68 +896,112 @@ class StreamDeckClient {
     }
 
     updateSliderUI(id, data) {        
-        const slider = document.getElementById(`slider-${id}`);
-        const wrapper = document.getElementById(id === 'global' ? 'icon-wrapper-global' : `icon-wrapper-${id}`) || document.getElementById(`icon-${id}`);
-        const fill = document.getElementById(`slider-fill-${id}`);
-        
-        if (slider && data.type === 'volume') {
+        // THROTTLE RECEPTOR (60fps máximo para no saturar la tablet)
+        const now = Date.now();
+        if (now - (this.lastUpdateTime[id] || 0) < 16) return;
+        this.lastUpdateTime[id] = now;
+
+        const refs = this.mixerRefs[id];
+        if (!refs) return; 
+
+        if (data.type === 'volume') {
             if (!this.activeSliders.has(id)) {
-                slider.value = data.value;
-                this.setSliderFillScale(fill, data.value / 100);
+                const percent = data.value;
+                refs.fill.style.height = `${percent}%`;
+                refs.thumb.style.bottom = `${percent}%`;
             }
-        } else if (wrapper && data.type === 'mute') {
-            // 🔥 ESCUDO ACTIVO: Si hemos tocado este botón hace menos de 1.5s, ignoramos al servidor.
+        } else if (data.type === 'mute') {
             if (this.activeMutes.has(id)) return;
-
-            const row = document.getElementById(`mixer-row-${id}`);
-            if(!row) return;
-
-            const iconContainer = wrapper.closest('.mixer-icon-btn');
-            if (iconContainer) iconContainer.classList.remove('pending'); 
-            
+            const iconContainer = refs.wrapper.closest('.mixer-icon-btn');
             if (data.value) {
                 if (iconContainer) iconContainer.classList.add('muted-active');
-                wrapper.style.opacity = '0.4'; 
+                refs.wrapper.style.opacity = '0.4'; 
             } else {
                 if (iconContainer) iconContainer.classList.remove('muted-active');
-                wrapper.style.opacity = '1'; 
+                refs.wrapper.style.opacity = '1'; 
             }
         }
     }
 
     openDiscordPanel() {
         this.overlayContainer.innerHTML = '';
-        this.overlayContainer.className = 'modal-content-wrapper';
+        this.overlayContainer.className = 'discord-sketch-match-view';
 
-        const discordPanel = document.createElement('div');
-        discordPanel.className = 'discord-panel';
-        discordPanel.id = 'discord-panel-container';
+        // 1. HEADER (Status + Close)
+        const header = document.createElement('div');
+        header.className = 'discord-sketch-header';
         
-        discordPanel.innerHTML = `
-            <div id="discord-connection-status" class="discord-status discord-status-${this.discordConnectionStatus}">
-                ${this.discordConnectionMessage}
-            </div>
-            <div class="discord-main-layout">
-                <div id="discord-call-mixer"></div>
-                <div class="discord-controls discord-controls-right">
-                    <div id="discord-mute-btn" class="discord-btn" onclick="window.streamDeck.toggleDiscordMute()">
-                        <span class="d-icon">🎤</span>
-                        <span>Micro</span>
-                    </div>
-                    <div id="discord-deaf-btn" class="discord-btn" onclick="window.streamDeck.toggleDiscordDeaf()">
-                        <span class="d-icon">🎧</span>
-                        <span>Cascos</span>
-                    </div>
-                </div>
-            </div>
-        `;
+        const statusPill = document.createElement('div');
+        statusPill.id = 'discord-status-pill';
+        statusPill.className = 'discord-status-pill';
+        statusPill.textContent = this.discordConnectionStatus === 'connected' ? 'CONECTADO' : 'DESCONECTADO';
+        
+        const backBtn = document.createElement('div');
+        backBtn.className = 'discord-back-btn-circle';
+        backBtn.innerHTML = '←';
+        backBtn.addEventListener('pointerup', (e) => {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            
+            // ESCUDO ANTI-PENETRACIÓN TOTAL (Huawei Tablet Fix)
+            const shield = document.createElement('div');
+            shield.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9999; cursor:default;';
+            document.body.appendChild(shield);
+            setTimeout(() => shield.remove(), 500);
 
-        discordPanel.appendChild(this.createPanelBackButton());
+            // Feedback visual + Delay para que el evento no traspase
+            backBtn.style.background = 'rgba(255,255,255,0.3)';
+            setTimeout(() => {
+                this.overlay.classList.add('hidden');
+                backBtn.style.background = '';
+            }, 100);
+        });
 
-        this.overlayContainer.appendChild(discordPanel);
+        header.appendChild(statusPill);
+        header.appendChild(backBtn);
+
+        // 2. CONTENT (Split View)
+        const contentGrid = document.createElement('div');
+        contentGrid.className = 'discord-sketch-content';
+
+        // 2a. Mezclador (Izquierda)
+        const mixerPanel = document.createElement('div');
+        mixerPanel.className = 'discord-card-mixer';
+        mixerPanel.id = 'discord-mixer-container';
+
+        // 2b. Controles Globales (Derecha)
+        const controlsPanel = document.createElement('div');
+        controlsPanel.className = 'discord-card-tactical';
+
+        const muteBtn = document.createElement('div');
+        muteBtn.id = 'tactical-mute-btn';
+        muteBtn.className = 'discord-tactical-btn';
+        muteBtn.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            this.toggleDiscordMute();
+        });
+        muteBtn.innerHTML = `<span class="t-icon">🎙️</span><span class="t-label">MICRO</span>`;
+
+        const deafBtn = document.createElement('div');
+        deafBtn.id = 'tactical-deaf-btn';
+        deafBtn.className = 'discord-tactical-btn';
+        deafBtn.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            this.toggleDiscordDeaf();
+        });
+        deafBtn.innerHTML = `<span class="t-icon">🎧</span><span class="t-label">SORDO</span>`;
+
+        controlsPanel.appendChild(muteBtn);
+        controlsPanel.appendChild(deafBtn);
+
+        contentGrid.appendChild(mixerPanel);
+        contentGrid.appendChild(controlsPanel);
+
+        this.overlayContainer.appendChild(header);
+        this.overlayContainer.appendChild(contentGrid);
+
         this.overlay.classList.remove('hidden');
 
-        this.updateDiscordConnectionUI();
         this.updateDiscordButtons();
         this.renderDiscordMixer();
     }
@@ -730,83 +1050,143 @@ class StreamDeckClient {
     }
 
     updateDiscordButtons() {
-        const muteBtn = document.getElementById('discord-mute-btn');
-        const deafBtn = document.getElementById('discord-deaf-btn');
-        const controlsEnabled = ['connected', 'fallback'].includes(this.discordConnectionStatus);
+        const muteBtn = document.getElementById('tactical-mute-btn');
+        const deafBtn = document.getElementById('tactical-deaf-btn');
+        const isNotConnected = !['connected', 'fallback'].includes(this.discordConnectionStatus);
 
         if (muteBtn) {
-            muteBtn.className = `discord-btn ${this.discordMute ? 'muted' : ''} ${controlsEnabled ? '' : 'disabled'}`;
-            muteBtn.innerHTML = `<span class="d-icon">🎤</span><span>${this.discordMute ? 'Muteado' : 'Micro'}</span>`;
+            muteBtn.classList.toggle('active', this.discordMute);
+            muteBtn.classList.toggle('disabled', isNotConnected);
         }
-
         if (deafBtn) {
-            deafBtn.className = `discord-btn ${this.discordDeaf ? 'deafened' : ''} ${controlsEnabled ? '' : 'disabled'}`;
-            deafBtn.innerHTML = `<span class="d-icon">🎧</span><span>${this.discordDeaf ? 'Sordo' : 'Cascos'}</span>`;
+            deafBtn.classList.toggle('active', this.discordDeaf);
+            deafBtn.classList.toggle('disabled', isNotConnected);
         }
     }
 
     renderDiscordMixer() {
-        const mixerContainer = document.getElementById('discord-call-mixer');
+        const mixerContainer = document.getElementById('discord-mixer-container');
         if (!mixerContainer) return;
 
-        if (this.discordConnectionStatus === 'fallback') {
-            mixerContainer.innerHTML = '<div class="discord-empty">Modo básico: mute/deaf funciona.</div>';
-            return;
-        }
-
         if (this.discordConnectionStatus !== 'connected') {
-            mixerContainer.innerHTML = '<div class="discord-empty">Conecta Discord para ver usuarios.</div>';
+            const connectMsg = this.discordConnectionStatus === 'fallback' 
+                ? 'MODO BÁSICO ACTIVADO' 
+                : 'ESPERANDO A DISCORD...';
+            const connectIcon = this.discordConnectionStatus === 'fallback' ? '⚠️' : '📡';
+
+            mixerContainer.innerHTML = `
+                <div class="discord-empty-state" style="display:flex; flex-direction:column; align-items:center; gap:20px;">
+                    <div style="font-size: 6rem; filter: drop-shadow(0 0 10px rgba(255,255,255,0.2));">${connectIcon}</div>
+                    <div style="font-size: 1.8rem; font-weight: 900; letter-spacing:3px; opacity:0.8;">${connectMsg}</div>
+                </div>`;
             return;
         }
 
         if (!Array.isArray(this.discordUsers) || this.discordUsers.length === 0) {
-            mixerContainer.innerHTML = '<div class="discord-empty">No hay usuarios detectados en el canal de voz.</div>';
+            mixerContainer.innerHTML = `
+                <div class="discord-empty-state" style="display:flex; flex-direction:column; align-items:center; gap:20px;">
+                    <div style="font-size: 6rem; opacity:0.3;">🔇</div>
+                    <div style="font-size: 1.8rem; font-weight: 900; letter-spacing:3px; opacity:0.4;">CANAL VACÍO</div>
+                </div>`;
             return;
         }
 
-        const existingCards = Array.from(mixerContainer.querySelectorAll('.discord-user-card'));
-        const existingIds = new Set(existingCards.map((el) => el.dataset.userId));
-        const nextIds = new Set(this.discordUsers.map((user) => user.id));
+        // --- MOTOR DE RENDIMIENTO DISCORD (Custom Faders) ---
+        const existingUsers = Array.from(mixerContainer.querySelectorAll('.user-fader-row'));
+        const nextIds = new Set(this.discordUsers.map(u => u.id));
 
-        existingCards.forEach((el) => {
+        // 1. Cleanup
+        existingUsers.forEach(el => {
             if (!nextIds.has(el.dataset.userId)) {
-                el.classList.add('leaving');
-                setTimeout(() => { if (el.parentNode) el.remove(); }, 400);
+                el.style.opacity = '0';
+                el.style.transform = 'scale(0.8)';
+                setTimeout(() => el.remove(), 400);
             }
         });
 
-        this.discordUsers.forEach((user) => {
-            if (!existingIds.has(user.id)) {
-                const card = document.createElement('div');
-                card.className = 'discord-user-card';
-                card.dataset.userId = user.id;
-                const userFillScale = Math.max(0, Math.min(1, Number(user.volume) / 200));
-                const userFillEmptyClass = userFillScale <= 0.001 ? ' fill-empty' : '';
-
+        // 2. Render/Update
+        this.discordUsers.forEach(user => {
+            const id = user.id;
+            let row = mixerContainer.querySelector(`.user-fader-row[data-user-id="${id}"]`);
+            
+            if (!row) {
+                row = document.createElement('div');
+                row.className = 'user-fader-row';
+                row.dataset.userId = id;
+                
                 const avatarHTML = user.avatar 
-                    ? `<img src="${user.avatar}" class="discord-avatar">`
-                    : `<div class="discord-avatar">${user.username.charAt(0).toUpperCase()}</div>`;
+                    ? `<img src="${user.avatar}">`
+                    : `<span>${user.username.charAt(0).toUpperCase()}</span>`;
 
-                card.innerHTML = `
-                    ${avatarHTML}
-                    <div class="slider-container">
-                        <input type="range" class="mixer-slider" id="discord-slider-${user.id}" 
-                            min="0" max="200" value="${user.volume}" 
-                            onpointerdown="window.streamDeck.markDiscordSliderActive('${user.id}')"
-                            onpointercancel="window.streamDeck.unmarkDiscordSliderActive('${user.id}')"
-                            onpointerup="window.streamDeck.unmarkDiscordSliderActive('${user.id}')"
-                            oninput="window.streamDeck.updateDiscordVolumeServer('${user.id}', this.value)" >
-                        <div class="slider-fill discord-slider-fill${userFillEmptyClass}" id="discord-slider-fill-${user.id}" style="height: ${(userFillScale*100).toFixed(2)}%"></div>
+                const initialVol = Number(user.volume);
+                const fillHeight = (initialVol / 200) * 100;
+
+                row.innerHTML = `
+                    <div class="user-avatar-circle">${avatarHTML}</div>
+                    <div class="slider-container" style="height: 50dvh !important;">
+                        <div class="slider-fill" style="height: ${fillHeight}%; background: linear-gradient(to top, #d35400, #f1c40f) !important;"></div>
+                        <div class="fader-thumb-mixer" style="bottom: ${fillHeight}%"></div>
                     </div>
-                    <div class="discord-username">${user.username}</div>
+                    <div class="discord-username-tag">${user.username}</div>
                 `;
-                mixerContainer.appendChild(card);
+
+                const track = row.querySelector('.slider-container');
+                const fill = row.querySelector('.slider-fill');
+                const thumb = row.querySelector('.fader-thumb-mixer');
+
+                let trackRect = null;
+                const updateDiscordVol = (e) => {
+                    if (!trackRect) trackRect = track.getBoundingClientRect();
+                    const y = e.clientY - trackRect.top;
+                    let percentRaw = 100 - (y / trackRect.height) * 100;
+                    percentRaw = Math.max(0, Math.min(100, Math.round(percentRaw)));
+                    
+                    // 1. Visual
+                    fill.style.height = `${percentRaw}%`;
+                    thumb.style.bottom = `${percentRaw}%`;
+
+                    // 2. Logic (Discord is 0-200)
+                    const discordVol = Math.round(percentRaw * 2); 
+                    if (discordVol === this[`last_d_${id}`]) return;
+                    this[`last_d_${id}`] = discordVol;
+
+                    // 3. Network (Throttled 350ms)
+                    const queueKey = `discord_${id}`;
+                    this.pendingVolUpdates[queueKey] = discordVol;
+
+                    this.scheduleThrottledEmit(queueKey, () => {
+                        const valToEmit = Math.round(this.pendingVolUpdates[queueKey]);
+                        this.socket.emit('discord_set_user_volume', { userId: id, volume: valToEmit });
+                    }, 350);
+                };
+
+                track.addEventListener('pointerdown', (e) => {
+                    trackRect = track.getBoundingClientRect();
+                    track.setPointerCapture(e.pointerId);
+                    this.markDiscordSliderActive(id);
+                    updateDiscordVol(e);
+                    
+                    const moveH = (m) => updateDiscordVol(m);
+                    const stopH = (u) => {
+                        track.releasePointerCapture(u.pointerId);
+                        track.removeEventListener('pointermove', moveH);
+                        track.removeEventListener('pointerup', stopH);
+                        this.unmarkDiscordSliderActive(id);
+                        trackRect = null;
+                    };
+                    track.addEventListener('pointermove', moveH);
+                    track.addEventListener('pointerup', stopH);
+                });
+
+                mixerContainer.appendChild(row);
             } else {
-                if (!this.activeSliders.has('discord_' + user.id)) {
-                    const slider = document.getElementById(`discord-slider-${user.id}`);
-                    const fill = document.getElementById(`discord-slider-fill-${user.id}`);
-                    if (slider) slider.value = user.volume;
-                    this.setSliderFillScale(fill, user.volume / 200);
+                // Actualización externa si no se está tocando
+                if (!this.activeSliders.has('discord_' + id)) {
+                    const fill = row.querySelector('.slider-fill');
+                    const thumb = row.querySelector('.fader-thumb-mixer');
+                    const h = (user.volume / 200) * 100;
+                    fill.style.height = `${h}%`;
+                    thumb.style.bottom = `${h}%`;
                 }
             }
         });

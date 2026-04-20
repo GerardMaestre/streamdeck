@@ -8,6 +8,7 @@ let mixerInitialized = false;
 let currentDeviceListeners = null;
 let localMasterMute = false;
 const activeSessions = new Map();
+const labelCache = new Map(); // Caché para nombres de aplicaciones
 
 // Constantes de configuración
 const POLL_INTERVAL_MS = 600;
@@ -17,14 +18,24 @@ function getAppLabel(session) {
     let rawName = session.appName || session.name;
     if (!rawName) return null;
 
+    // Usar caché si ya hemos procesado esto
+    if (labelCache.has(rawName)) return labelCache.get(rawName);
+
     rawName = rawName.replace(/[^\x20-\x7E]/g, '').trim();
-    if (!rawName) return null;
+    if (!rawName) {
+        labelCache.set(session.appName || session.name, null);
+        return null;
+    }
 
     if (rawName.toLowerCase().includes('audiosrv') || rawName.toLowerCase() === 'system sounds') {
+        labelCache.set(rawName, 'Sonidos del sistema');
         return 'Sonidos del sistema';
     }
 
-    if (rawName.startsWith('@')) return null;
+    if (rawName.startsWith('@')) {
+        labelCache.set(rawName, null);
+        return null;
+    }
 
     let safeName = rawName.split('%b')[0].split(',-')[0];
     let baseName = path.basename(safeName);
@@ -32,7 +43,10 @@ function getAppLabel(session) {
     let cleanLower = lower.replace(/\.exe$/i, '').trim();
 
     // Filtro avanzado: Eliminar ruido hexadecimal (sesiones fantasma como '0d', '1a', 'ff')
-    if (/^[0-9a-f]{1,4}$/i.test(cleanLower)) return null;
+    if (/^[0-9a-f]{1,4}$/i.test(cleanLower)) {
+        labelCache.set(rawName, null);
+        return null;
+    }
 
     const diccionario = {
         'spotify': 'Spotify',
@@ -60,33 +74,41 @@ function getAppLabel(session) {
         'update': 'Update'
     };
 
+    let prettyName = null;
     for (const key in diccionario) {
         if (cleanLower.includes(key)) {
-            return diccionario[key];
+            prettyName = diccionario[key];
+            break;
         }
     }
 
-    // Lista negra quirúrgica (Oculta solo basura real del sistema)
-    const blacklist = [
-        'searchhost', 'shellexperiencehost', 'svchost', 'startmenuexperiencehost',
-        'widgets', 'applicationframehost', 'backgroundtaskhost', 'searchapp', 'explorer', 'taskhostw', 
-        'cmd', 'conhost', 'systemsettings', 'lockapp', 'textinputhost', 'idle', 
-        'system', 'registry', 'smss', 'csrss', 'lsass', 'services', 'spoolsv',
-        'audioclientrpc', 'esday', 'rundll32', 'dllhost', 'runtimebroker', 'sihost',
-        'fontdrvhost', 'dwm', 'ctfmon', 'nvcontainer', 'nvdisplay', 'amdow', 
-        'amdrsserv', 'wusa', 'wmiprvse', 'dashost', 'host32', 'host64', 'wsappx',
-        'mousoftwareworker', 'usocoreworker', 'compattelrunner', 'vmmem', 'userinit', 
-        'wininit', 'winlogon', 'crashpad_handler', 'wermgr', 'werfault', 
-        'backgroundtransferhost', 'smartscreen', 'igfxcuiservice', 'igfxem', 
-        'nvsphelper64', 'rtkngui64', 'nahimic', 'wavesyssvc', 'securityhealthsystray'
-    ];
+    if (!prettyName) {
+        // Lista negra quirúrgica (Oculta solo basura real del sistema)
+        const blacklist = [
+            'searchhost', 'shellexperiencehost', 'svchost', 'startmenuexperiencehost',
+            'widgets', 'applicationframehost', 'backgroundtaskhost', 'searchapp', 'explorer', 'taskhostw', 
+            'cmd', 'conhost', 'systemsettings', 'lockapp', 'textinputhost', 'idle', 
+            'system', 'registry', 'smss', 'csrss', 'lsass', 'services', 'spoolsv',
+            'audioclientrpc', 'esday', 'rundll32', 'dllhost', 'runtimebroker', 'sihost',
+            'fontdrvhost', 'dwm', 'ctfmon', 'nvcontainer', 'nvdisplay', 'amdow', 
+            'amdrsserv', 'wusa', 'wmiprvse', 'dashost', 'host32', 'host64', 'wsappx',
+            'mousoftwareworker', 'usocoreworker', 'compattelrunner', 'vmmem', 'userinit', 
+            'wininit', 'winlogon', 'crashpad_handler', 'wermgr', 'werfault', 
+            'backgroundtransferhost', 'smartscreen', 'igfxcuiservice', 'igfxem', 
+            'nvsphelper64', 'rtkngui64', 'nahimic', 'wavesyssvc', 'securityhealthsystray'
+        ];
 
-    if (cleanLower.length <= 1 || cleanLower.includes('{') || cleanLower.includes('}')) return null;
-    if (blacklist.some(bad => cleanLower === bad || cleanLower.startsWith(bad))) return null;
+        if (cleanLower.length <= 1 || cleanLower.includes('{') || cleanLower.includes('}')) {
+            prettyName = null;
+        } else if (blacklist.some(bad => cleanLower === bad || cleanLower.startsWith(bad))) {
+            prettyName = null;
+        } else {
+            prettyName = cleanLower.replace(/[-_]/g, ' ').trim();
+            prettyName = prettyName.replace(/\b\w/g, c => c.toUpperCase());
+        }
+    }
 
-    let prettyName = cleanLower.replace(/[-_]/g, ' ').trim();
-    prettyName = prettyName.replace(/\b\w/g, c => c.toUpperCase());
-
+    labelCache.set(session.appName || session.name, prettyName);
     return prettyName;
 }
 
