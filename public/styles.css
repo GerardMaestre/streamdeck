@@ -124,12 +124,12 @@ body {
     margin-bottom: 10px; 
 }
 
-/* Modal / Overlay (Glassmorphism) */
+/* Modal / Overlay */
 .overlay {
     display: flex;
     flex-direction: column;
-    align-items: center; /* centra horizontalmente */
-    justify-content: flex-start; /* CRÍTICO: alinea arriba para evitar cortes */
+    align-items: center;
+    justify-content: flex-start;
     position: fixed;
     top: 0;
     left: 0;
@@ -152,15 +152,13 @@ body {
     pointer-events: none;
 }
 
-/* Sale el contenedor con animación inversa al esconder */
 .overlay.hidden #overlay-container .boton {
     will-change: transform;
     animation: macOsGenieOut 0.25s cubic-bezier(0.3, 0, 0.8, 0.15) forwards !important;
-    animation-delay: 0s !important; /* Salen todos a la vez sin delay para no cortarse con el timeout */
+    animation-delay: 0s !important;
     transform-origin: center;
 }
 
-/* Animación de entrada premium para sub-botones (Estilo macOS / Genie Effect) */
 #overlay:not(.hidden) #overlay-container .boton {
     will-change: transform;
     opacity: 0;
@@ -169,49 +167,27 @@ body {
 }
 
 @keyframes macOsGenieIn {
-    0% { 
-        opacity: 0; 
-        transform: translateY(200px) scaleX(0.2) scaleY(0.5); 
-        ;
-        border-radius: 50px;
-    }
-    40% {
-        opacity: 0.8;
-        transform: translateY(-10px) scaleX(1.05) scaleY(1.05); /* Efecto elástico leve */
-        ;
-        border-radius: 12px;
-    }
-    100% { 
-        opacity: 1; 
-        transform: translateY(0) scaleX(1) scaleY(1); 
-        ;
-        border-radius: 15px;
-    }
+    0% { opacity: 0; transform: translateY(200px) scaleX(0.2) scaleY(0.5); border-radius: 50px; }
+    40% { opacity: 0.8; transform: translateY(-10px) scaleX(1.05) scaleY(1.05); border-radius: 12px; }
+    100% { opacity: 1; transform: translateY(0) scaleX(1) scaleY(1); border-radius: 15px; }
 }
 
 @keyframes macOsGenieOut {
-    0% {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-    }
-    100% {
-        opacity: 0;
-        transform: translateY(200px) scaleX(0.2) scaleY(0.5);
-        ;
-        border-radius: 50px;
-    }
+    0% { opacity: 1; transform: translateY(0) scale(1); }
+    100% { opacity: 0; transform: translateY(200px) scaleX(0.2) scaleY(0.5); border-radius: 50px; }
 }
 
 /* ---------------------------------
-   MEZCLADOR DE AUDIO APPLE STYLE
+   MEZCLADOR DE AUDIO (SIMETRÍA MATEMÁTICA PERFECTA)
 ------------------------------------ */
 .mixer-panel {
     background: rgba(20, 20, 20, 0.95);
-    
-        border-radius: var(--radius-lg);
+    border-radius: var(--radius-lg);
     border: 1px solid var(--glass-border-soft);
-    padding: 30px 20px;
+    padding: 30px; 
     display: flex;
+    align-items: flex-start;
+    gap: 30px; 
     position: relative;
     border: 1px solid rgba(255,255,255,0.1);
 }
@@ -221,8 +197,9 @@ body {
 }
 
 .master-row {
-    padding-right: 20px;
-    margin-right: 15px;
+    flex-shrink: 0;
+    padding: 0;
+    margin: 0;
 }
 
 .app-mixers-container {
@@ -232,33 +209,33 @@ body {
     overflow-x: auto;
     padding-bottom: 10px;
     scrollbar-width: none;
+    margin: 0;
 }
 .app-mixers-container::-webkit-scrollbar { display: none; }
 
 .mixer-divider {
     width: 2px;
     background: var(--glass-border-soft);
-    margin: 0 5px;
+    margin: 0; 
     border-radius: 2px;
+    align-self: stretch;
+    min-height: 100%;
 }
 
+/* 🔥 CRÍTICO: Bloqueamos el ancho de cada columna para que el Master y los Apps ocupen exactamente lo mismo, forzando la simetría */
 .mixer-row {
+    width: 100px;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 15px;
-    /* Transición suave para cuando se elimina (fade out) */
     transition: opacity var(--duration-normal) var(--ease-standard), transform var(--duration-normal) var(--ease-standard);
+    flex-shrink: 0; 
 }
 
 .mixer-row.fade-out {
     opacity: 0;
     transform: scale(0.8) translateY(20px);
-}
-
-@keyframes fadeInRow {
-    0% { opacity: 0; transform: scale(0.8) translateY(20px); }
-    100% { opacity: 1; transform: scale(1) translateY(0); }
 }
 
 .mixer-icon-btn {
@@ -294,6 +271,7 @@ body {
     transform: scale(0.85);
 }
 
+/* 🔥 CRÍTICO: Si el texto es más ancho que 100px, saltará de línea en vez de engordar la caja y romper el centrado */
 .mixer-label {
     color: var(--text-primary);
     font-size: 0.9rem;
@@ -302,9 +280,12 @@ body {
     user-select: none;
     margin-top: 10px;
     min-height: 20px;
+    width: 100%;
+    text-align: center;
+    word-wrap: break-word;
+    line-height: 1.2;
 }
 
-/* Contenedor del Slider */
 .slider-container {
     --slider-touch-size: 36px;
     --slider-track-height: 220px;
@@ -318,13 +299,11 @@ body {
     justify-content: center;
     align-items: flex-end;
     overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* El relleno de color blanco estilo Apple */
 .slider-fill {
     width: 100%;
-    height: 0%; /* controlled via JS: 0% -> 100% */
+    height: 0%; 
     background: rgba(255, 255, 255, 0.98);
     border-radius: 999px;
     border: 1px solid rgba(255,255,255,0.08);
@@ -342,13 +321,12 @@ body {
     border-color: transparent;
 }
 
-/* Slider transparente superpuesto e invisible con comportamiento horizontal pero rotado 90 grados */
 .mixer-slider {
     -webkit-appearance: none;
     appearance: none;
     background: transparent;
-    width: var(--slider-track-height); /* Igual al height del contenedor */
-    height: var(--slider-touch-size); /* Igual al width del contenedor */
+    width: var(--slider-track-height); 
+    height: var(--slider-touch-size); 
     position: absolute;
     top: 50%;
     left: 50%;
@@ -359,7 +337,6 @@ body {
     cursor: pointer;
 }
 
-/* Thumb grande e imperceptible (para capturar touch events fluidamente) */
 .mixer-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
@@ -381,8 +358,7 @@ body {
     border: none;
 } 
 
-
-/* Execution Modal (Apple Dynamic Island Style) */
+/* Execution Modal */
 .execution-modal {
     position: fixed;
     top: 50%;
@@ -395,17 +371,14 @@ body {
     max-width: 95vw;
     width: 95vw;
     background: rgba(20, 20, 20, 0.95);
-    
-        border-radius: var(--radius-xl);
+    border-radius: var(--radius-xl);
     border: 1px solid var(--glass-border);
     display: flex;
     flex-direction: column;
     z-index: 2000;
     border: 1px solid rgba(255,255,255,0.1);
     opacity: 1;
-    transition:
-        opacity var(--duration-slow) var(--ease-spring),
-        transform var(--duration-slow) var(--ease-spring);
+    transition: opacity var(--duration-slow) var(--ease-spring), transform var(--duration-slow) var(--ease-spring);
     will-change: transform, opacity;
 }
 
@@ -480,15 +453,10 @@ body {
 }
 
 @keyframes slideInLog {
-    to {
-        opacity: 1;
-        transform: translateX(0);
-    }
+    to { opacity: 1; transform: translateX(0); }
 }
 
-.execution-logs::-webkit-scrollbar {
-    width: 6px;
-}
+.execution-logs::-webkit-scrollbar { width: 6px; }
 .execution-logs::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.3);
     border-radius: 10px;
@@ -497,8 +465,7 @@ body {
 /* Discord Panel Styles */
 .discord-panel {
     background: rgba(28, 42, 62, 0.64);
-    
-        border-radius: 30px;
+    border-radius: 30px;
     border: 1px solid var(--glass-border);
     padding: 30px;
     display: flex;
@@ -566,31 +533,10 @@ body {
     border: 1px solid transparent;
 }
 
-.discord-status-connected {
-    background: var(--state-success-bg);
-    border-color: var(--state-success-border);
-    color: var(--state-success-text);
-}
-
-.discord-status-fallback {
-    background: var(--state-info-bg);
-    border-color: var(--state-info-border);
-    color: var(--state-info-text);
-}
-
-.discord-status-connecting,
-.discord-status-reauth {
-    background: var(--state-warn-bg);
-    border-color: var(--state-warn-border);
-    color: var(--state-warn-text);
-}
-
-.discord-status-disconnected,
-.discord-status-error {
-    background: var(--state-error-bg);
-    border-color: var(--state-error-border);
-    color: var(--state-error-text);
-}
+.discord-status-connected { background: var(--state-success-bg); border-color: var(--state-success-border); color: var(--state-success-text); }
+.discord-status-fallback { background: var(--state-info-bg); border-color: var(--state-info-border); color: var(--state-info-text); }
+.discord-status-connecting, .discord-status-reauth { background: var(--state-warn-bg); border-color: var(--state-warn-border); color: var(--state-warn-text); }
+.discord-status-disconnected, .discord-status-error { background: var(--state-error-bg); border-color: var(--state-error-border); color: var(--state-error-text); }
 
 .discord-controls {
     display: flex;
@@ -635,8 +581,7 @@ body {
     font-size: 1.2rem;
     font-weight: 600;
     border: 1px solid rgba(255,255,255,0.1);
-    
-        display: flex;
+    display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
@@ -672,7 +617,7 @@ body {
     gap: 25px;
     overflow-x: auto;
     padding-bottom: 20px;
-    scrollbar-width: none; /* Firefox */
+    scrollbar-width: none; 
     min-height: 250px;
     align-items: flex-start;
 }
@@ -691,7 +636,6 @@ body {
     padding: 24px 12px;
     border-radius: 14px;
     border: 1px solid rgba(255, 255, 255, 0.14);
-    background: rgba(255, 255, 255, 0.06);
     background: rgba(20, 20, 20, 0.95);
     -webkit-background: rgba(20, 20, 20, 0.95);
 }
@@ -744,7 +688,6 @@ body {
 /* 📱 TABLET / MOBILE OPTIMIZATION (Responsive Adaptive Grid)   */
 /* ============================================================ */
 @media (max-width: 1400px) and (orientation: landscape), (max-width: 900px) and (orientation: portrait) {
-    /* Liquid Adaptive Grid en tabletas (Respeta diseño pero fluye solapado) */
     .grid-container {
         grid-template-columns: repeat(auto-fit, minmax(clamp(120px, 15vw, 160px), 1fr));
         gap: 15px;
@@ -756,26 +699,22 @@ body {
         min-height: min-content;
     }
     
-    /* Mejor touch target para los botones (sin tirar el glassmorphism) */
     .boton {
         font-size: 1.35rem; 
         border-radius: var(--radius-lg); 
-        touch-action: manipulation; /* Evitar zoom accidental por doble toque */
-        /* Efecto feedback mas marcado en tablet en presionar */
+        touch-action: manipulation; 
         transition: transform 0.1s;
     }
 
     .boton .icon {
-        font-size: 3.2rem; /* Ícono principal grande */
+        font-size: 3.2rem; 
         margin-bottom: 5px;
     }
 
-    /* ==== MIXER & DISCORD PANELS PARA PANTALLA TÁCTIL ==== */
-    /* Modales / overlays adaptados a los pulgares en tablet */
     .mixer-panel, .discord-panel {
         width: 95vw;        
         max-width: 1000px;
-        padding: 30px 15px;
+        padding: 30px 20px;
         gap: 20px;
     }
 
@@ -784,15 +723,19 @@ body {
     }
 
     .mixer-row {
-        gap: 15px; /* Más espacio para evitar miss-clicks */
+        width: 110px; /* En tablet hacemos la columna más ancha para dedos grandes */
+        gap: 15px; 
     }
 
-    /* Los faders deben ser anchos para cogerlos fácil con el pulgar */
+    .app-mixers-container {
+        gap: 20px; 
+    }
+
     .slider-container {
         --slider-touch-size: 50px;
         --slider-track-height: 240px;
-        width: var(--slider-touch-size) !important;    /* 1.5x su antiguo tamaño */
-        height: var(--slider-track-height) !important;  /* Más recorrido de volumen */
+        width: var(--slider-touch-size) !important;    
+        height: var(--slider-track-height) !important;  
         border-radius: 999px;
     }
 
@@ -800,16 +743,14 @@ body {
         border-radius: 20px;
     }
 
-    /* Mute icon y label */
     .mixer-icon {
         font-size: 2.2rem;
-        padding: 10px; /* Área de toque del botón mute gigante */
-        background: rgba(255, 255, 255, 0.05); /* Soft hit box cue */
+        padding: 10px; 
+        background: rgba(255, 255, 255, 0.05); 
         border-radius: 50%;
     }
 
     .mixer-icon-btn {
-         /* Prevenir selección de texto asquerosa de SO */
         -webkit-tap-highlight-color: transparent;
     }
 
@@ -847,15 +788,13 @@ body {
     }
 
     .mixer-label {
-        font-size: 1.1rem; 
-        max-width: 110px;
+        font-size: 1.05rem; 
         margin-top: 15px;
     }
 
-    /* El contenedor global, frenar overscrolls típicos móviles de safari/chrome */
     body {
-        touch-action: pan-y; /* Solo permitir scroll, nada de zoom multidireccional */
-        overscroll-behavior: none; /* Eliminar efecto goma rebote molesto */
+        touch-action: pan-y; 
+        overscroll-behavior: none; 
     }
 }
 

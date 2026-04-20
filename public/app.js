@@ -5,39 +5,29 @@ class StreamDeckClient {
         this.pages = {};
         this.currentPage = 'main';
         
-        // Elementos del DOM
         this.container = document.getElementById('deck-container');
         this.overlay = document.getElementById('overlay');
         this.overlayContainer = document.getElementById('overlay-container');
         
-        // Estado del Mezclador
         this.lastMixerState = null;
         this.activeSliders = new Set();
         this.pendingVolUpdates = {};
         this.volUpdateTimes = {};
         this.volUpdateTimers = {};
-
-        // Control de Listeners para evitar duplicados (Event Listener Leak)
         this.listenersInitialized = false;
 
-        // Estado del Discord
         this.discordMute = false;
         this.discordDeaf = false;
         this.discordUsers = [];
         this.discordConnectionStatus = 'disconnected';
         this.discordConnectionMessage = 'Sin conexión con Discord';
 
-        // Elementos del Modal de Ejecución
         this.executionModal = document.getElementById('execution-modal');
         this.executionLogs = document.getElementById('execution-logs');
         this.executionSpinner = document.getElementById('execution-spinner');
         this.executionTitle = document.getElementById('execution-title');
         this.executionHideTimeout = null;
-        
-        // WakeLock
         this.wakeLock = null;
-
-        // Intervalo de envío para volumen: prioriza respuesta inmediata sin saturar socket
         this.volumeEmitIntervalMs = 16;
 
         this.init();
@@ -47,12 +37,10 @@ class StreamDeckClient {
         this.setupSocketListeners();
         this.setupDOMListeners();
 
-        // Cargar configuración desde el Backend (Punto 5)
         try {
             const res = await fetch('/api/config');
             const data = await res.json();
             this.pages = data.pages || {};
-            // Cargar listado dinámico de scripts para asegurar que todos aparezcan
             try {
                 const scriptsRes = await fetch('/api/scripts');
                 if (scriptsRes.ok) {
@@ -61,19 +49,13 @@ class StreamDeckClient {
                     this.scriptsByFolder = {};
                 }
             } catch (err) {
-                console.warn('No se pudieron cargar scripts dinámicos', err);
                 this.scriptsByFolder = {};
             }
-        } catch (e) {
-            console.error('Error cargando configuración:', e);
-        }
+        } catch (e) {}
 
         this.initMainGrid();
     }
 
-    // ==========================================
-    // UI GRID Y CARPETAS
-    // ==========================================
     initMainGrid() {
         this.renderGrid('main');
     }
@@ -98,15 +80,12 @@ class StreamDeckClient {
     getPageData(pageId) {
         let pageData = this.pages[pageId];
 
-        // Si la página está vinculada a un folder de scripts (payload.carpeta), intentamos
-        // mezclar la configuración estática con los scripts detectados dinámicamente.
         if (Array.isArray(pageData) && pageData.length > 0) {
             const anyWithCarpeta = pageData.find(item => item && item.payload && item.payload.carpeta);
             if (anyWithCarpeta) {
                 const carpeta = anyWithCarpeta.payload.carpeta;
                 const detected = (this.scriptsByFolder && this.scriptsByFolder[carpeta]) ? this.scriptsByFolder[carpeta].archivos : [];
 
-                // Mantener el orden y botones ya configurados, y anexar archivos faltantes
                 const configured = pageData.slice();
                 const existingFiles = new Set(configured.filter(i => i.payload && i.payload.archivo).map(i => i.payload.archivo));
 
@@ -127,7 +106,6 @@ class StreamDeckClient {
             }
         }
 
-        // Si no existe configuración y el pageId coincide con el nombre de carpeta, renderizarla directamente
         if ((!pageData || pageData.length === 0) && this.scriptsByFolder && this.scriptsByFolder[pageId]) {
             const carpeta = pageId;
             pageData = this.scriptsByFolder[carpeta].archivos.map(f => ({
@@ -197,10 +175,8 @@ class StreamDeckClient {
                 this.openDiscordPanel();
             } else if (btnData.type === 'action') {
                 if (btnData.payload) {
-                    // Enviar evento dinámico con payload
                     this.socket.emit(btnData.action, btnData.payload);
                 } else {
-                    // Eventos tradicionales: channel + action
                     this.socket.emit(btnData.channel, btnData.action);
                 }
 
@@ -231,14 +207,12 @@ class StreamDeckClient {
             if (e.target === this.overlay) this.closeFolder();
         });
 
-        // Cierre manual del modal de ejecución al clicar fuera (fondo borroso)
         this.executionModal.addEventListener('click', (e) => {
             if (e.target === this.executionModal) {
                 this.hideExecutionModal(true);
             }
         });
 
-        // PWA Wake Lock Logic
         document.body.addEventListener('click', () => {
             if (!this.wakeLock) this.requestWakeLock();
         }, { once: true });
@@ -249,7 +223,6 @@ class StreamDeckClient {
             }
         });
         
-        // Exponer métodos globalmente solo para el uso desde HTML "oninput"/"onclick"
         window.streamDeck = this;
     }
 
@@ -258,9 +231,70 @@ class StreamDeckClient {
             if ('wakeLock' in navigator) {
                 this.wakeLock = await navigator.wakeLock.request('screen');
             }
-        } catch (err) {
-            console.warn(`WakeLock Error: ${err.message}`);
+        } catch (err) {}
+    }
+
+    // ==========================================
+    // SISTEMA DE LOGOS BLINDADO (Anti Imagen Rota)
+    // ==========================================
+    getIconForApp(appName, isMaster) {
+        const shadow = 'filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));';
+        
+        if (isMaster) return `<span style="font-size:2rem; ${shadow}">🎧</span>`;
+
+        const name = appName.toLowerCase();
+        
+        // Cifrado Base64 del SVG: Garantiza al 100% que no habrá fallos de comillas en el HTML
+        const fallbackSVG = `<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="18" rx="4" ry="4" fill="rgba(255,255,255,0.03)"></rect><path d="M2 8h20"></path><circle cx="6" cy="5.5" r="1" fill="rgba(255,255,255,0.6)" stroke="none"></circle><circle cx="10" cy="5.5" r="1" fill="rgba(255,255,255,0.6)" stroke="none"></circle></svg>`;
+        const fallbackSrc = `data:image/svg+xml;base64,${btoa(fallbackSVG)}`;
+        const fallbackHTML = `<img src="${fallbackSrc}" style="width: 34px; height: 34px; ${shadow}" />`;
+
+        const iconMap = {
+            'spotify': 'spotify/1DB954',
+            'discord': 'discord/5865F2',
+            'chrome': 'googlechrome/4285F4',
+            'edge': 'microsoftedge/0078D7',
+            'steam': 'steam/ffffff',
+            'obs': 'obsstudio/FFFFFF',
+            'vlc': 'vlcmediaplayer/FF8800',
+            'firefox': 'firefox/FF7139',
+            'brave': 'brave/FF2000',
+            'whatsapp': 'whatsapp/25D366',
+            'telegram': 'telegram/26A5E4',
+            'teams': 'microsoftteams/6264A7',
+            'zoom': 'zoom/2D8CFF',
+            'epic games': 'epicgames/FFFFFF',
+            'ea': 'ea/FFFFFF',
+            'ubisoft': 'ubisoft/FFFFFF',
+            'powertoys': 'microsoft/FFFFFF',
+            'sonidos del sistema': 'windows11/0078D4',
+            'league of legends': 'leagueoflegends/C89B3C',
+            'valorant': 'valorant/FF4655',
+            'minecraft': 'minecraft/118C4E',
+            'roblox': 'roblox/FFFFFF',
+            'itunes': 'itunes/FB5EC9',
+            'opera gx': 'operagx/FF0000',
+            'opera': 'opera/FF1B2D',
+            'slack': 'slack/4A154B'
+        };
+
+        // Reglas directas con emojis nativos por si fallan las de Internet
+        if (name.includes('qemu') || name.includes('game') || name.includes('juego') || name.includes('emulator')) return `<span style="font-size:2.2rem; ${shadow}">🎮</span>`;
+        if (name.includes('wallpaper')) return `<span style="font-size:2.2rem; ${shadow}">🖼️</span>`;
+        if (name.includes('sunshine') || name.includes('stream')) return `<span style="font-size:2.2rem; ${shadow}">☀️</span>`;
+        if (name.includes('music') || name.includes('audio') || name.includes('player')) return `<span style="font-size:2.2rem; ${shadow}">🎵</span>`;
+        if (name.includes('video') || name.includes('movie') || name.includes('media')) return `<span style="font-size:2.2rem; ${shadow}">🎬</span>`;
+        if (name.includes('web') || name.includes('browser')) return `<span style="font-size:2.2rem; ${shadow}">🌐</span>`;
+        if (name.includes('driver') || name.includes('system') || name.includes('host') || name.includes('update')) return `<span style="font-size:2.2rem; ${shadow}">⚙️</span>`;
+
+        for (const key in iconMap) {
+            if (name.includes(key)) {
+                // El inyector blindado con Base64. Jamás verás un icono de imagen rota.
+                return `<img src="https://cdn.simpleicons.org/${iconMap[key]}" style="width: 32px; height: 32px; ${shadow}" onerror="this.onerror=null; this.src='${fallbackSrc}';" />`;
+            }
         }
+
+        return fallbackHTML;
     }
 
     // ==========================================
@@ -268,7 +302,7 @@ class StreamDeckClient {
     // ==========================================
     openMixer() {
         this.overlayContainer.innerHTML = '';
-        this.overlayContainer.className = 'modal-content-wrapper'; // disable grid
+        this.overlayContainer.className = 'modal-content-wrapper'; 
 
         const mixerPanel = document.createElement('div');
         mixerPanel.className = 'mixer-panel';
@@ -295,26 +329,21 @@ class StreamDeckClient {
         const id = isMaster ? 'global' : appData.name;
         const labelName = isMaster ? 'Master' : appData.name;
         
-        let iconStr = '🔊';
-        if(isMaster) iconStr = '🎧';
-        else if(labelName.toLowerCase().includes('discord')) iconStr = '💬';
-        else if(labelName.toLowerCase().includes('spotify')) iconStr = '🎵';
-        else if(labelName.toLowerCase().includes('chrome') || labelName.toLowerCase().includes('msedge')) iconStr = '🌐';
-        else if(labelName.toLowerCase().includes('steam') || labelName.toLowerCase().includes('game')) iconStr = '🎮';
-
-        const originalIcon = appData.mute ? '🔇' : iconStr;
-        const opacity = appData.mute ? '0.5' : '1';
+        const iconHTML = this.getIconForApp(labelName, isMaster);
+        const opacity = appData.mute ? '0.4' : '1';
         const initialFillScale = Math.max(0, Math.min(1, Number(appData.volume) / 100));
         const initialFillEmptyClass = initialFillScale <= 0.001 ? ' fill-empty' : '';
+        const mutedClass = appData.mute ? ' muted-active' : '';
 
         const row = document.createElement('div');
         row.className = 'mixer-row';
         row.id = `mixer-row-${id}`;
-        row.dataset.originalIcon = iconStr;
 
         row.innerHTML = `
-            <div class="mixer-icon-btn" onclick="window.streamDeck.toggleMute('${id}', ${isMaster})">
-                <span class="mixer-icon" id="icon-${id}" style="opacity:${opacity}">${originalIcon}</span>
+            <div class="mixer-icon-btn${mutedClass}" onclick="window.streamDeck.toggleMute('${id}', ${isMaster})">
+                <div id="icon-wrapper-${id}" style="opacity:${opacity}; display:flex; justify-content:center; align-items:center; width:100%; height:100%; transition: opacity 0.3s ease;">
+                    ${iconHTML}
+                </div>
             </div>
             <div class="slider-container">
                 <input type="range" class="mixer-slider ${isMaster?'master-slider':''}" id="slider-${id}" 
@@ -349,14 +378,8 @@ class StreamDeckClient {
         });
     }
 
-    // LLamados desde HTML (a través de window.streamDeck)
-    markSliderActive(id) {
-        this.activeSliders.add(id);
-    }
-
-    unmarkSliderActive(id) {
-        this.activeSliders.delete(id);
-    }
+    markSliderActive(id) { this.activeSliders.add(id); }
+    unmarkSliderActive(id) { this.activeSliders.delete(id); }
 
     scheduleThrottledEmit(key, emitFn, intervalMs = this.volumeEmitIntervalMs) {
         const now = Date.now();
@@ -403,7 +426,6 @@ class StreamDeckClient {
 
     setSliderFillScale(fillElement, scaleValue) {
         if (!fillElement) return;
-
         const numeric = Number(scaleValue);
         const clamped = Number.isFinite(numeric) ? Math.max(0, Math.min(1, numeric)) : 0;
         fillElement.style.height = `${(clamped * 100).toFixed(2)}%`;
@@ -412,29 +434,25 @@ class StreamDeckClient {
 
     toggleMute(app, isMaster) {
         if (isMaster) {
-            const iconBtn = document.getElementById(`icon-global`);
-            if (iconBtn) iconBtn.parentElement.classList.add('pending');
+            const iconBtn = document.getElementById(`icon-wrapper-global`) || document.getElementById('icon-global');
+            if (iconBtn) iconBtn.closest('.mixer-icon-btn').classList.add('pending');
             this.socket.emit('toggle_master_mute');
         } else {
             const id = app;
-            const iconBtn = document.getElementById(`icon-${id}`);
-            if (iconBtn) iconBtn.parentElement.classList.add('pending');
-            const isCurrentlyMuted = iconBtn && iconBtn.textContent === '🔇';
-            this.socket.emit('toggle_session_mute', { app, isMuted: !isCurrentlyMuted });
+            const iconWrapper = document.getElementById(`icon-wrapper-${id}`);
+            if (iconWrapper) iconWrapper.closest('.mixer-icon-btn').classList.add('pending');
+            this.socket.emit('toggle_session_mute', { app });
         }
     }
 
     // ==========================================
-    // MODAL EJECUCIÓN (Dynamic Island)
+    // MODAL EJECUCIÓN
     // ==========================================
     showExecutionModal() {
         clearTimeout(this.executionHideTimeout);
         this.executionModal.classList.remove('hidden');
         this.executionModal.classList.remove('closing');
-        
-        // Limpieza de logs previa para asegurar idempotencia total
         if (this.executionLogs) this.executionLogs.innerHTML = '';
-        
         this.executionSpinner.textContent = '⚙️';
         this.executionSpinner.classList.remove('success');
         this.executionSpinner.style.animation = 'rotate 1.5s linear infinite';
@@ -491,13 +509,11 @@ class StreamDeckClient {
         });
 
         this.socket.on('master_updated', (data) => {
-            const id = 'global';
-            this.updateSliderUI(id, data);
+            this.updateSliderUI('global', data);
         });
 
         this.socket.on('session_updated', (data) => {
-            const id = data.name;
-            this.updateSliderUI(id, data);
+            this.updateSliderUI(data.name, data);
         });
 
         this.socket.on('session_added', (sessionData) => {
@@ -506,7 +522,6 @@ class StreamDeckClient {
                 const existingRow = document.getElementById(`mixer-row-${sessionData.name}`);
                 if (existingRow) {
                     existingRow.classList.remove('fade-out');
-                    // Actualizar valores si ya existe pero estaba oculto o es un re-añadido
                     this.updateSliderUI(sessionData.name, { type: 'volume', value: sessionData.volume });
                     this.updateSliderUI(sessionData.name, { type: 'mute', value: sessionData.mute });
                 } else {
@@ -527,14 +542,11 @@ class StreamDeckClient {
 
         this.socket.on('script_log', (payload) => {
             if (!this.executionLogs) return;
-            
             const text = payload.data || '';
             const lines = text.split('\n');
             lines.forEach(line => {
                 const cleanLine = line.trim();
                 if (cleanLine.length === 0) return;
-                
-                // Evitar duplicar la misma línea de log si llega repetida (idempotencia básica)
                 const lastLog = this.executionLogs.lastElementChild;
                 if (lastLog && lastLog.textContent === `> ${cleanLine}`) return;
 
@@ -544,6 +556,7 @@ class StreamDeckClient {
             });
             this.executionLogs.scrollTo({ top: this.executionLogs.scrollHeight, behavior: 'smooth' });
         });
+        
         this.socket.on('script_success', () => {
             clearTimeout(this.executionHideTimeout);
             this.executionSpinner.style.animation = '';
@@ -579,29 +592,28 @@ class StreamDeckClient {
         });
     }
 
-    updateSliderUI(id, data) {
+    updateSliderUI(id, data) {        
         const slider = document.getElementById(`slider-${id}`);
-        const iconBtn = document.getElementById(`icon-${id}`);
+        const wrapper = document.getElementById(id === 'global' ? 'icon-wrapper-global' : `icon-wrapper-${id}`) || document.getElementById(`icon-${id}`);
         const fill = document.getElementById(`slider-fill-${id}`);
         
         if (slider && data.type === 'volume' && !this.activeSliders.has(id)) {
             slider.value = data.value;
             this.setSliderFillScale(fill, data.value / 100);
-        } else if (iconBtn && data.type === 'mute') {
+        } else if (wrapper && data.type === 'mute') {
             const row = document.getElementById(`mixer-row-${id}`);
             if(!row) return;
-            // La Escucha "Inteligente": Actualización visual tras confirmación del servidor
-            iconBtn.textContent = data.value ? '🔇' : iconStr;
+
+            const iconContainer = wrapper.closest('.mixer-icon-btn');
+            if (iconContainer) iconContainer.classList.remove('pending'); 
             
-            // Aplicar feedback visual de "Activado"
-            const iconContainer = iconBtn.parentElement; // .mixer-icon-btn
-            iconContainer.classList.remove('pending'); // Limpiar estado pendiente
             if (data.value) {
-                iconContainer.classList.add('muted-active');
+                if (iconContainer) iconContainer.classList.add('muted-active');
+                wrapper.style.opacity = '0.4'; 
             } else {
-                iconContainer.classList.remove('muted-active');
+                if (iconContainer) iconContainer.classList.remove('muted-active');
+                wrapper.style.opacity = '1'; 
             }
-            iconBtn.style.opacity = '1';
         }
     }
 
@@ -610,7 +622,7 @@ class StreamDeckClient {
     // ==========================================
     openDiscordPanel() {
         this.overlayContainer.innerHTML = '';
-        this.overlayContainer.className = 'modal-content-wrapper'; // disable grid
+        this.overlayContainer.className = 'modal-content-wrapper';
 
         const discordPanel = document.createElement('div');
         discordPanel.className = 'discord-panel';
@@ -648,7 +660,6 @@ class StreamDeckClient {
     toggleDiscordMute() {
         if (!['connected', 'fallback'].includes(this.discordConnectionStatus)) return;
         if (navigator.vibrate) navigator.vibrate(50);
-
         this.socket.emit('discord_toggle_mute', (result) => {
             if (result?.ok) return;
             this.discordConnectionMessage = result?.message || 'No se pudo alternar mute';
@@ -659,7 +670,6 @@ class StreamDeckClient {
     toggleDiscordDeaf() {
         if (!['connected', 'fallback'].includes(this.discordConnectionStatus)) return;
         if (navigator.vibrate) navigator.vibrate(50);
-
         this.socket.emit('discord_toggle_deaf', (result) => {
             if (result?.ok) return;
             this.discordConnectionMessage = result?.message || 'No se pudo alternar ensordecer';
@@ -670,7 +680,6 @@ class StreamDeckClient {
     updateDiscordConnectionUI() {
         const statusEl = document.getElementById('discord-connection-status');
         if (!statusEl) return;
-
         statusEl.className = `discord-status discord-status-${this.discordConnectionStatus}`;
         statusEl.textContent = this.discordConnectionMessage || 'Sin conexión con Discord';
     }
@@ -696,12 +705,12 @@ class StreamDeckClient {
         if (!mixerContainer) return;
 
         if (this.discordConnectionStatus === 'fallback') {
-            mixerContainer.innerHTML = '<div class="discord-empty">Modo básico: mute/deaf funciona, pero el mixer de usuarios necesita OAuth válido.</div>';
+            mixerContainer.innerHTML = '<div class="discord-empty">Modo básico: mute/deaf funciona.</div>';
             return;
         }
 
         if (this.discordConnectionStatus !== 'connected') {
-            mixerContainer.innerHTML = '<div class="discord-empty">Conecta Discord para ver usuarios de la llamada.</div>';
+            mixerContainer.innerHTML = '<div class="discord-empty">Conecta Discord para ver usuarios.</div>';
             return;
         }
 
@@ -717,9 +726,7 @@ class StreamDeckClient {
         existingCards.forEach((el) => {
             if (!nextIds.has(el.dataset.userId)) {
                 el.classList.add('leaving');
-                setTimeout(() => {
-                    if (el.parentNode) el.remove();
-                }, 400);
+                setTimeout(() => { if (el.parentNode) el.remove(); }, 400);
             }
         });
 
@@ -748,7 +755,6 @@ class StreamDeckClient {
                     </div>
                     <div class="discord-username">${user.username}</div>
                 `;
-
                 mixerContainer.appendChild(card);
             } else {
                 if (!this.activeSliders.has('discord_' + user.id)) {
@@ -761,18 +767,14 @@ class StreamDeckClient {
         });
     }
 
-    markDiscordSliderActive(userId) {
-        this.activeSliders.add('discord_' + userId);
-    }
-
-    unmarkDiscordSliderActive(userId) {
+    markDiscordSliderActive(userId) { this.activeSliders.add('discord_' + userId); }
+    unmarkDiscordSliderActive(userId) { 
         this.activeSliders.delete('discord_' + userId);
         setTimeout(() => this.activeSliders.delete('discord_' + userId), 120); 
     }
 
     updateDiscordVolumeServer(userId, value) {
         if (this.discordConnectionStatus !== 'connected') return;
-
         const fill = document.getElementById(`discord-slider-fill-${userId}`);
         this.setSliderFillScale(fill, value / 200);
 
@@ -790,41 +792,24 @@ class StreamDeckClient {
     }
 }
 
-
-// 1. Crear el botón invisible en la esquina
 const btnFullscreen = document.createElement('div');
 btnFullscreen.innerHTML = '🔲';
 btnFullscreen.style.cssText = `
-    position: fixed;
-    top: 10px;
-    right: 10px;
-    font-size: 24px;
-    opacity: 0.3;
-    z-index: 9999;
-    cursor: pointer;
+    position: fixed; top: 10px; right: 10px; font-size: 24px;
+    opacity: 0.3; z-index: 9999; cursor: pointer;
 `;
 document.body.appendChild(btnFullscreen);
 
-// 2. Darle la orden de expandirse al tocarlo
 btnFullscreen.addEventListener('click', () => {
     let elem = document.documentElement;
     if (!document.fullscreenElement) {
-        if (elem.requestFullscreen) {
-            elem.requestFullscreen();
-        } else if (elem.webkitRequestFullscreen) { /* Safari / Older Chrome */
-            elem.webkitRequestFullscreen();
-        } else if (elem.msRequestFullscreen) { /* IE11 */
-            elem.msRequestFullscreen();
-        }
-        btnFullscreen.style.opacity = '0'; // Ocultamos el botón cuando ya esté grande
+        if (elem.requestFullscreen) elem.requestFullscreen();
+        else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
+        else if (elem.msRequestFullscreen) elem.msRequestFullscreen();
+        btnFullscreen.style.opacity = '0'; 
     }
 });
 
-
-
-
-// Inicializar la aplicación
 document.addEventListener('DOMContentLoaded', () => {
     new StreamDeckClient();
 });
-
