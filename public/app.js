@@ -2,6 +2,7 @@ class StreamDeckClient {
     constructor() {
         this.socket = io();
         this.pages = {};
+        this.currentPage = 'main';
         
         // Elementos del DOM
         this.container = document.getElementById('deck-container');
@@ -31,6 +32,9 @@ class StreamDeckClient {
         
         // WakeLock
         this.wakeLock = null;
+
+        // Intervalo de envío para volumen: prioriza respuesta inmediata sin saturar socket
+        this.volumeEmitIntervalMs = 16;
 
         this.init();
     }
@@ -67,53 +71,27 @@ class StreamDeckClient {
     // UI GRID Y CARPETAS
     // ==========================================
     initMainGrid() {
-        this.container.innerHTML = ''; 
-        const pageData = this.pages['main'] || [];
-        
+        this.renderGrid('main');
+    }
+
+    renderGrid(pageId = 'main') {
+        this.currentPage = pageId;
+        this.container.innerHTML = '';
+
+        const pageData = this.getPageData(pageId);
+        const shouldInjectBack = pageId !== 'main';
+
+        if (shouldInjectBack) {
+            this.container.appendChild(this.createBackButton(0));
+        }
+
         pageData.forEach((btnData, index) => {
-            this.container.appendChild(this.createButton(btnData, index));
+            const visualIndex = shouldInjectBack ? index + 1 : index;
+            this.container.appendChild(this.createButton(btnData, visualIndex));
         });
     }
 
-    createButton(btnData, index) {
-        const btn = document.createElement('button');
-        btn.className = 'boton';
-        btn.style.background = btnData.color || '#333';
-        btn.style.animationDelay = `${index * 0.05}s`; 
-        
-        btn.innerHTML = `<span class="icon">${btnData.icon}</span>${btnData.label}`;
-
-        btn.addEventListener('click', () => {
-            if (navigator.vibrate) navigator.vibrate(50);
-
-            if (btnData.type === 'folder') {
-                this.openFolder(btnData.targetPage);
-            } else if (btnData.type === 'mixer') {
-                this.openMixer();
-            } else if (btnData.type === 'discord_panel') {
-                this.openDiscordPanel();
-            } else if (btnData.type === 'action') {
-                if (btnData.payload) {
-                    // Enviar evento dinámico con payload
-                    this.socket.emit(btnData.action, btnData.payload);
-                } else {
-                    // Eventos tradicionales: channel + action
-                    this.socket.emit(btnData.channel, btnData.action);
-                }
-
-                if (btnData.channel === 'ejecutar_script' || btnData.action === 'ejecutar_script_dinamico') {
-                    this.showExecutionModal();
-                }
-            }
-        });
-
-        return btn;
-    }
-
-    openFolder(pageId) {
-        this.overlayContainer.innerHTML = '';
-        this.overlayContainer.className = 'grid-container';
-
+    getPageData(pageId) {
         let pageData = this.pages[pageId];
 
         // Si la página está vinculada a un folder de scripts (payload.carpeta), intentamos
@@ -158,13 +136,81 @@ class StreamDeckClient {
             }));
         }
 
-        if (!pageData) return;
+        return Array.isArray(pageData) ? pageData : [];
+    }
 
-        pageData.forEach((btnData, index) => {
-            this.overlayContainer.appendChild(this.createButton(btnData, index));
+    createBackButton(index) {
+        const backBtn = document.createElement('button');
+        backBtn.className = 'boton btn-streamdeck';
+        backBtn.style.background = 'linear-gradient(145deg, #2c3e50, #34495e)';
+        backBtn.style.animationDelay = `${index * 0.05}s`;
+        backBtn.innerHTML = '<span class="icon">⬅️</span>Volver';
+
+        backBtn.addEventListener('click', () => {
+            if (navigator.vibrate) navigator.vibrate(50);
+            this.renderGrid('main');
         });
 
-        this.overlay.classList.remove('hidden');
+        return backBtn;
+    }
+
+    createPanelBackButton(extraClass = '') {
+        const backBtn = document.createElement('button');
+        backBtn.className = 'panel-back-btn';
+        if (extraClass) backBtn.classList.add(extraClass);
+        backBtn.type = 'button';
+        backBtn.setAttribute('aria-label', 'Volver');
+        backBtn.title = 'Volver';
+        backBtn.innerHTML = '<span aria-hidden="true">&#x2190;</span>';
+
+        backBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            if (navigator.vibrate) navigator.vibrate(30);
+            this.closeFolder();
+        });
+
+        return backBtn;
+    }
+
+    createButton(btnData, index) {
+        const btn = document.createElement('button');
+        btn.className = 'boton btn-streamdeck';
+        btn.style.background = btnData.color || '#333';
+        btn.style.animationDelay = `${index * 0.05}s`; 
+        
+        btn.innerHTML = `<span class="icon">${btnData.icon}</span>${btnData.label}`;
+
+        btn.addEventListener('click', () => {
+            if (navigator.vibrate) navigator.vibrate(50);
+
+            const isFolderButton = btnData.type === 'folder' || Boolean(btnData.targetPage);
+
+            if (isFolderButton) {
+                this.renderGrid(btnData.targetPage || 'main');
+            } else if (btnData.type === 'mixer') {
+                this.openMixer();
+            } else if (btnData.type === 'discord_panel') {
+                this.openDiscordPanel();
+            } else if (btnData.type === 'action') {
+                if (btnData.payload) {
+                    // Enviar evento dinámico con payload
+                    this.socket.emit(btnData.action, btnData.payload);
+                } else {
+                    // Eventos tradicionales: channel + action
+                    this.socket.emit(btnData.channel, btnData.action);
+                }
+
+                if (btnData.channel === 'ejecutar_script' || btnData.action === 'ejecutar_script_dinamico') {
+                    this.showExecutionModal();
+                }
+            }
+        });
+
+        return btn;
+    }
+
+    openFolder(pageId) {
+        this.renderGrid(pageId);
     }
 
     closeFolder() {
@@ -222,6 +268,7 @@ class StreamDeckClient {
 
         const mixerPanel = document.createElement('div');
         mixerPanel.className = 'mixer-panel';
+        mixerPanel.classList.add('mixer-panel-with-back');
         mixerPanel.id = 'mixer-interface';
         
         mixerPanel.innerHTML = `
@@ -229,6 +276,8 @@ class StreamDeckClient {
             <div class="mixer-divider"></div>
             <div id="app-mixers" class="app-mixers-container"></div>
         `;
+
+        mixerPanel.appendChild(this.createPanelBackButton('panel-back-btn-right'));
 
         this.overlayContainer.appendChild(mixerPanel);
         this.overlay.classList.remove('hidden');
@@ -251,13 +300,13 @@ class StreamDeckClient {
 
         const originalIcon = appData.mute ? '🔇' : iconStr;
         const opacity = appData.mute ? '0.5' : '1';
+        const initialFillScale = Math.max(0, Math.min(1, Number(appData.volume) / 100));
+        const initialFillEmptyClass = initialFillScale <= 0.001 ? ' fill-empty' : '';
 
         const row = document.createElement('div');
         row.className = 'mixer-row';
         row.id = `mixer-row-${id}`;
         row.dataset.originalIcon = iconStr;
-        
-        if(!isMaster) row.style.animation = 'fadeInRow 0.3s ease-out forwards';
 
         row.innerHTML = `
             <div class="mixer-icon-btn" onclick="window.streamDeck.toggleMute('${id}', ${isMaster})">
@@ -270,7 +319,7 @@ class StreamDeckClient {
                     onpointerup="window.streamDeck.unmarkSliderActive('${id}')"
                     onpointercancel="window.streamDeck.unmarkSliderActive('${id}')"
                     oninput="window.streamDeck.updateVolumeServer('${id}', this.value, ${isMaster})" >
-                <div class="slider-fill" id="slider-fill-${id}" style="--fill-scale: ${(appData.volume / 100).toFixed(4)}"></div>
+                <div class="slider-fill${initialFillEmptyClass}" id="slider-fill-${id}" style="height: ${(initialFillScale*100).toFixed(2)}%"></div>
             </div>
             <div class="mixer-label">${labelName}</div>
         `;
@@ -297,36 +346,55 @@ class StreamDeckClient {
     }
 
     // LLamados desde HTML (a través de window.streamDeck)
-    markSliderActive(id) { this.activeSliders.add(id); }
-    unmarkSliderActive(id) { this.activeSliders.delete(id); }
+    markSliderActive(id) {
+        this.activeSliders.add(id);
+    }
+
+    unmarkSliderActive(id) {
+        this.activeSliders.delete(id);
+    }
+
+    scheduleThrottledEmit(key, emitFn, intervalMs = this.volumeEmitIntervalMs) {
+        const now = Date.now();
+        const last = this.volUpdateTimes[key] || 0;
+        const elapsed = now - last;
+
+        const runEmit = () => {
+            this.volUpdateTimes[key] = Date.now();
+            this.volUpdateTimers[key] = null;
+            emitFn();
+        };
+
+        if (elapsed >= intervalMs) {
+            if (this.volUpdateTimers[key]) {
+                clearTimeout(this.volUpdateTimers[key]);
+                this.volUpdateTimers[key] = null;
+            }
+            runEmit();
+            return;
+        }
+
+        if (!this.volUpdateTimers[key]) {
+            this.volUpdateTimers[key] = setTimeout(runEmit, Math.max(0, intervalMs - elapsed));
+        }
+    }
 
     updateVolumeServer(app, value, isMaster) {
         const id = isMaster ? 'global' : app;
         const fill = document.getElementById(`slider-fill-${id}`);
         this.setSliderFillScale(fill, value / 100);
 
-        this.pendingVolUpdates[app] = value;
-        const now = Date.now();
-        
-        const emitVol = () => {
-            const valToEmit = parseInt(this.pendingVolUpdates[app]);
+        const queueKey = isMaster ? 'mix_master' : `mix_${app}`;
+        this.pendingVolUpdates[queueKey] = Number(value);
+
+        this.scheduleThrottledEmit(queueKey, () => {
+            const valToEmit = Math.round(this.pendingVolUpdates[queueKey]);
             if (isMaster) {
                 this.socket.emit('set_master_volume', valToEmit);
             } else {
                 this.socket.emit('set_session_volume', { app, value: valToEmit });
             }
-        };
-
-        if (now - (this.volUpdateTimes[app] || 0) >= 50) {
-            this.volUpdateTimes[app] = now;
-            emitVol();
-        }
-        
-        clearTimeout(this.volUpdateTimers[app]);
-        this.volUpdateTimers[app] = setTimeout(() => {
-            this.volUpdateTimes[app] = Date.now();
-            emitVol();
-        }, 50);
+        });
     }
 
     setSliderFillScale(fillElement, scaleValue) {
@@ -334,7 +402,8 @@ class StreamDeckClient {
 
         const numeric = Number(scaleValue);
         const clamped = Number.isFinite(numeric) ? Math.max(0, Math.min(1, numeric)) : 0;
-        fillElement.style.setProperty('--fill-scale', clamped.toFixed(4));
+        fillElement.style.height = `${(clamped * 100).toFixed(2)}%`;
+        fillElement.classList.toggle('fill-empty', clamped <= 0.001);
     }
 
     toggleMute(app, isMaster) {
@@ -522,18 +591,22 @@ class StreamDeckClient {
             <div id="discord-connection-status" class="discord-status discord-status-${this.discordConnectionStatus}">
                 ${this.discordConnectionMessage}
             </div>
-            <div class="discord-controls">
-                <div id="discord-mute-btn" class="discord-btn" onclick="window.streamDeck.toggleDiscordMute()">
-                    <span class="d-icon">🎤</span>
-                    <span>Micro</span>
-                </div>
-                <div id="discord-deaf-btn" class="discord-btn" onclick="window.streamDeck.toggleDiscordDeaf()">
-                    <span class="d-icon">🎧</span>
-                    <span>Cascos</span>
+            <div class="discord-main-layout">
+                <div id="discord-call-mixer"></div>
+                <div class="discord-controls discord-controls-right">
+                    <div id="discord-mute-btn" class="discord-btn" onclick="window.streamDeck.toggleDiscordMute()">
+                        <span class="d-icon">🎤</span>
+                        <span>Micro</span>
+                    </div>
+                    <div id="discord-deaf-btn" class="discord-btn" onclick="window.streamDeck.toggleDiscordDeaf()">
+                        <span class="d-icon">🎧</span>
+                        <span>Cascos</span>
+                    </div>
                 </div>
             </div>
-            <div id="discord-call-mixer"></div>
         `;
+
+        discordPanel.appendChild(this.createPanelBackButton());
 
         this.overlayContainer.appendChild(discordPanel);
         this.overlay.classList.remove('hidden');
@@ -626,6 +699,8 @@ class StreamDeckClient {
                 const card = document.createElement('div');
                 card.className = 'discord-user-card';
                 card.dataset.userId = user.id;
+                const userFillScale = Math.max(0, Math.min(1, Number(user.volume) / 200));
+                const userFillEmptyClass = userFillScale <= 0.001 ? ' fill-empty' : '';
 
                 const avatarHTML = user.avatar 
                     ? `<img src="${user.avatar}" class="discord-avatar">`
@@ -640,7 +715,7 @@ class StreamDeckClient {
                             onpointercancel="window.streamDeck.unmarkDiscordSliderActive('${user.id}')"
                             onpointerup="window.streamDeck.unmarkDiscordSliderActive('${user.id}')"
                             oninput="window.streamDeck.updateDiscordVolumeServer('${user.id}', this.value)" >
-                        <div class="slider-fill discord-slider-fill" id="discord-slider-fill-${user.id}" style="--fill-scale: ${(user.volume / 200).toFixed(4)}"></div>
+                        <div class="slider-fill discord-slider-fill${userFillEmptyClass}" id="discord-slider-fill-${user.id}" style="height: ${(userFillScale*100).toFixed(2)}%"></div>
                     </div>
                     <div class="discord-username">${user.username}</div>
                 `;
@@ -663,7 +738,7 @@ class StreamDeckClient {
 
     unmarkDiscordSliderActive(userId) {
         this.activeSliders.delete('discord_' + userId);
-        setTimeout(() => this.activeSliders.delete('discord_' + userId), 1000); 
+        setTimeout(() => this.activeSliders.delete('discord_' + userId), 120); 
     }
 
     updateDiscordVolumeServer(userId, value) {
@@ -672,30 +747,52 @@ class StreamDeckClient {
         const fill = document.getElementById(`discord-slider-fill-${userId}`);
         this.setSliderFillScale(fill, value / 200);
 
-        // Throttling updates
-        const now = Date.now();
-        const lastUpdate = this.volUpdateTimes['discord_' + userId] || 0;
-        
-        if (now - lastUpdate >= 50) {
-            this.socket.emit('discord_set_user_volume', { userId, volume: value }, (result) => {
+        const queueKey = `discord_${userId}`;
+        this.pendingVolUpdates[queueKey] = Number(value);
+
+        this.scheduleThrottledEmit(queueKey, () => {
+            const currentVolume = Math.round(this.pendingVolUpdates[queueKey]);
+            this.socket.emit('discord_set_user_volume', { userId, volume: currentVolume }, (result) => {
                 if (result?.ok) return;
                 this.discordConnectionMessage = result?.message || 'No se pudo cambiar el volumen';
                 this.updateDiscordConnectionUI();
             });
-            this.volUpdateTimes['discord_' + userId] = now;
-        } else {
-            clearTimeout(this.volUpdateTimers['discord_' + userId]);
-            this.volUpdateTimers['discord_' + userId] = setTimeout(() => {
-                this.socket.emit('discord_set_user_volume', { userId, volume: value }, (result) => {
-                    if (result?.ok) return;
-                    this.discordConnectionMessage = result?.message || 'No se pudo cambiar el volumen';
-                    this.updateDiscordConnectionUI();
-                });
-                this.volUpdateTimes['discord_' + userId] = Date.now();
-            }, 50);
-        }
+        });
     }
 }
+
+
+// 1. Crear el botón invisible en la esquina
+const btnFullscreen = document.createElement('div');
+btnFullscreen.innerHTML = '🔲';
+btnFullscreen.style.cssText = `
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    font-size: 24px;
+    opacity: 0.3;
+    z-index: 9999;
+    cursor: pointer;
+`;
+document.body.appendChild(btnFullscreen);
+
+// 2. Darle la orden de expandirse al tocarlo
+btnFullscreen.addEventListener('click', () => {
+    let elem = document.documentElement;
+    if (!document.fullscreenElement) {
+        if (elem.requestFullscreen) {
+            elem.requestFullscreen();
+        } else if (elem.webkitRequestFullscreen) { /* Safari / Older Chrome */
+            elem.webkitRequestFullscreen();
+        } else if (elem.msRequestFullscreen) { /* IE11 */
+            elem.msRequestFullscreen();
+        }
+        btnFullscreen.style.opacity = '0'; // Ocultamos el botón cuando ya esté grande
+    }
+});
+
+
+
 
 // Inicializar la aplicación
 document.addEventListener('DOMContentLoaded', () => {
