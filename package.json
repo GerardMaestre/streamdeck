@@ -5,7 +5,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "rebuild": "electron-rebuild",
+    "postinstall": "electron-builder install-app-deps",
     "build": "electron-builder --win",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -27,9 +27,8 @@
     "win-audio": "^3.0.5"
   },
   "devDependencies": {
-    "electron": "^41.2.1",
-    "electron-builder": "^26.8.1",
-    "electron-rebuild": "^3.2.9"
+    "electron": "^31.0.0",
+    "electron-builder": "^26.8.1"
   },
   "build": {
     "appId": "com.gerardmaestre.streamdeckpro",
