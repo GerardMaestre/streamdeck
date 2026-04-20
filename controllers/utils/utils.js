@@ -8,30 +8,30 @@ const fs = require('fs');
  * Prioriza archivos al lado del ejecutable para permitir edición del usuario.
  */
 const getDataPath = (relativePath) => {
+    const { app } = require('electron');
     let resolvedPath;
 
-    // Caso 1: Al lado del ejecutable (Para Portable/EXE que el usuario quiere editar)
-    if (process.execPath && !process.execPath.includes('node.exe')) {
-        const nextToExePath = path.join(path.dirname(process.execPath), relativePath);
-        if (fs.existsSync(nextToExePath)) {
-            resolvedPath = nextToExePath;
-        }
+    // Caso 1: Archivos externos (config.json, scripts) que el usuario puede editar
+    // Estos suelen estar en 'resources' al lado del EXE o en el root en dev.
+    if (app && app.isPackaged) {
+        // En producción, buscamos en la carpeta 'resources' del sistema
+        const extraPath = path.join(process.resourcesPath, relativePath);
+        if (fs.existsSync(extraPath)) resolvedPath = extraPath;
     }
 
-    if (!resolvedPath && process.resourcesPath) {
-        // Caso 2: Dentro de la carpeta de recursos de Electron (Empaquetado por defecto)
-        const bundledPath = path.join(process.resourcesPath, relativePath);
-        if (fs.existsSync(bundledPath)) {
-            resolvedPath = bundledPath;
-        }
+    // Caso 2: Archivos internos del núcleo (public, controllers)
+    // Estos SIEMPRE están dentro del paquete (ASAR)
+    if (!resolvedPath && app) {
+        const internalPath = path.join(app.getAppPath(), relativePath);
+        if (fs.existsSync(internalPath)) resolvedPath = internalPath;
     }
 
+    // Caso 3: Fallback para desarrollo o si lo anterior falla
     if (!resolvedPath) {
-        // Caso 3: Ruta local de desarrollo (Raíz del proyecto)
         resolvedPath = path.resolve(__dirname, '../../', relativePath);
     }
 
-    console.log(`[Rutas] Buscando ${relativePath} -> ${resolvedPath}`);
+    console.log(`[Rutas] Resolviendo ${relativePath} -> ${resolvedPath}`);
     return resolvedPath;
 };
 
