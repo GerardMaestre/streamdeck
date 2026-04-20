@@ -20,7 +20,7 @@
     "express": "^5.2.1",
     "loudness": "^0.4.2",
     "native-sound-mixer": "^3.4.6-win",
-    "open": "^11.0.0",
+    "open": "^8.4.2",
     "robotjs": "^0.7.0",
     "screenshot-desktop": "^1.15.3",
     "socket.io": "^4.8.3",
