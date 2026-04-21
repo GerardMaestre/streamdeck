@@ -2,7 +2,7 @@ const loudness = require('loudness');
 const path = require('path');
 const { getErrorMessage, runExecCommand } = require('../utils/utils');
 
-const nircmdPath = path.join(__dirname, '..', '..', 'mis_scripts', '05_Audio', 'nircmd.exe');
+const nircmdPath = path.join(__dirname, '..', '..', 'scripts', '05_Audio', 'nircmd.exe');
 
 const normalizeVolume = (value) => {
     const parsed = Number(value);

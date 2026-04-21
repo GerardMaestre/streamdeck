@@ -1,4 +1,4 @@
-const { ejecutarMacro } = require('../macros/macroController');
+const { ejecutarMacro } = require('../automation/macroController');
 
 // Helper: normaliza el estado de mute/deaf leyendo ambos campos que puede devolver
 // la API de Discord (self_mute/mute y self_deaf/deaf), igual que hacen los event handlers.

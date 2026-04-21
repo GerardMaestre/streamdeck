@@ -40,13 +40,13 @@
     "files": [
       "main.js",
       "server.js",
-      "public/**/*",
-      "controllers/**/*",
+      "frontend/**/*",
+      "backend/**/*",
       "icon.png"
     ],
     "extraResources": [
       "config.json",
-      "mis_scripts/**/*",
+      "scripts/**/*",
       "icon.png"
     ],
     "asarUnpack": [

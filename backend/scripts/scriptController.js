@@ -9,13 +9,13 @@ const {
     getDataPath
 } = require('../utils/utils');
 
-const baseScriptsPath = getDataPath('mis_scripts');
+const baseScriptsPath = getDataPath('scripts');
 
 const scripts = {
-    purgar_ram: path.join(baseScriptsPath, '02_Optimizacion_Gaming', 'Purgar_ram.py'),
-    limpiar_shaders: path.join(baseScriptsPath, '02_Optimizacion_Gaming', 'Purgador_Shaders.py'),
-    modo_tryhard: path.join(baseScriptsPath, '02_Optimizacion_Gaming', 'Despertar_Nucleos.bat'),
-    limpieza_global: path.join(baseScriptsPath, '04_Utilidades_Archivos', 'Limpieza_Extrema_Global.py')
+    purgar_ram: path.join(baseScriptsPath, '02_Gaming', 'Purgar_ram.py'),
+    limpiar_shaders: path.join(baseScriptsPath, '02_Gaming', 'Purgador_Shaders.py'),
+    modo_tryhard: path.join(baseScriptsPath, '02_Gaming', 'Despertar_Nucleos.bat'),
+    limpieza_global: path.join(baseScriptsPath, '04_Archivos', 'Limpieza_Extrema_Global.py')
 };
 
 const emitScriptLog = (socket, data) => {
@@ -194,7 +194,7 @@ async function listarScripts() {
             if (archivos.length > 0) {
                 result[carpetaName] = {
                     carpeta: carpetaName,
-                    path: path.join('mis_scripts', carpetaName),
+                    path: path.join('scripts', carpetaName),
                     archivos
                 };
             }

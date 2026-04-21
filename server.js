@@ -2,16 +2,16 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const fs = require('fs');
-const { emitErrorToFrontend, getErrorMessage, getDataPath } = require('./controllers/utils/utils');
+const { emitErrorToFrontend, getErrorMessage, getDataPath } = require('./backend/utils/utils');
 
 // Importar controladores (Lógica modularizada)
-const { initAudioMixer, sendInitialState, handleSocketCommands } = require('./controllers/audio/audioMixerController');
-const { abrirAplicacionOWeb } = require('./controllers/app/appController');
-const { ejecutarMacro, controlMultimedia } = require('./controllers/macros/macroController');
-const { hacerCaptura } = require('./controllers/capture/captureController');
-const { ejecutarScript, ejecutarScriptDinamico, listarScripts } = require('./controllers/scripts/scriptController');
-const { initDiscordRPC, requestInitialDiscordState, discordToggleMute, discordToggleDeaf, discordSetUserVolume } = require('./controllers/discord/discordController');
-const { sendTuyaCommand, controlMultipleDevices } = require('./controllers/tuyaController');
+const { initAudioMixer, sendInitialState, handleSocketCommands } = require('./backend/audio/audioMixerController');
+const { abrirAplicacionOWeb } = require('./backend/launcher/appController');
+const { ejecutarMacro, controlMultimedia } = require('./backend/automation/macroController');
+const { hacerCaptura } = require('./backend/system/captureController');
+const { ejecutarScript, ejecutarScriptDinamico, listarScripts } = require('./backend/scripts/scriptController');
+const { initDiscordRPC, requestInitialDiscordState, discordToggleMute, discordToggleDeaf, discordSetUserVolume } = require('./backend/discord/discordController');
+const { sendTuyaCommand, controlMultipleDevices } = require('./backend/iot/smart_home');
 
 // --- CACHE DE SISTEMA ---
 let configCache = null;
@@ -23,7 +23,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-app.use(express.static(getDataPath('public')));
+app.use(express.static(getDataPath('frontend')));
 
 // Endpoint para entregar el JSON de configuración de los botones
 app.get('/api/config', (req, res) => {
@@ -66,16 +66,16 @@ io.on('connection', (socket) => {
     console.log('📱 Centro de mando conectado');
 
     // Routing de Eventos -> Controladores
-    runSafely(socket, 'mixer_initial_state', async () => {
-        sendInitialState(socket);
+    socket.on('mixer_initial_state', async (ack) => {
+        await runSafely(socket, 'mixer_initial_state', () => sendInitialState(socket), ack);
     });
 
-    runSafely(socket, 'mixer_bind_commands', async () => {
-        handleSocketCommands(socket);
+    socket.on('mixer_bind_commands', async (ack) => {
+        await runSafely(socket, 'mixer_bind_commands', () => handleSocketCommands(socket), ack);
     });
 
-    runSafely(socket, 'discord_initial_state', async () => {
-        await requestInitialDiscordState(socket); // Estado Discord para este cliente (conexión, mute/deaf, usuarios)
+    socket.on('discord_initial_state', async (ack) => {
+        await runSafely(socket, 'discord_initial_state', () => requestInitialDiscordState(socket), ack);
     });
 
     socket.on('abrir', async (destino, ack) => {
@@ -214,7 +214,7 @@ server.listen(PORT, () => {
     console.log(`🚀 Stream Deck Pro operando en http://localhost:${PORT}`);
 });
 
-// Endpoint para listar scripts disponibles en el directorio `mis_scripts`
+// Endpoint para listar scripts disponibles en el directorio `scripts`
 app.get('/api/scripts', async (req, res) => {
     try {
         const now = Date.now();

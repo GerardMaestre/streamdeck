@@ -50,6 +50,11 @@ class StreamDeckClient {
         this.setupSocketListeners();
         this.setupDOMListeners();
 
+        // Solicitar estados iniciales al conectar
+        this.socket.emit('mixer_initial_state');
+        this.socket.emit('mixer_bind_commands');
+        this.socket.emit('discord_initial_state');
+
         try {
             const res = await fetch('/api/config');
             const data = await res.json();
@@ -597,6 +602,10 @@ class StreamDeckClient {
 
         this.container.appendChild(mixerPanel);
 
+        // Pedir estado actualizado al servidor cada vez que abrimos el panel
+        this.socket.emit('mixer_initial_state');
+        this.socket.emit('mixer_bind_commands');
+
         if (this.lastMixerState) {
             this.renderInitialMixer();
         }
@@ -631,6 +640,11 @@ class StreamDeckClient {
         const container = row.querySelector('.slider-container');
         const fill = container.querySelector('.slider-fill');
         const thumb = container.querySelector('.fader-thumb-mixer');
+        const wrapper = row.querySelector('.mixer-icon-wrapper');
+
+        // Guardamos las referencias para actualizaciones en tiempo real
+        this.mixerRefs[id] = { fill, thumb, wrapper, track: container };
+
         fill.style.height = `${vol}%`;
         thumb.style.bottom = `${vol}%`;
 
@@ -696,6 +710,7 @@ class StreamDeckClient {
         const appsContainer = document.getElementById('app-mixers');
         if (!masterContainer || !appsContainer || !this.lastMixerState) return;
 
+        this.mixerRefs = {}; // Limpiamos referencias viejas
         masterContainer.innerHTML = '';
         appsContainer.innerHTML = '';
 
@@ -896,10 +911,21 @@ class StreamDeckClient {
         });
 
         this.socket.on('master_updated', (data) => {
+            if (this.lastMixerState) {
+                if (data.type === 'volume') this.lastMixerState.master.volume = data.value;
+                if (data.type === 'mute') this.lastMixerState.master.mute = data.value;
+            }
             this.updateSliderUI('global', data);
         });
 
         this.socket.on('session_updated', (data) => {
+            if (this.lastMixerState) {
+                const sess = this.lastMixerState.sessions.find(s => s.name === data.name);
+                if (sess) {
+                    if (data.type === 'volume') sess.volume = data.value;
+                    if (data.type === 'mute') sess.mute = data.value;
+                }
+            }
             this.updateSliderUI(data.name, data);
         });
 
@@ -1013,8 +1039,9 @@ class StreamDeckClient {
 
         const statusPill = document.createElement('div');
         statusPill.id = 'discord-status-pill';
-        statusPill.className = 'discord-status-pill';
-        statusPill.textContent = this.discordConnectionStatus === 'connected' ? 'CONECTADO' : 'DESCONECTADO';
+        const isConnected = ['connected', 'fallback'].includes(this.discordConnectionStatus);
+        statusPill.textContent = isConnected ? 'CONECTADO' : 'DESCONECTADO';
+        if (isConnected) statusPill.classList.add('connected');
 
         // Botón Volver Premium (Cuerpo del Documento para evitar caché/interferencias)
         const oldBtn = document.getElementById('panel-back-button');
@@ -1087,6 +1114,9 @@ class StreamDeckClient {
 
         this.overlay.classList.remove('hidden');
 
+        // Pedir estado actualizado de Discord
+        this.socket.emit('discord_initial_state');
+
         this.updateDiscordButtons();
         this.renderDiscordMixer();
     }
@@ -1128,10 +1158,15 @@ class StreamDeckClient {
     }
 
     updateDiscordConnectionUI() {
-        const statusEl = document.getElementById('discord-connection-status');
+        const statusEl = document.getElementById('discord-status-pill');
         if (!statusEl) return;
-        statusEl.className = `discord-status discord-status-${this.discordConnectionStatus}`;
-        statusEl.textContent = this.discordConnectionMessage || 'Sin conexión con Discord';
+        
+        const isConnected = ['connected', 'fallback'].includes(this.discordConnectionStatus);
+        statusEl.textContent = isConnected ? 'CONECTADO' : 'DESCONECTADO';
+        statusEl.classList.toggle('connected', isConnected);
+        
+        // También actualizamos el mensaje secundario si existe en algún sitio, 
+        // pero principalmente nos aseguramos del indicador principal.
     }
 
     updateDiscordButtons() {

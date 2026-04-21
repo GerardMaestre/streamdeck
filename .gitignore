@@ -4,3 +4,4 @@ dist/
 .DS_Store
 .env
 .discord_token.json
+scripts/06_Descargas/ffmpeg.exe
