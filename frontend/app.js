@@ -34,14 +34,20 @@ class StreamDeckClient {
         const savedIntensity = localStorage.getItem('lastTuyaIntensity');
         this.lastTuyaIntensity = savedIntensity ? parseInt(savedIntensity) : 100;
 
-        this.executionModal = document.getElementById('execution-modal');
-        this.executionLogs = document.getElementById('execution-logs');
-        this.executionSpinner = document.getElementById('execution-spinner');
-        this.executionTitle = document.getElementById('execution-title');
-        this.executionHideTimeout = null;
+        this.pendingScriptData = null;
         this.wakeLock = null;
         this.volumeEmitIntervalMs = 350; // Mismo que Domótica para consistency
         this.mixerRefs = {}; // Caché de referencias DOM para el mixer
+
+        // --- CARRUSEL MULTITOUCH ---
+        this.carouselPages = []; // Lista de IDs de páginas del carrusel (cargada del config)
+        this.carouselIndex = 0;  // Slide activo actualmente
+        this._swipeTouches = null; // Estado del gesto en progreso
+
+        // --- MODO EDICIÓN ---
+        this.editMode = false;
+        this._dragState = null; // Estado del drag en progreso
+        this._edgeScrollTimeout = null; // Temporizador para cambio de página en borde
 
         this.init();
     }
@@ -59,6 +65,9 @@ class StreamDeckClient {
             const res = await fetch('/api/config');
             const data = await res.json();
             this.pages = data.pages || {};
+            this.carouselPages = Array.isArray(data.carouselPages) && data.carouselPages.length > 0
+                ? data.carouselPages
+                : ['main'];
             try {
                 const scriptsRes = await fetch('/api/scripts');
                 if (scriptsRes.ok) {
@@ -72,10 +81,16 @@ class StreamDeckClient {
         } catch (e) { }
 
         this.initMainGrid();
+        this.setupCarouselSwipe();
+        this.renderEditModeButton();
     }
 
     initMainGrid() {
-        this.renderGrid('main');
+        if (this.carouselPages && this.carouselPages.length > 0) {
+            this.renderCarouselSlide(0, 0);
+        } else {
+            this.renderGrid('main');
+        }
     }
 
     renderGrid(pageId = 'main') {
@@ -94,6 +109,8 @@ class StreamDeckClient {
             const visualIndex = shouldInjectBack ? index + 1 : index;
             this.container.appendChild(this.createButton(btnData, visualIndex));
         });
+
+        this._setEditButtonVisibility(true);
     }
     // --- DISCORD PANEL ---
     renderDiscordPanel() {
@@ -119,8 +136,7 @@ class StreamDeckClient {
             setTimeout(() => shield.remove(), 500);
 
             setTimeout(() => {
-                this.currentPage = 'main';
-                this.renderGrid();
+                this.renderCarouselSlide(this.carouselIndex, 0);
             }, 100);
         });
         document.body.appendChild(backBtn);
@@ -182,6 +198,8 @@ class StreamDeckClient {
 
     // --- DOMÓTICA INTEGRADA (STRICT SKETCH MATCH) ---
     renderDomoticaModernView() {
+        this._setEditButtonVisibility(false);
+        this.currentPage = 'domotica_panel'; // Bloquea gestos de carrusel
         this.container.innerHTML = '';
         this.container.className = 'grid-container domotica-sketch-match-view';
 
@@ -208,8 +226,7 @@ class StreamDeckClient {
             setTimeout(() => shield.remove(), 500);
 
             setTimeout(() => {
-                this.currentPage = 'main';
-                this.renderGrid();
+                this.renderCarouselSlide(this.carouselIndex, 0);
             }, 100);
         });
         document.body.appendChild(backBtn);
@@ -398,7 +415,7 @@ class StreamDeckClient {
 
         backBtn.addEventListener('click', () => {
             if (navigator.vibrate) navigator.vibrate(50);
-            this.renderGrid('main');
+            this.renderCarouselSlide(this.carouselIndex, 0);
         });
 
         return backBtn;
@@ -430,7 +447,42 @@ class StreamDeckClient {
 
         btn.innerHTML = `<span class="icon">${btnData.icon}</span>${btnData.label}`;
 
+        // === LÓGICA DE PULSACIÓN LARGA PARA EDITAR ===
+        let longPressTimer = null;
+        let startPos = null;
+
+        const startTimer = (e) => {
+            if (this.editMode) return;
+            startPos = { x: e.clientX, y: e.clientY };
+            longPressTimer = setTimeout(() => {
+                if (navigator.vibrate) navigator.vibrate([40, 20, 40]);
+                this.enterEditMode();
+                // Forzamos el inicio del drag con el evento actual
+                this._onEditPointerDown(e);
+            }, 600);
+        };
+
+        const clearTimer = () => {
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
+        };
+
+        btn.addEventListener('pointerdown', startTimer);
+        btn.addEventListener('pointermove', (e) => {
+            if (!startPos) return;
+            const dist = Math.hypot(e.clientX - startPos.x, e.clientY - startPos.y);
+            if (dist > 15) clearTimer(); // Si se mueve mucho, cancelamos la detección de long-press
+        });
+        btn.addEventListener('pointerup', clearTimer);
+        btn.addEventListener('pointercancel', clearTimer);
+        btn.addEventListener('pointerleave', clearTimer);
+
         btn.addEventListener('click', () => {
+            // En modo edición, el drag se encarga. No ejecutar acciones.
+            if (this.editMode) return;
+
             if (navigator.vibrate) navigator.vibrate(50);
 
             const isFolderButton = btnData.type === 'folder' || Boolean(btnData.targetPage);
@@ -444,14 +496,16 @@ class StreamDeckClient {
             } else if (btnData.type === 'domotica_panel') {
                 this.renderDomoticaModernView();
             } else if (btnData.type === 'action') {
-                if (btnData.payload) {
+                const isScript = btnData.channel === 'ejecutar_script' || btnData.action === 'ejecutar_script_dinamico';
+                if (isScript && btnData.payload && btnData.payload.requiresParams) {
+                    // Delegamos al servidor para que pida los parámetros en el PC
                     this.socket.emit(btnData.action, btnData.payload);
                 } else {
-                    this.socket.emit(btnData.channel, btnData.action);
-                }
-
-                if (btnData.channel === 'ejecutar_script' || btnData.action === 'ejecutar_script_dinamico') {
-                    this.showExecutionModal();
+                    if (btnData.payload) {
+                        this.socket.emit(btnData.action, btnData.payload);
+                    } else {
+                        this.socket.emit(btnData.channel, btnData.action);
+                    }
                 }
             }
         });
@@ -477,12 +531,6 @@ class StreamDeckClient {
             if (e.target === this.overlay) this.closeFolder();
         });
 
-        this.executionModal.addEventListener('click', (e) => {
-            if (e.target === this.executionModal) {
-                this.hideExecutionModal(true);
-            }
-        });
-
         document.body.addEventListener('click', () => {
             if (!this.wakeLock) this.requestWakeLock();
         }, { once: true });
@@ -506,20 +554,26 @@ class StreamDeckClient {
 
     getIconForApp(appName, isMaster) {
         const shadowClass = 'mixer-icon-shadow';
-
-        if (isMaster) return `<span class="${shadowClass}" style="font-size:2rem;">🎧</span>`;
+        
+        // Icono Maestro (Premium look, escala 3.2rem para impacto visual)
+        if (isMaster) return `<span class="${shadowClass}" style="font-size:3.2rem; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));">🎧</span>`;
 
         const name = appName.toLowerCase();
 
-        const fallbackSVG = `<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="18" rx="4" ry="4" fill="rgba(255,255,255,0.03)"></rect><path d="M2 8h20"></path><circle cx="6" cy="5.5" r="1" fill="rgba(255,255,255,0.6)" stroke="none"></circle><circle cx="10" cy="5.5" r="1" fill="rgba(255,255,255,0.6)" stroke="none"></circle></svg>`;
-        const fallbackSrc = `data:image/svg+xml;base64,${btoa(fallbackSVG)}`;
-        const fallbackHTML = `<img src="${fallbackSrc}" class="${shadowClass}" style="width: 34px; height: 34px;" />`;
+        // Fallback Premium SVG (Incrustado directamente para evitar problemas de CSP/DataURI)
+        // Usamos comillas dobles para los atributos de forma estándar
+        const fallbackSVG = `<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.7;"><rect x="2" y="3" width="20" height="14" rx="3" ry="3"></rect><line x1="2" y1="9" x2="22" y2="9"></line><circle cx="6" cy="6" r="1" fill="white" stroke="none"></circle><circle cx="10" cy="6" r="1" fill="white" stroke="none"></circle></svg>`;
+
+        // Para el atributo onerror del HTML, debemos asegurar que las comillas no rompan el atributo.
+        // Escapamos las comillas dobles del SVG para que no cierren el atributo onerror="...".
+        const svgForOnerror = fallbackSVG.replace(/"/g, '&quot;');
 
         const iconMap = {
             'spotify': 'spotify/1DB954',
             'discord': 'discord/5865F2',
             'chrome': 'googlechrome/4285F4',
             'edge': 'microsoftedge/0078D7',
+            'microsoft edge': 'microsoftedge/0078D7',
             'steam': 'steam/ffffff',
             'obs': 'obsstudio/FFFFFF',
             'vlc': 'vlcmediaplayer/FF8800',
@@ -530,10 +584,12 @@ class StreamDeckClient {
             'teams': 'microsoftteams/6264A7',
             'zoom': 'zoom/2D8CFF',
             'epic games': 'epicgames/FFFFFF',
-            'ea': 'ea/FFFFFF',
+            'ea': 'electronicarts/FFFFFF',
+            'origin': 'origin/FFFFFF',
             'ubisoft': 'ubisoft/FFFFFF',
             'powertoys': 'microsoft/FFFFFF',
             'sonidos del sistema': 'windows11/0078D4',
+            'system sounds': 'windows11/0078D4',
             'league of legends': 'leagueoflegends/C89B3C',
             'valorant': 'valorant/FF4655',
             'minecraft': 'minecraft/118C4E',
@@ -541,27 +597,40 @@ class StreamDeckClient {
             'itunes': 'itunes/FB5EC9',
             'opera gx': 'operagx/FF0000',
             'opera': 'opera/FF1B2D',
-            'slack': 'slack/4A154B'
+            'slack': 'slack/4A154B',
+            'nvidia': 'nvidia/76B900',
+            'amd': 'amd/ED1C24',
+            'visual studio': 'visualstudiocode/007ACC',
+            'twitch': 'twitch/9146FF',
+            'youtube': 'youtube/FF0000',
+            'battle.net': 'battlenet/00AEFF',
+            'riot': 'riotgames/D32936',
+            'rockstar': 'rockstargames/FFFFFF'
         };
 
-        if (name.includes('qemu') || name.includes('game') || name.includes('juego') || name.includes('emulator')) return `<span class="${shadowClass}" style="font-size:2.2rem;">🎮</span>`;
-        if (name.includes('wallpaper')) return `<span class="${shadowClass}" style="font-size:2.2rem;">🖼️</span>`;
-        if (name.includes('sunshine') || name.includes('stream')) return `<span class="${shadowClass}" style="font-size:2.2rem;">☀️</span>`;
-        if (name.includes('music') || name.includes('audio') || name.includes('player')) return `<span class="${shadowClass}" style="font-size:2.2rem;">🎵</span>`;
-        if (name.includes('video') || name.includes('movie') || name.includes('media')) return `<span class="${shadowClass}" style="font-size:2.2rem;">🎬</span>`;
-        if (name.includes('web') || name.includes('browser')) return `<span class="${shadowClass}" style="font-size:2.2rem;">🌐</span>`;
-        if (name.includes('driver') || name.includes('system') || name.includes('host') || name.includes('update')) return `<span class="${shadowClass}" style="font-size:2.2rem;">⚙️</span>`;
+        // Categorías por Emojis con tamaño máximo (3.2rem)
+        if (name.includes('qemu') || name.includes('game') || name.includes('juego') || name.includes('emulator')) return `<span class="${shadowClass}" style="font-size:3.2rem;">🎮</span>`;
+        if (name.includes('wallpaper')) return `<span class="${shadowClass}" style="font-size:3.2rem;">🖼️</span>`;
+        if (name.includes('sunshine') || name.includes('stream')) return `<span class="${shadowClass}" style="font-size:3.2rem;">☀️</span>`;
+        if (name.includes('music') || name.includes('audio') || name.includes('player')) return `<span class="${shadowClass}" style="font-size:3.2rem;">🎵</span>`;
+        if (name.includes('video') || name.includes('movie') || name.includes('media')) return `<span class="${shadowClass}" style="font-size:3.2rem;">🎬</span>`;
+        if (name.includes('web') || name.includes('browser') || name.includes('internet')) return `<span class="${shadowClass}" style="font-size:3.2rem;">🌐</span>`;
+        if (name.includes('driver') || name.includes('system') || name.includes('host') || name.includes('update')) return `<span class="${shadowClass}" style="font-size:3.2rem;">⚙️</span>`;
 
         for (const key in iconMap) {
             if (name.includes(key)) {
-                return `<img src="https://cdn.simpleicons.org/${iconMap[key]}" class="${shadowClass}" style="width: 32px; height: 32px;" onerror="this.onerror=null; this.src='${fallbackSrc}';" />`;
+                // El onerror ahora es seguro al usar &quot; para el SVG y comillas simples para el JS interno del atributo
+                return `<img src="https://cdn.simpleicons.org/${iconMap[key]}" class="${shadowClass}" style="width: 48px; height: 48px; filter: drop-shadow(0 4px 10px rgba(0,0,0,0.35));" onerror="this.onerror=null; this.parentElement.innerHTML='${svgForOnerror}';" />`;
             }
         }
 
-        return fallbackHTML;
+        // Si no hay icono en el mapa, devolvemos el SVG incrustado directamente en un wrapper
+        return `<div class="${shadowClass}" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));">${fallbackSVG}</div>`;
     }
 
     openMixer() {
+        this._setEditButtonVisibility(false);
+        this.currentPage = 'mixer_panel'; // Bloquea gestos de carrusel
         this.container.innerHTML = '';
         this.container.className = 'mixer-fullscreen-view';
 
@@ -594,8 +663,7 @@ class StreamDeckClient {
             setTimeout(() => shield.remove(), 500);
 
             setTimeout(() => {
-                this.currentPage = 'main';
-                this.renderGrid();
+                this.renderCarouselSlide(this.carouselIndex, 0);
             }, 100);
         });
         document.body.appendChild(backBtn);
@@ -843,34 +911,7 @@ class StreamDeckClient {
         }
     }
 
-    showExecutionModal() {
-        clearTimeout(this.executionHideTimeout);
-        this.executionModal.classList.remove('hidden');
-        this.executionModal.classList.remove('closing');
-        if (this.executionLogs) this.executionLogs.innerHTML = '';
-        this.executionSpinner.textContent = '⚙️';
-        this.executionSpinner.classList.remove('success');
-        this.executionSpinner.style.animation = 'rotate 1.5s linear infinite';
-        this.executionTitle.textContent = 'Ejecutando...';
-    }
-
-    hideExecutionModal(immediate = false) {
-        clearTimeout(this.executionHideTimeout);
-        if (immediate) {
-            this.executionModal.classList.add('hidden');
-            this.executionModal.classList.remove('closing');
-            this.executionLogs.innerHTML = '';
-            this.executionSpinner.textContent = '⚙️';
-            return;
-        }
-        this.executionModal.classList.add('closing');
-        setTimeout(() => {
-            this.executionModal.classList.add('hidden');
-            this.executionModal.classList.remove('closing');
-            this.executionLogs.innerHTML = '';
-            this.executionSpinner.textContent = '⚙️';
-        }, 560);
-    }
+    // Parameter modals are now handled by the PC (Electron) for better keyboard access.
 
     setupSocketListeners() {
         if (this.listenersInitialized) return;
@@ -953,56 +994,8 @@ class StreamDeckClient {
             }
         });
 
-        this.socket.on('script_log', (payload) => {
-            if (!this.executionLogs) return;
-            const text = payload.data || '';
-            const lines = text.split('\n');
-            lines.forEach(line => {
-                const cleanLine = line.trim();
-                if (cleanLine.length === 0) return;
-                const lastLog = this.executionLogs.lastElementChild;
-                if (lastLog && lastLog.textContent === `> ${cleanLine}`) return;
-
-                const div = document.createElement('div');
-                div.textContent = `> ${cleanLine}`;
-                this.executionLogs.appendChild(div);
-            });
-            this.executionLogs.scrollTo({ top: this.executionLogs.scrollHeight, behavior: 'smooth' });
-        });
-
-        this.socket.on('script_success', () => {
-            clearTimeout(this.executionHideTimeout);
-            this.executionSpinner.style.animation = '';
-            this.executionSpinner.classList.add('success');
-            this.executionSpinner.textContent = '✅';
-            this.executionTitle.textContent = '¡Completado!';
-            this.executionLogs.scrollTo({ top: this.executionLogs.scrollHeight, behavior: 'smooth' });
-
-            this.executionHideTimeout = setTimeout(() => {
-                this.hideExecutionModal();
-            }, 2500);
-        });
-
-        this.socket.on('script_error', (err) => {
-            clearTimeout(this.executionHideTimeout);
-            this.executionSpinner.style.animation = '';
-            this.executionSpinner.classList.remove('success');
-            this.executionSpinner.textContent = '❌';
-            this.executionTitle.textContent = '¡Error!';
-            if (err && (err.message || err.code)) {
-                const div = document.createElement('div');
-                div.className = 'log-error';
-                div.textContent = err.message ? err.message : `Código ${err.code}`;
-                this.executionLogs.appendChild(div);
-            } else {
-                this.executionLogs.innerHTML += '<div class="log-error">[Script terminó con error]</div>';
-            }
-            this.executionLogs.scrollTo({ top: this.executionLogs.scrollHeight, behavior: 'smooth' });
-
-            this.executionHideTimeout = setTimeout(() => {
-                this.hideExecutionModal();
-            }, 2500);
-        });
+        // Removed script_log, script_success, and script_error listeners as execution
+        // is now handled via external detached CMD windows.
     }
 
     updateSliderUI(id, data) {
@@ -1030,6 +1023,8 @@ class StreamDeckClient {
     }
 
     openDiscordPanel() {
+        this._setEditButtonVisibility(false);
+        this.currentPage = 'discord_panel'; // Bloquea gestos de carrusel
         this.overlayContainer.innerHTML = '';
         this.overlayContainer.className = 'discord-sketch-match-view';
 
@@ -1040,8 +1035,8 @@ class StreamDeckClient {
         const statusPill = document.createElement('div');
         statusPill.id = 'discord-status-pill';
         const isConnected = ['connected', 'fallback'].includes(this.discordConnectionStatus);
+        statusPill.className = `discord-status-pill ${isConnected ? 'connected' : 'disconnected'}`;
         statusPill.textContent = isConnected ? 'CONECTADO' : 'DESCONECTADO';
-        if (isConnected) statusPill.classList.add('connected');
 
         // Botón Volver Premium (Cuerpo del Documento para evitar caché/interferencias)
         const oldBtn = document.getElementById('panel-back-button');
@@ -1065,6 +1060,7 @@ class StreamDeckClient {
             // Feedback visual + Delay para que el evento no traspase
             setTimeout(() => {
                 this.overlay.classList.add('hidden');
+                this.renderCarouselSlide(this.carouselIndex, 0); // Restaurar carrusel, dots y botón editar
             }, 100);
         });
         document.body.appendChild(backBtn);
@@ -1163,10 +1159,7 @@ class StreamDeckClient {
         
         const isConnected = ['connected', 'fallback'].includes(this.discordConnectionStatus);
         statusEl.textContent = isConnected ? 'CONECTADO' : 'DESCONECTADO';
-        statusEl.classList.toggle('connected', isConnected);
-        
-        // También actualizamos el mensaje secundario si existe en algún sitio, 
-        // pero principalmente nos aseguramos del indicador principal.
+        statusEl.className = `discord-status-pill ${isConnected ? 'connected' : 'disconnected'}`;
     }
 
     updateDiscordButtons() {
@@ -1354,6 +1347,375 @@ class StreamDeckClient {
                 this.updateDiscordConnectionUI();
             });
         });
+    }
+
+    // ================================================================
+    // 🎠 SISTEMA DE CARRUSEL MULTITOUCH
+    // ================================================================
+
+    /** Renderiza la slide activa del carrusel en el container principal */
+    renderCarouselSlide(index, direction = 0) {
+        if (!this.carouselPages || this.carouselPages.length === 0) {
+            this.renderGrid('main');
+            return;
+        }
+
+        this.carouselIndex = Math.max(0, Math.min(index, this.carouselPages.length - 1));
+        const pageId = this.carouselPages[this.carouselIndex];
+        this.currentPage = pageId;
+
+        // Animación de entrada desde izquierda/derecha
+        const slideClass = direction > 0 ? 'slide-enter-right' : direction < 0 ? 'slide-enter-left' : '';
+
+        this.container.innerHTML = '';
+        this.container.className = 'grid-container';
+        if (slideClass) this.container.classList.add(slideClass);
+
+        const pageData = this.getPageData(pageId);
+
+        pageData.forEach((btnData, i) => {
+            this.container.appendChild(this.createButton(btnData, i));
+        });
+
+        // Forzar reflow para que la animación funcione
+        if (slideClass) {
+            void this.container.offsetWidth;
+            this.container.classList.remove(slideClass);
+            this.container.classList.add('slide-active');
+        }
+
+        this.renderCarouselDots();
+
+        this._setEditButtonVisibility(true);
+
+        // Si estamos en modo edición, reactivar drag en los nuevos botones
+        if (this.editMode) {
+            this._applyEditModeToButtons();
+        }
+    }
+
+    /** Crea/actualiza el indicador de dots en la parte inferior */
+    renderCarouselDots() {
+        let dots = document.getElementById('carousel-dots');
+        if (!dots) {
+            dots = document.createElement('div');
+            dots.id = 'carousel-dots';
+            document.body.appendChild(dots);
+        }
+
+        if (this.carouselPages.length <= 1) {
+            dots.style.display = 'none';
+            return;
+        }
+
+        dots.style.display = 'flex';
+        dots.innerHTML = '';
+        this.carouselPages.forEach((_, i) => {
+            const dot = document.createElement('div');
+            dot.className = 'carousel-dot' + (i === this.carouselIndex ? ' active' : '');
+            const navigateTo = () => {
+                if (this.editMode) return;
+                if (i === this.carouselIndex) return;
+                const dir = i > this.carouselIndex ? 1 : -1;
+                this.renderCarouselSlide(i, dir);
+            };
+            dot.addEventListener('pointerup', navigateTo);
+            dot.addEventListener('click', navigateTo);
+            dots.appendChild(dot);
+        });
+    }
+
+    /** Detecta swipe de 1 o 2 dedos para navegar entre slides */
+    setupCarouselSwipe() {
+        let t0 = null; // Punto inicial del toque
+
+        this.container.addEventListener('touchstart', (e) => {
+            // Ahora permitimos el swipe con un solo dedo (o más)
+            if (e.touches.length >= 1) {
+                t0 = { 
+                    x: e.touches[0].clientX, 
+                    y: e.touches[0].clientY 
+                };
+            }
+        }, { passive: true });
+
+        this.container.addEventListener('touchend', (e) => {
+            // --- VALIDACIONES DE SEGURIDAD ---
+            if (!t0 || this.editMode) return;
+
+            // 1. Bloquear si el overlay está abierto (Discord táctico, etc)
+            if (this.overlay && !this.overlay.classList.contains('hidden')) return;
+
+            // 2. Bloquear si estamos en una página que no es del carrusel (Domótica, Mixer, Subcarpetas)
+            if (!this.carouselPages || !this.carouselPages.includes(this.currentPage)) return;
+
+            // 3. Bloquear si hay algún slider activo (previniendo saltos mientras se ajusta el volumen)
+            if (this.activeSliders && this.activeSliders.size > 0) return;
+
+            // 4. Bloqueo extra por clase de contenedor (Doble seguridad para Mixer/Domótica)
+            if (this.container.classList.contains('mixer-fullscreen-view') || 
+                this.container.classList.contains('domotica-sketch-match-view')) return;
+            
+            const changed = e.changedTouches;
+            if (changed.length < 1) return;
+
+            const dx = changed[0].clientX - t0.x;
+            const dy = changed[0].clientY - t0.y;
+
+            // Threshold: movimiento horizontal > 70px y vertical < 80px para evitar swipes diagonales accidentales
+            if (Math.abs(dx) > 70 && Math.abs(dy) < 80) {
+                if (dx < 0 && this.carouselIndex < this.carouselPages.length - 1) {
+                    // Swipe hacia la izquierda (dedo se mueve a la izquierda) -> Siguiente página
+                    if (navigator.vibrate) navigator.vibrate(30);
+                    this.renderCarouselSlide(this.carouselIndex + 1, 1);
+                } else if (dx > 0 && this.carouselIndex > 0) {
+                    // Swipe hacia la derecha (dedo se mueve a la derecha) -> Página anterior
+                    if (navigator.vibrate) navigator.vibrate(30);
+                    this.renderCarouselSlide(this.carouselIndex - 1, -1);
+                }
+            }
+            t0 = null;
+        }, { passive: true });
+    }
+
+    // ================================================================
+    // ✏️ MODO EDICIÓN (DRAG & DROP)
+    // ================================================================
+
+    /** Crea el botón flotante de edición y lo añade al body */
+    renderEditModeButton() {
+        const existing = document.getElementById('edit-mode-btn');
+        if (existing) existing.remove();
+
+        const btn = document.createElement('button');
+        btn.id = 'edit-mode-btn';
+        btn.innerHTML = '<span class="edit-btn-icon">✏️</span><span class="edit-btn-label">Editar</span>';
+        btn.addEventListener('pointerup', (e) => {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            if (this.editMode) {
+                this.exitEditMode();
+            } else {
+                this.enterEditMode();
+            }
+        });
+        document.body.appendChild(btn);
+    }
+
+    /** Muestra u oculta el botón de edición y los dots del carrusel */
+    _setEditButtonVisibility(visible) {
+        const btn = document.getElementById('edit-mode-btn');
+        if (btn) btn.style.display = visible ? 'flex' : 'none';
+
+        const dots = document.getElementById('carousel-dots');
+        if (dots) {
+            // Solo mostramos los dots si hay más de una página
+            if (visible && this.carouselPages.length > 1) {
+                dots.style.display = 'flex';
+            } else {
+                dots.style.display = 'none';
+            }
+        }
+    }
+
+    /** Activa el modo edición en la slide actual */
+    enterEditMode() {
+        if (this.editMode) return;
+        // Sólo funciona en páginas del carrusel, no en paneles especiales
+        if (!this.carouselPages.includes(this.currentPage)) return;
+
+        this.editMode = true;
+        const btn = document.getElementById('edit-mode-btn');
+        if (btn) {
+            btn.classList.add('active');
+            btn.innerHTML = '<span class="edit-btn-icon">✅</span><span class="edit-btn-label">Listo</span>';
+        }
+
+        this._applyEditModeToButtons();
+    }
+
+    /** Aplica las clases wiggle y los listeners de drag a los botones actuales */
+    _applyEditModeToButtons() {
+        const buttons = this.container.querySelectorAll('.boton');
+        buttons.forEach((btn, i) => {
+            btn.classList.add('wiggle');
+            btn.dataset.editIndex = i;
+            // Usamos { capture: true } para que el modo edición intercepte eventos antes que la acción normal (click)
+            btn.addEventListener('pointerdown', this._onEditPointerDown, { capture: true });
+        });
+    }
+
+    /** Sale del modo edición y guarda el nuevo orden */
+    exitEditMode() {
+        this.editMode = false;
+        const btn = document.getElementById('edit-mode-btn');
+        if (btn) {
+            btn.classList.remove('active');
+            btn.innerHTML = '<span class="edit-btn-icon">✏️</span><span class="edit-btn-label">Editar</span>';
+        }
+
+        const buttons = this.container.querySelectorAll('.boton');
+        buttons.forEach(b => {
+            b.classList.remove('wiggle', 'drag-source');
+            b.removeEventListener('pointerdown', this._onEditPointerDown, { capture: true });
+        });
+
+        this._saveConfig();
+    }
+
+    /** Handler de pointerdown durante el modo edición (debe ser arrow fn para poder desregistrarlo) */
+    _onEditPointerDown = (e) => {
+        if (!this.editMode) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+
+        const sourceBtn = e.currentTarget;
+        const sourceIndex = parseInt(sourceBtn.dataset.editIndex);
+        const originPageId = this.currentPage;
+        if (isNaN(sourceIndex)) return;
+
+        sourceBtn.classList.add('drag-source');
+
+        // Clonar como ghost visual
+        const ghost = sourceBtn.cloneNode(true);
+        ghost.id = 'drag-ghost';
+        ghost.classList.remove('wiggle', 'drag-source');
+        ghost.classList.add('drag-ghost');
+        const rect = sourceBtn.getBoundingClientRect();
+        ghost.style.width = rect.width + 'px';
+        ghost.style.height = rect.height + 'px';
+        ghost.style.left = rect.left + 'px';
+        ghost.style.top = rect.top + 'px';
+        document.body.appendChild(ghost);
+
+        this._dragState = { 
+            sourceIndex, 
+            sourceBtn, 
+            ghost, 
+            lastOverIndex: sourceIndex,
+            originPageId
+        };
+
+        const onMove = (me) => {
+            // Mover el ghost
+            ghost.style.left = (me.clientX - rect.width / 2) + 'px';
+            ghost.style.top = (me.clientY - rect.height / 2) + 'px';
+
+            // --- DETECCIÓN DE BORDES PARA CAMBIO DE PÁGINA ---
+            const edgeWidth = 60;
+            const canPrev = this.carouselIndex > 0;
+            const canNext = this.carouselIndex < this.carouselPages.length - 1;
+            
+            if (me.clientX < edgeWidth && canPrev) {
+                this._startEdgeScroll(-1);
+                document.body.classList.add('edge-hover-left');
+                document.body.classList.remove('edge-hover-right');
+            } else if (me.clientX > window.innerWidth - edgeWidth && canNext) {
+                this._startEdgeScroll(1);
+                document.body.classList.add('edge-hover-right');
+                document.body.classList.remove('edge-hover-left');
+            } else {
+                this._stopEdgeScroll();
+                document.body.classList.remove('edge-hover-left', 'edge-hover-right');
+            }
+
+            // Detectar sobre qué botón está el ghost (solo si no estamos cambiando de página)
+            ghost.style.pointerEvents = 'none';
+            const el = document.elementFromPoint(me.clientX, me.clientY);
+            ghost.style.pointerEvents = '';
+
+            const targetBtn = el ? el.closest('.boton') : null;
+            const allBtns = [...this.container.querySelectorAll('.boton')];
+            allBtns.forEach(b => b.classList.remove('drag-over'));
+
+            if (targetBtn) {
+                targetBtn.classList.add('drag-over');
+                this._dragState.lastOverIndex = parseInt(targetBtn.dataset.editIndex);
+            }
+        };
+
+        const onUp = (ue) => {
+            this._stopEdgeScroll();
+            document.body.classList.remove('edge-hover-left', 'edge-hover-right');
+
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            window.removeEventListener('pointercancel', onUp);
+
+            ghost.remove();
+            sourceBtn.classList.remove('drag-source');
+
+            const targetIndex = this._dragState.lastOverIndex;
+            const originPageId = this._dragState.originPageId;
+            const targetPageId = this.currentPage;
+            
+            this._dragState = null;
+
+            // Limpiar drag-over
+            this.container.querySelectorAll('.drag-over').forEach(b => b.classList.remove('drag-over'));
+
+            if (targetPageId !== originPageId || targetIndex !== sourceIndex) {
+                this._moveOrSwapButton(originPageId, sourceIndex, targetPageId, targetIndex);
+            }
+        };
+
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onUp);
+    }
+
+    _startEdgeScroll(direction) {
+        if (this._edgeScrollTimeout) return;
+        this._edgeScrollTimeout = setTimeout(() => {
+            if (direction === 1 && this.carouselIndex < this.carouselPages.length - 1) {
+                if (navigator.vibrate) navigator.vibrate(40);
+                this.renderCarouselSlide(this.carouselIndex + 1, 1);
+            } else if (direction === -1 && this.carouselIndex > 0) {
+                if (navigator.vibrate) navigator.vibrate(40);
+                this.renderCarouselSlide(this.carouselIndex - 1, -1);
+            }
+            this._edgeScrollTimeout = null;
+        }, 750);
+    }
+
+    _stopEdgeScroll() {
+        if (this._edgeScrollTimeout) {
+            clearTimeout(this._edgeScrollTimeout);
+            this._edgeScrollTimeout = null;
+        }
+    }
+
+    /** Mueve un botón de una página/posición a otra y re-renderiza */
+    _moveOrSwapButton(originPageId, sourceIndex, targetPageId, targetIndex) {
+        const originArr = this.pages[originPageId];
+        const targetArr = this.pages[targetPageId];
+        if (!originArr || !targetArr) return;
+
+        // Extraer
+        const [item] = originArr.splice(sourceIndex, 1);
+        
+        // Insertar en destino
+        targetArr.splice(targetIndex, 0, item);
+
+        if (navigator.vibrate) navigator.vibrate([20, 10, 20]);
+
+        // Re-renderizar slide actual manteniendo editMode
+        this.renderCarouselSlide(this.carouselIndex, 0);
+    }
+
+    /** Guarda `this.pages` + `this.carouselPages` en el servidor */
+    async _saveConfig() {
+        try {
+            const payload = { carouselPages: this.carouselPages, pages: this.pages };
+            const res = await fetch('/api/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+        } catch (err) {
+            console.warn('No se pudo guardar config:', err);
+        }
     }
 }
 

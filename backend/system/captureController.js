@@ -4,50 +4,84 @@ const os = require('os');
 const fs = require('fs');
 const { getErrorMessage, runExecCommand } = require('../utils/utils');
 
+// Intentar cargar Electron para usar el portapapeles nativo
+let electron;
+try {
+    electron = require('electron');
+} catch (e) {
+    // Si no estamos bajo Electron, fallará silenciosamente
+}
+
 // Obtener la carpeta de Imágenes/Capturas de pantalla del usuario de Windows
 const carpetaCapturas = path.join(os.homedir(), 'Pictures', 'Screenshots');
 
-// Asegurar que la ruta exista por si acaso
+// Asegurar que la ruta exista
 if (!fs.existsSync(carpetaCapturas)) {
     fs.mkdirSync(carpetaCapturas, { recursive: true });
 }
 
-const hacerCaptura = async (pantalla) => {
+/**
+ * Realiza una captura de pantalla del monitor especificado,
+ * la guarda en la carpeta de Screenshots y la copia al portapapeles.
+ */
+const hacerCaptura = async (pantallaID) => {
     try {
+        console.log(`[Capture] Iniciando proceso de captura para ID: ${pantallaID}`);
+
         const monitores = await screenshot.listDisplays();
         if (!Array.isArray(monitores) || monitores.length === 0) {
             throw new Error('No se detectaron pantallas disponibles para captura');
         }
 
-        const nombreArchivo = path.join(carpetaCapturas, `foto_${Date.now()}.png`);
-        let capturaRealizada = false;
+        // Mapeo flexible de parámetros: "1", 1, "principal" -> Pantalla 0
+        const idNormalizado = String(pantallaID).toLowerCase();
+        let monIndex = 0; // Por defecto la principal
 
-        // ACCIÓN 1: GUARDAR EN LA CARPETA FÍSICA
-        if (pantalla === 'principal') {
-            await screenshot({ screen: monitores[0].id, filename: nombreArchivo });
-            console.log(`📸 Foto guardada en carpeta: Captura Principal`);
-            capturaRealizada = true;
-        } else if (pantalla === 'secundaria' && monitores.length > 1) {
-            await screenshot({ screen: monitores[1].id, filename: nombreArchivo });
-            console.log(`📸 Foto guardada en carpeta: Captura Secundaria`);
-            capturaRealizada = true;
-        } else {
-            console.log('⚠️ Cancelado: No se ha detectado una segunda pantalla u ocurrió un error con el parámetro.');
+        if (idNormalizado === '2' || idNormalizado === 'secundaria') {
+            monIndex = 1;
         }
 
-        // ACCIÓN 2: ENVIAR AL PORTAPAPELES DE WINDOWS
-        if (capturaRealizada && os.platform() === 'win32') {
+        // Verificar si el monitor solicitado existe
+        if (monIndex >= monitores.length) {
+            console.warn(`⚠️ Monitor ${monIndex + 1} no disponible (total: ${monitores.length}). Usando monitor principal.`);
+            monIndex = 0;
+        }
+
+        // Generar nombre de archivo con timestamp
+        const fecha = new Date().toISOString().replace(/[:.]/g, '-');
+        const nombreArchivo = path.join(carpetaCapturas, `Captura_${fecha}.png`);
+        
+        // REALIZAR CAPTURA Y GUARDAR EN DISCO
+        await screenshot({ 
+            screen: monitores[monIndex].id, 
+            filename: nombreArchivo 
+        });
+
+        console.log(`📸 Captura guardada con éxito en: ${nombreArchivo}`);
+
+        // COPIAR AL PORTAPAPELES (Solo Windows)
+        if (os.platform() === 'win32') {
             const rutaAbsoluta = path.resolve(nombreArchivo);
 
-            // Escapar comillas simples para PowerShell cuando la ruta contiene apóstrofes.
-            const escapedPath = rutaAbsoluta.replace(/'/g, "''");
-            const comandoPS = `powershell -command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Clipboard]::SetImage([System.Drawing.Image]::FromFile('${escapedPath}'))"`;
-
-            await runExecCommand(comandoPS);
-            console.log('📋 ¡Copiado al portapapeles! Listo para Ctrl+V');
+            if (electron && electron.clipboard && electron.nativeImage) {
+                // MÉTODO 1: Usar API nativa de Electron (Recomendado)
+                const img = electron.nativeImage.createFromPath(rutaAbsoluta);
+                electron.clipboard.writeImage(img);
+                console.log('📋 Portapapeles: Imagen copiada correctamente vía Electron.');
+            } else {
+                // MÉTODO 2: Fallback a PowerShell si Electron no está disponible
+                const escapedPath = rutaAbsoluta.replace(/'/g, "''");
+                const comandoPS = `powershell -command "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; [System.Windows.Forms.Clipboard]::SetImage([System.Drawing.Image]::FromFile('${escapedPath}'))"`;
+                
+                await runExecCommand(comandoPS);
+                console.log('📋 Portapapeles: Imagen copiada correctamente vía PowerShell.');
+            }
         }
+
+        return { ok: true, path: nombreArchivo };
+
     } catch (error) {
-        console.error('❌ Error crítico intentando hacer la captura de pantalla:', getErrorMessage(error));
+        console.error('❌ Error en el controlador de captura:', getErrorMessage(error));
         throw error;
     }
 };

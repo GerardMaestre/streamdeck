@@ -98,82 +98,41 @@ def resolver_colision(ruta_destino, nombre_archivo):
         contador += 1
     return nueva_ruta
 
-def limpiar_linea_estado(ancho=140):
-    """Limpia la línea de progreso para imprimir mensajes sin residuos visuales."""
-    print("\r" + (" " * ancho) + "\r", end="", flush=True)
-
-def mostrar_estado_progreso(actual, total, categoria, nombre_archivo, frame):
-    """Muestra una barra de progreso animada con spinner y archivo actual."""
-    if total <= 0:
-        return
-
-    spinner = "|/-\\"
-    barra_ancho = 28
-    progreso = actual / total
-    llenos = int(progreso * barra_ancho)
-    barra = "#" * llenos + "-" * (barra_ancho - llenos)
-
-    nombre_visual = nombre_archivo[:30] + "..." if len(nombre_archivo) > 33 else nombre_archivo
-    porcentaje = int(progreso * 100)
-
-    print(
-        f"\r [{spinner[frame % len(spinner)]}] [{barra}] {actual:>3}/{total:<3} ({porcentaje:>3}%) | {categoria:<16} | {nombre_visual:<33}",
-        end="",
-        flush=True
-    )
-
 if not os.path.exists(RUTA_DESCARGAS):
     print("[X] Error: No se encuentra la carpeta de descargas.")
 else:
-    archivos_objetivo = [
-        entrada for entrada in os.scandir(RUTA_DESCARGAS)
-        if entrada.is_file() and not entrada.name.startswith('.') and not entrada.name.endswith('.ini')
-    ]
-
-    total_archivos = len(archivos_objetivo)
-    if total_archivos > 0:
-        print(f"[*] Archivos detectados: {total_archivos}. Iniciando clasificación visual...\n")
-    else:
-        print("[I] No hay archivos para clasificar en esta ruta.")
-
-    resumen_por_categoria = {}
-
-    for indice, archivo in enumerate(archivos_objetivo, start=1):
-        extension = os.path.splitext(archivo.name)[1].lower()
-
-        # Asignar categoría (Si no la conoce, la manda a MISCELANEA)
-        categoria_destino = MAPA_EXT.get(extension, "MISCELANEA")
-
-        ruta_carpeta_destino = os.path.join(RUTA_DESCARGAS, categoria_destino)
-
-        # Crear la carpeta si no existe
-        if not os.path.exists(ruta_carpeta_destino):
-            os.makedirs(ruta_carpeta_destino)
-
-        # Obtener una ruta segura que no borre archivos existentes
-        ruta_final = resolver_colision(ruta_carpeta_destino, archivo.name)
-
-        # Ejecutar el movimiento
-        try:
-            if simulacion:
-                archivos_movidos += 1
-            else:
-                shutil.move(archivo.path, ruta_final)
-                archivos_movidos += 1
-
-            resumen_por_categoria[categoria_destino] = resumen_por_categoria.get(categoria_destino, 0) + 1
-            mostrar_estado_progreso(indice, total_archivos, categoria_destino, archivo.name, indice)
-        except Exception as e:
-            limpiar_linea_estado()
-            print(f" [X] Error crítico moviendo {archivo.name}: {e}")
-            archivos_ignorados += 1
-            mostrar_estado_progreso(indice, total_archivos, "ERROR", archivo.name, indice)
-
-    if total_archivos > 0:
-        print("\n")
-        print("[*] Resumen por categoría:")
-        for categoria, cantidad in sorted(resumen_por_categoria.items()):
-            print(f"    - {categoria:<18}: {cantidad}")
+    for entrada in os.scandir(RUTA_DESCARGAS):
+        if entrada.is_file():
+            archivo = entrada
+            # Ignorar archivos ocultos o de sistema
+            if not archivo.name.startswith('.') and not archivo.name.endswith('.ini'):
+                extension = os.path.splitext(archivo.name)[1].lower()
+                
+                # Asignar categoría (Si no la conoce, la manda a MISCELANEA)
+                categoria_destino = MAPA_EXT.get(extension, "MISCELANEA")
+                
+                ruta_carpeta_destino = os.path.join(RUTA_DESCARGAS, categoria_destino)
+                
+                # Crear la carpeta si no existe
+                if not os.path.exists(ruta_carpeta_destino):
+                    os.makedirs(ruta_carpeta_destino)
+                
+                # Obtener una ruta segura que no borre archivos existentes
+                ruta_final = resolver_colision(ruta_carpeta_destino, archivo.name)
+                
+                # Ejecutar el movimiento
+                try:
+                    nombre_visual = archivo.name[:35] + '...' if len(archivo.name) > 35 else archivo.name
+                    if simulacion:
+                        print(f" [Simulación] Se movería: {nombre_visual:<24} --> /{categoria_destino}")
+                        archivos_movidos += 1
+                    else:
+                        shutil.move(archivo.path, ruta_final)
+                        print(f" [M] {nombre_visual:<38} --> /{categoria_destino}")
+                        archivos_movidos += 1
+                except Exception as e:
+                    print(f" [X] Error crítico moviendo {archivo.name}: {e}")
+                    archivos_ignorados += 1
 
 print("\n" + "-" * 65)
 if simulacion:

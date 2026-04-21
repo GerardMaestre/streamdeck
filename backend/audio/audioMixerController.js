@@ -37,10 +37,8 @@ function getAppLabel(session) {
         return null;
     }
 
-    let safeName = rawName.split('%b')[0].split(',-')[0];
-    let baseName = path.basename(safeName);
-    let lower = baseName.toLowerCase();
-    let cleanLower = lower.replace(/\.exe$/i, '').trim();
+    const baseName = path.basename(rawName);
+    const cleanLower = baseName.toLowerCase().replace(/\.exe$/i, '').trim();
 
     // Filtro avanzado: Eliminar ruido hexadecimal (sesiones fantasma como '0d', '1a', 'ff')
     if (/^[0-9a-f]{1,4}$/i.test(cleanLower)) {
@@ -63,14 +61,11 @@ function getAppLabel(session) {
         'vlc': 'VLC Player',
         'sunshine': 'Sunshine',
         'powertoys': 'PowerToys',
-        'wallpaper64': 'Wallpaper Engine',
-        'wallpaper32': 'Wallpaper Engine',
         'qemu-system': 'QEMU Emulator',
         'telegram': 'Telegram',
         'whatsapp': 'WhatsApp',
         'league of legends': 'League of Legends',
         'valorant': 'Valorant',
-        'devicedriver': 'Device Driver',
         'update': 'Update'
     };
 
@@ -95,12 +90,13 @@ function getAppLabel(session) {
             'mousoftwareworker', 'usocoreworker', 'compattelrunner', 'vmmem', 'userinit', 
             'wininit', 'winlogon', 'crashpad_handler', 'wermgr', 'werfault', 
             'backgroundtransferhost', 'smartscreen', 'igfxcuiservice', 'igfxem', 
-            'nvsphelper64', 'rtkngui64', 'nahimic', 'wavesyssvc', 'securityhealthsystray'
+            'nvsphelper64', 'rtkngui64', 'nahimic', 'wavesyssvc', 'securityhealthsystray',
+            'msedgewebview2', 'devicedriver', 'dock_64', 'antigravity', 'wallpaper64', 'wallpaper32'
         ];
 
         if (cleanLower.length <= 1 || cleanLower.includes('{') || cleanLower.includes('}')) {
             prettyName = null;
-        } else if (blacklist.some(bad => cleanLower === bad || cleanLower.startsWith(bad))) {
+        } else if (blacklist.some(bad => cleanLower.includes(bad))) {
             prettyName = null;
         } else {
             prettyName = cleanLower.replace(/[-_]/g, ' ').trim();
@@ -195,6 +191,10 @@ function pollSessions(io) {
     const grouped = new Map();
     
     currentSessions.forEach((session) => {
+        // Filtrar sesiones inactivas (state !== 1: Active) para evitar saturación en la UI
+        // Solo mostramos apps que Windows marca como activamente emitiendo o preparadas para audio
+        if (session.state !== 1) return;
+
         const label = getAppLabel(session);
         if (!label) return; 
 

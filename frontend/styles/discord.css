@@ -285,6 +285,14 @@
     text-transform: uppercase;
     letter-spacing: 5px;
     box-shadow: 0 0 40px rgba(74, 222, 128, 0.15);
+    transition: all 0.3s ease;
+}
+
+.discord-status-pill.disconnected {
+    background: linear-gradient(180deg, rgba(239, 68, 68, 0.2), rgba(185, 28, 28, 0.1));
+    border-color: rgba(239, 68, 68, 0.5);
+    color: #f87171;
+    box-shadow: 0 0 40px rgba(239, 68, 68, 0.15);
 }
 
 .discord-sketch-content {

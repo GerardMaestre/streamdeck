@@ -4,7 +4,7 @@
  * y añade un icono en la bandeja del sistema de Windows.
  */
 
-const { app, Tray, Menu, shell, nativeImage, dialog } = require('electron');
+const { app, Tray, Menu, shell, nativeImage, dialog, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const os = require('os');
 
@@ -111,6 +111,63 @@ app.whenReady().then(() => {
 
     tray.setToolTip('Stream Deck Pro Backend');
     tray.setContextMenu(contextMenu);
+
+    // --- LÓGICA DE PROMPT EN PC ---
+    let promptWindow = null;
+    let promptResolve = null;
+
+    global.showPCPrompt = (title) => {
+        return new Promise((resolve) => {
+            if (promptWindow) promptWindow.close();
+
+            promptResolve = resolve;
+            promptWindow = new BrowserWindow({
+                width: 480,
+                height: 320,
+                frame: false,
+                transparent: true,
+                alwaysOnTop: true,
+                skipTaskbar: true,
+                center: true,
+                resizable: false,
+                webPreferences: {
+                    nodeIntegration: true,
+                    contextIsolation: false
+                }
+            });
+
+            promptWindow.loadFile(path.join(__dirname, 'frontend', 'prompt.html'));
+
+            promptWindow.once('ready-to-show', () => {
+                promptWindow.show();
+                promptWindow.webContents.send('setup-prompt', { title });
+            });
+
+            promptWindow.on('closed', () => {
+                promptWindow = null;
+                if (promptResolve) {
+                    promptResolve(null); // Retornar null si se cierra sin enviar
+                    promptResolve = null;
+                }
+            });
+        });
+    };
+
+    ipcMain.on('prompt-submit', (event, value) => {
+        if (promptResolve) {
+            promptResolve(value);
+            promptResolve = null;
+        }
+        if (promptWindow) promptWindow.close();
+    });
+
+    ipcMain.on('prompt-cancel', () => {
+        if (promptResolve) {
+            promptResolve(null);
+            promptResolve = null;
+        }
+        if (promptWindow) promptWindow.close();
+    });
 
     console.log(`[App Bandeja] Todo listo. IP para la tablet: http://${localIP}:${PORT}`);
 });

@@ -40,6 +40,25 @@ app.get('/api/config', (req, res) => {
     }
 });
 
+// Endpoint para guardar config reordenada (Modo Edición Tablet)
+app.use(express.json({ limit: '1mb' }));
+app.post('/api/config', (req, res) => {
+    try {
+        const newConfig = req.body;
+        if (!newConfig || !newConfig.pages) {
+            return res.status(400).json({ error: 'Payload inválido: falta "pages".' });
+        }
+        const configPath = getDataPath('config.json');
+        fs.writeFileSync(configPath, JSON.stringify(newConfig, null, 4), 'utf8');
+        configCache = newConfig; // Actualizar caché en memoria
+        console.log('💾 config.json actualizado desde la tablet');
+        res.json({ ok: true });
+    } catch(err) {
+        console.error('Error guardando config.json', err);
+        res.status(500).json({ error: 'No se pudo guardar la configuración.' });
+    }
+});
+
 // Inicializar audio-mixer con el io del servidor
 initAudioMixer(io);
 initDiscordRPC(io);
@@ -104,6 +123,25 @@ io.on('connection', (socket) => {
     });
 
     socket.on('ejecutar_script_dinamico', async (payload, ack) => {
+        // Si el script requiere parámetros pero no han llegado en el payload, los pedimos en el PC
+        if (payload.requiresParams && (payload.args === undefined || payload.args === null)) {
+            const scriptLabel = payload.archivo ? payload.archivo.replace(/_/g, ' ').replace(/\.[^.]+$/, '') : 'Script';
+            
+            // Llamamos a la función global de Electron si existe
+            if (global.showPCPrompt) {
+                console.log(`[Server] Solicitando parámetros en PC para: ${scriptLabel}`);
+                const pcArgs = await global.showPCPrompt(scriptLabel);
+                
+                if (pcArgs === null) {
+                    console.log('[Server] Prompt cancelado en PC');
+                    if (typeof ack === 'function') ack({ ok: false, message: 'Cancelado' });
+                    return;
+                }
+                
+                payload.args = pcArgs;
+            }
+        }
+
         const result = await runSafely(socket, 'ejecutar_script_dinamico', () => ejecutarScriptDinamico(payload, socket), ack);
         if (typeof ack === 'function' && result !== null) ack({ ok: true });
     });

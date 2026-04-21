@@ -4,12 +4,15 @@ const {
     getErrorMessage,
     isPathInsideBase,
     logControllerError,
-    runSpawnCommand,
-    safeSocketEmit,
     getDataPath
 } = require('../utils/utils');
+const { exec } = require('child_process');
 
 const baseScriptsPath = getDataPath('scripts');
+
+const ensureFileExists = async (absolutePath) => {
+    await fs.access(absolutePath);
+};
 
 const scripts = {
     purgar_ram: path.join(baseScriptsPath, '02_Gaming', 'Purgar_ram.py'),
@@ -18,93 +21,48 @@ const scripts = {
     limpieza_global: path.join(baseScriptsPath, '04_Archivos', 'Limpieza_Extrema_Global.py')
 };
 
-const emitScriptLog = (socket, data) => {
-    safeSocketEmit(socket, 'script_log', { data });
-};
-
-const emitScriptError = (socket, payload) => {
-    safeSocketEmit(socket, 'script_error', payload);
-};
-
-const emitScriptSuccess = (socket) => {
-    safeSocketEmit(socket, 'script_success');
-};
-
-const ensureFileExists = async (absolutePath) => {
-    await fs.access(absolutePath);
-};
-
-const buildExecutionConfig = (absolutePath) => {
+const buildExecutionCommand = (absolutePath, args) => {
     const extension = path.extname(absolutePath).toLowerCase();
+    const argsStr = args ? ` ${args}` : '';
 
     if (extension === '.py') {
-        return {
-            bin: 'python',
-            args: [absolutePath],
-            options: {}
-        };
+        return `start "StreamDeck Script" cmd.exe /k "python "${absolutePath}"${argsStr}"`;
     }
 
-    if (extension === '.bat') {
-        return {
-            bin: 'cmd.exe',
-            args: ['/c', absolutePath],
-            options: { shell: true }
-        };
+    if (extension === '.bat' || extension === '.cmd' || extension === '.exe') {
+        return `start "StreamDeck Script" cmd.exe /k ""${absolutePath}"${argsStr}"`;
     }
 
     throw new Error(`Extensión de archivo no soportada: ${path.basename(absolutePath)}`);
 };
 
-const runScript = async (scriptLabel, absolutePath, socket) => {
-    const execution = buildExecutionConfig(absolutePath);
-
-    console.log(`⏳ Ejecutando script [${scriptLabel}]...`);
+const runScriptExternally = async (scriptLabel, absolutePath, args) => {
+    console.log(`⏳ Ejecutando script externamente [${scriptLabel}] con args: ${args || 'ninguno'}`);
 
     try {
-        const { code } = await runSpawnCommand({
-            bin: execution.bin,
-            args: execution.args,
-            options: execution.options,
-            onStdout: (data) => {
-                const text = data.toString();
-                console.log(`[${scriptLabel} stdout]:`, text.trim());
-                emitScriptLog(socket, text);
-            },
-            onStderr: (data) => {
-                const text = data.toString();
-                console.warn(`[${scriptLabel} stderr]:`, text.trim());
-                emitScriptLog(socket, text);
-            },
-            onError: (error) => {
+        const commandStr = buildExecutionCommand(absolutePath, args);
+        console.log(`Ejecutando: ${commandStr}`);
+        
+        exec(commandStr, (error) => {
+            if (error) {
                 logControllerError(`script:${scriptLabel}`, error);
             }
         });
 
-        console.log(`✅ ${scriptLabel} terminó con código ${code}`);
-        emitScriptSuccess(socket);
+        console.log(`✅ ${scriptLabel} lanzado correctamente`);
     } catch (error) {
-        if (typeof error?.code === 'number') {
-            console.error(`❌ ${scriptLabel} terminó con código ${error.code}`);
-            emitScriptError(socket, { code: error.code });
-            return;
-        }
-
-        const message = getErrorMessage(error);
         logControllerError(`script:${scriptLabel}`, error);
-        emitScriptLog(socket, `${message}\n`);
-        emitScriptError(socket, { message });
     }
 };
 
 const validateDynamicPayload = (payload = {}) => {
-    const { carpeta, archivo } = payload;
+    const { carpeta, archivo, args } = payload;
 
     if (!carpeta || !archivo || typeof carpeta !== 'string' || typeof archivo !== 'string') {
         throw new Error('Payload inválido para script dinámico');
     }
 
-    return { carpeta, archivo };
+    return { carpeta, archivo, args: typeof args === 'string' ? args : '' };
 };
 
 const resolveSafeScriptPath = (carpeta, archivo) => {
@@ -122,35 +80,26 @@ const ejecutarScript = async (scriptId, socket) => {
         const absolutePath = scripts[scriptId];
 
         if (!absolutePath) {
-            const message = `Script no encontrado: ${scriptId}`;
-            console.error(`❌ ${message}`);
-            emitScriptLog(socket, `❌ ${message}\n`);
-            emitScriptError(socket, { message });
+            console.error(`❌ Script no encontrado: ${scriptId}`);
             return;
         }
 
         await ensureFileExists(absolutePath);
-        await runScript(scriptId, absolutePath, socket);
+        await runScriptExternally(scriptId, absolutePath, '');
     } catch (error) {
-        const message = getErrorMessage(error);
         logControllerError(`script:${scriptId}`, error);
-        emitScriptLog(socket, `❌ ${message}\n`);
-        emitScriptError(socket, { message });
     }
 };
 
 const ejecutarScriptDinamico = async (payload, socket) => {
     try {
-        const { carpeta, archivo } = validateDynamicPayload(payload);
+        const { carpeta, archivo, args } = validateDynamicPayload(payload);
         const absolutePath = resolveSafeScriptPath(carpeta, archivo);
 
         await ensureFileExists(absolutePath);
-        await runScript(`${carpeta}/${archivo}`, absolutePath, socket);
+        await runScriptExternally(`${carpeta}/${archivo}`, absolutePath, args);
     } catch (error) {
-        const message = getErrorMessage(error);
         logControllerError('script:dinamico', error);
-        emitScriptLog(socket, `❌ ${message}\n`);
-        emitScriptError(socket, { message });
     }
 };
 
