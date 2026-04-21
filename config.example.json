@@ -355,9 +355,9 @@
                 "action": "tuya_scene_toggle",
                 "payload": {
                     "deviceIds": [
-                        "bf02a8f057179a10753ram",
-                        "bf63d2743895e42709akue",
-                        "bf9d385783be51f82cef86"
+                        "device_id_1",
+                        "device_id_2",
+                        "device_id_3"
                     ],
                     "status": true
                 }
@@ -370,9 +370,9 @@
                 "action": "tuya_scene_toggle",
                 "payload": {
                     "deviceIds": [
-                        "bf02a8f057179a10753ram",
-                        "bf63d2743895e42709akue",
-                        "bf9d385783be51f82cef86"
+                        "device_id_1",
+                        "device_id_2",
+                        "device_id_3"
                     ],
                     "status": false
                 }
@@ -385,9 +385,9 @@
                 "action": "tuya_command",
                 "payload": {
                     "deviceIds": [
-                        "bf02a8f057179a10753ram",
-                        "bf63d2743895e42709akue",
-                        "bf9d385783be51f82cef86"
+                        "device_id_1",
+                        "device_id_2",
+                        "device_id_3"
                     ],
                     "code": "work_mode",
                     "value": "scene"
@@ -401,9 +401,9 @@
                 "action": "tuya_command",
                 "payload": {
                     "deviceIds": [
-                        "bf02a8f057179a10753ram",
-                        "bf63d2743895e42709akue",
-                        "bf9d385783be51f82cef86"
+                        "device_id_1",
+                        "device_id_2",
+                        "device_id_3"
                     ],
                     "code": "work_mode",
                     "value": "white"

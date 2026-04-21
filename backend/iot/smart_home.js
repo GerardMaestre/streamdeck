@@ -1,10 +1,10 @@
 const { TuyaContext } = require('@tuya/tuya-connector-nodejs');
 
-// Configuración con tus credenciales del panel (Overview)
+// Configuración con tus credenciales del panel (Overview) a través de variables de entorno
 const context = new TuyaContext({
-  baseUrl: 'https://openapi.tuyaeu.com', // Centro de datos: Central Europe
-  accessKey: 'qtqhhvyau7mjxn4a49kj',     // Tu Access ID
-  secretKey: '5aaa497221b84fad9ed1b0664a3d066b',    // IMPORTANTE: Reemplaza esto con tu Secret Key real
+  baseUrl: 'https://openapi.tuyaeu.com', 
+  accessKey: process.env.TUYA_ACCESS_KEY,
+  secretKey: process.env.TUYA_SECRET_KEY,
 });
 
 /**

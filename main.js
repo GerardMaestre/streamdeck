@@ -1,3 +1,4 @@
+require('dotenv').config();
 /**
  * Stream Deck Pro - Tray App Wrapper
  * Este archivo usa Electron para ejecutar tu servidor en segundo plano
