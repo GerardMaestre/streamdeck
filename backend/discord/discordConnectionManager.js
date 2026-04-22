@@ -249,7 +249,7 @@ class DiscordConnectionManager {
 
             if (voiceCapable) {
                 this.updateConnectionState('connected', `Conectado como ${client.user?.username || 'Discord'}`);
-                console.log(`[Discord] ✅ Conectado como ${client.user?.username} (${attemptLabel})`);
+                console.log(`[Discord] [OK] Conectado como ${client.user?.username} (${attemptLabel})`);
                 try {
                     await this.onConnected(currentClient);
                 } catch (e) {
@@ -257,7 +257,7 @@ class DiscordConnectionManager {
                 }
             } else {
                 this.updateConnectionState('fallback', `Conectado básico como ${client.user?.username || 'Usuario'}`);
-                console.log(`[Discord] ⚠️ Conectado en modo básico (${attemptLabel})`);
+                console.log(`[Discord] [!] Conectado en modo básico (${attemptLabel})`);
                 try {
                     this.onFallback();
                 } catch (e) {

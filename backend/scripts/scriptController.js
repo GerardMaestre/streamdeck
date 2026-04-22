@@ -39,7 +39,7 @@ const buildExecutionCommand = (absolutePath, args) => {
 };
 
 const runScriptExternally = async (scriptLabel, absolutePath, args) => {
-    console.log(`⏳ Ejecutando script externamente [${scriptLabel}] con args: ${args || 'ninguno'}`);
+    console.log(`[Script] Ejecutando externamente [${scriptLabel}] con args: ${args || 'ninguno'}`);
 
     try {
         const commandStr = buildExecutionCommand(absolutePath, args);
@@ -51,7 +51,7 @@ const runScriptExternally = async (scriptLabel, absolutePath, args) => {
             }
         });
 
-        console.log(`✅ ${scriptLabel} lanzado correctamente`);
+        console.log(`[Script] ${scriptLabel} lanzado correctamente`);
     } catch (error) {
         logControllerError(`script:${scriptLabel}`, error);
     }
@@ -83,7 +83,7 @@ const ejecutarScript = async (scriptId, socket) => {
         const absolutePath = scripts[scriptId];
 
         if (!absolutePath) {
-            console.error(`❌ Script no encontrado: ${scriptId}`);
+            console.error(`[Error] Script no encontrado: ${scriptId}`);
             return;
         }
 

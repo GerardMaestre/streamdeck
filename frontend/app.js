@@ -1,3 +1,52 @@
+class PerfMonitor {
+    constructor() {
+        this.fps = 0;
+        this.frames = 0;
+        this.lastTime = performance.now();
+        this.el = document.createElement('div');
+        this.el.id = 'perf-monitor';
+        this.el.innerHTML = `
+            <span id="perf-fps">FPS: 0</span>
+            <span id="perf-render">Render: 0ms</span>
+            <span id="perf-ram" style="color: #f39c12">RAM: --</span>
+            <span id="perf-cpu" style="color: #3498db">CPU: --</span>
+            <span id="perf-ping" style="color: #e74c3c">Ping: --</span>
+        `;
+        document.body.appendChild(this.el);
+        this.update();
+        
+        // Ping testing
+        this.lastPing = 0;
+    }
+
+    update() {
+        const now = performance.now();
+        this.frames++;
+        if (now > this.lastTime + 1000) {
+            this.fps = Math.round((this.frames * 1000) / (now - this.lastTime));
+            document.getElementById('perf-fps').textContent = `FPS: ${this.fps}`;
+            this.lastTime = now;
+            this.frames = 0;
+        }
+        requestAnimationFrame(() => this.update());
+    }
+
+    markRender(ms) {
+        document.getElementById('perf-render').textContent = `Render: ${ms.toFixed(1)}ms`;
+    }
+
+    updateServerStats(data) {
+        const ramMb = Math.round(data.rss / 1024 / 1024);
+        const cpuPercent = Math.round((data.cpuUser + data.cpuSystem) / 10000); // Estimacion simplificada
+        document.getElementById('perf-ram').textContent = `RAM: ${ramMb}MB`;
+        document.getElementById('perf-cpu').textContent = `CPU: ${cpuPercent}%`;
+    }
+
+    updatePing(ms) {
+        document.getElementById('perf-ping').textContent = `Ping: ${ms}ms`;
+    }
+}
+
 class StreamDeckClient {
     constructor() {
         if (window.streamDeck) return window.streamDeck;
@@ -63,6 +112,17 @@ class StreamDeckClient {
         this._dragState = null; // Estado del drag en progreso
         this._edgeScrollTimeout = null; // Temporizador para cambio de página en borde
 
+        // --- PERFORMANCE CACHE & BATCHING ---
+        this.panels = {
+            mixer: document.getElementById('panel-mixer'),
+            discord: document.getElementById('panel-discord'),
+            domotica: document.getElementById('panel-domotica')
+        };
+        this.panelsContainer = document.getElementById('panels-container');
+        this.updateQueue = new Map();
+        this.isBatching = false;
+        
+        this.perf = new PerfMonitor();
         this.init();
     }
 
@@ -170,15 +230,18 @@ class StreamDeckClient {
 
         const pageData = this.getPageData(pageId);
         const shouldInjectBack = pageId !== 'main';
+        const fragment = document.createDocumentFragment();
 
         if (shouldInjectBack) {
-            this.container.appendChild(this.createBackButton(0));
+            fragment.appendChild(this.createBackButton(0));
         }
 
         pageData.forEach((btnData, index) => {
             const visualIndex = shouldInjectBack ? index + 1 : index;
-            this.container.appendChild(this.createButton(btnData, visualIndex));
+            fragment.appendChild(this.createButton(btnData, visualIndex));
         });
+
+        this.container.appendChild(fragment);
 
         this._setEditButtonVisibility(true);
     }
@@ -269,152 +332,109 @@ class StreamDeckClient {
     // --- DOMÓTICA INTEGRADA (STRICT SKETCH MATCH) ---
     renderDomoticaModernView() {
         this._setEditButtonVisibility(false);
-        this.currentPage = 'domotica_panel'; // Bloquea gestos de carrusel
-        this.container.innerHTML = '';
-        this.container.className = 'grid-container domotica-sketch-match-view';
+        this.currentPage = 'domotica_panel';
+        
+        const domoPanel = this.panels.domotica;
+        if (!domoPanel.innerHTML) {
+            domoPanel.className = 'panel-cache-node domotica-sketch-match-view';
+            domoPanel.innerHTML = `
+                <div class="domotica-master-frame">
+                    <div class="domotica-sketch-content">
+                        <div class="domotica-card-fader">
+                            <div class="fader-track-pro">
+                                <div class="fader-fill-pro"></div>
+                                <div class="fader-thumb-pro"></div>
+                            </div>
+                        </div>
+                        <div class="domotica-card-buttons">
+                            <div class="domotica-sketch-grid"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
 
-        // 0. Marco maestro del dibujo
-        const masterFrame = document.createElement('div');
-        masterFrame.className = 'domotica-master-frame';
-
-        // Botón Volver Premium (Cuerpo del Documento para evitar caché/interferencias)
-        const oldBtn = document.getElementById('panel-back-button');
-        if (oldBtn) oldBtn.remove();
-
-        const backBtn = document.createElement('button');
-        backBtn.id = 'panel-back-button';
-        backBtn.className = 'panel-back-btn-sketch-circle';
-        backBtn.innerHTML = '<span>←</span>';
-        backBtn.addEventListener('pointerup', (e) => {
-            e.preventDefault();
-            e.stopImmediatePropagation();
-            backBtn.remove();
-
-            const shield = document.createElement('div');
-            shield.className = 'pointer-shield';
-            document.body.appendChild(shield);
-            setTimeout(() => shield.remove(), 500);
-
-            setTimeout(() => {
+            const backBtn = document.createElement('button');
+            backBtn.className = 'panel-back-btn-sketch-circle';
+            backBtn.innerHTML = '<span>←</span>';
+            backBtn.addEventListener('pointerup', (e) => {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                this.hidePanels();
                 this.renderCarouselSlide(this.carouselIndex, 0);
-            }, 100);
-        });
-        document.body.appendChild(backBtn);
-
-        // 2. Contenedor de División
-        const contentArea = document.createElement('div');
-        contentArea.className = 'domotica-sketch-content';
-
-        // --- IZQUIERDA: TARJETA SLIDER ---
-        const sliderCard = document.createElement('div');
-        sliderCard.className = 'domotica-card-fader';
-
-        const faderTrack = document.createElement('div');
-        faderTrack.className = 'fader-track-pro';
-
-        const faderFill = document.createElement('div');
-        faderFill.className = 'fader-fill-pro';
-        faderFill.style.transform = `scaleY(${this.lastTuyaIntensity / 100})`;
-
-        const faderThumb = document.createElement('div');
-        faderThumb.className = 'fader-thumb-pro';
-        // Inicialización aproximada (se corregirá en el primer movimiento o resize)
-        faderThumb.style.transform = `translate(-50%, -${this.lastTuyaIntensity}%)`;
-
-        faderTrack.appendChild(faderFill);
-        faderTrack.appendChild(faderThumb);
-
-        let trackRect = null;
-        const updateFader = (e) => {
-            if (!trackRect) trackRect = faderTrack.getBoundingClientRect();
-            const y = e.clientY - trackRect.top;
-            let percent = 100 - (y / trackRect.height) * 100;
-            percent = Math.max(1, Math.min(100, Math.round(percent)));
-
-            if (percent === this.lastTuyaIntensity) return;
-            this.lastTuyaIntensity = percent;
-            localStorage.setItem('lastTuyaIntensity', percent);
-
-            // Visual instantáneo (GPU Accelerado)
-            requestAnimationFrame(() => {
-                faderFill.style.transform = `scaleY(${percent / 100})`;
-                // Usamos 50% para que el centro de la bola coincida con el valor
-                faderThumb.style.transform = `translate(-50%, calc(50% - ${(percent / 100) * trackRect.height}px))`;
             });
+            domoPanel.appendChild(backBtn);
 
-            // Emisión de red diferida pero con valor ACTUAL
-            const currentVal = percent;
-            const tuyaVal = Math.round(10 + (currentVal / 100) * 990);
+            const faderTrack = domoPanel.querySelector('.fader-track-pro');
+            const faderFill = domoPanel.querySelector('.fader-fill-pro');
+            const faderThumb = domoPanel.querySelector('.fader-thumb-pro');
+            const controlGrid = domoPanel.querySelector('.domotica-sketch-grid');
 
-            this.scheduleThrottledEmit('tuya_brightness', () => {
-                this.socket.emit('tuya_command', {
-                    deviceIds: this.tuyaDevices,
-                    code: 'bright_value_v2',
-                    value: tuyaVal
+            const controls = [
+                { label: 'ENCENDER', value: true, action: 'tuya_scene_toggle', icon: '🌟', color: '#2ecc71' },
+                { label: 'APAGAR', value: false, action: 'tuya_scene_toggle', icon: '🌑', color: '#e74c3c' },
+                { label: 'BLANCO', value: 'white', code: 'work_mode', icon: '⚪', color: '#ecf0f1' },
+                { label: 'ESCENA', value: 'scene', code: 'work_mode', icon: '🔮', color: '#9b59b6' }
+            ];
+
+            controls.forEach(c => {
+                const btn = document.createElement('button');
+                btn.className = 'domotica-sketch-btn';
+                btn.style.setProperty('--btn-accent', c.color);
+                btn.innerHTML = `<span class="k-icon">${c.icon}</span><span class="k-label">${c.label}</span>`;
+                btn.addEventListener('pointerdown', () => {
+                    if (navigator.vibrate) navigator.vibrate(40);
+                    const payload = c.action === 'tuya_scene_toggle'
+                        ? { deviceIds: this.tuyaDevices, code: 'switch_led', value: c.value }
+                        : { deviceIds: this.tuyaDevices, code: c.code, value: c.value };
+                    this.socket.emit('tuya_command', payload);
                 });
-            }, 350);
-        };
-
-        faderThumb.addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            trackRect = faderTrack.getBoundingClientRect();
-            faderThumb.setPointerCapture(e.pointerId);
-            updateFader(e);
-            faderThumb.addEventListener('pointermove', updateFader);
-        });
-
-        faderThumb.addEventListener('pointerup', (e) => {
-            if (faderThumb.hasPointerCapture && faderThumb.hasPointerCapture(e.pointerId)) {
-                faderThumb.releasePointerCapture(e.pointerId);
-            }
-            faderThumb.removeEventListener('pointermove', updateFader);
-        });
-
-        sliderCard.appendChild(faderTrack);
-        contentArea.appendChild(sliderCard);
-
-        // --- DERECHA: TARJETA BOTONES ---
-        const buttonsCard = document.createElement('div');
-        buttonsCard.className = 'domotica-card-buttons';
-
-        const controlGrid = document.createElement('div');
-        controlGrid.className = 'domotica-sketch-grid';
-
-        const controls = [
-            { label: 'ENCENDER', value: true, action: 'tuya_scene_toggle', icon: '🌟', color: '#2ecc71' },
-            { label: 'APAGAR', value: false, action: 'tuya_scene_toggle', icon: '🌑', color: '#e74c3c' },
-            { label: 'BLANCO', value: 'white', code: 'work_mode', icon: '⚪', color: '#ecf0f1' },
-            { label: 'ESCENA', value: 'scene', code: 'work_mode', icon: '🔮', color: '#9b59b6' }
-        ];
-
-        controls.forEach(c => {
-            const btn = document.createElement('button');
-            btn.className = 'domotica-sketch-btn';
-            btn.style.setProperty('--btn-accent', c.color);
-            btn.innerHTML = `<span class="k-icon">${c.icon}</span><span class="k-label">${c.label}</span>`;
-
-            btn.addEventListener('pointerdown', () => {
-                if (navigator.vibrate) navigator.vibrate(40);
-                const payload = c.action === 'tuya_scene_toggle'
-                    ? { deviceIds: this.tuyaDevices, code: 'switch_led', value: c.value }
-                    : { deviceIds: this.tuyaDevices, code: c.code, value: c.value };
-                this.socket.emit('tuya_command', payload);
+                controlGrid.appendChild(btn);
             });
 
-            controlGrid.appendChild(btn);
-        });
+            let trackRect = null;
+            const updateFader = (e) => {
+                if (!trackRect) trackRect = faderTrack.getBoundingClientRect();
+                const y = e.clientY - trackRect.top;
+                let percent = 100 - (y / trackRect.height) * 100;
+                percent = Math.max(1, Math.min(100, Math.round(percent)));
+                if (percent === this.lastTuyaIntensity) return;
+                this.lastTuyaIntensity = percent;
+                localStorage.setItem('lastTuyaIntensity', percent);
 
-        buttonsCard.appendChild(controlGrid);
-        contentArea.appendChild(buttonsCard);
+                requestAnimationFrame(() => {
+                    faderFill.style.transform = `scaleY(${percent / 100})`;
+                    faderThumb.style.transform = `translate(-50%, calc(50% - ${(percent / 100) * trackRect.height}px))`;
+                });
 
-        masterFrame.appendChild(contentArea);
-        this.container.appendChild(masterFrame);
+                const tuyaVal = Math.round(10 + (percent / 100) * 990);
+                this.scheduleThrottledEmit('tuya_brightness', () => {
+                    this.socket.emit('tuya_command', { deviceIds: this.tuyaDevices, code: 'bright_value_v2', value: tuyaVal });
+                }, 350);
+            };
 
-        // --- FIX DE INICIALIZACIÓN (PREMIUM FLUIDITY) ---
-        // Esperamos al siguiente frame para medir el track y posicionar la bola correctamente
+            faderThumb.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                trackRect = faderTrack.getBoundingClientRect();
+                faderThumb.setPointerCapture(e.pointerId);
+                updateFader(e);
+                faderThumb.addEventListener('pointermove', updateFader);
+            });
+            faderThumb.addEventListener('pointerup', (e) => {
+                if (faderThumb.hasPointerCapture && faderThumb.hasPointerCapture(e.pointerId)) faderThumb.releasePointerCapture(e.pointerId);
+                faderThumb.removeEventListener('pointermove', updateFader);
+            });
+        }
+
+        this.showPanel('domotica');
+        
+        // Fix de inicialización fader
         requestAnimationFrame(() => {
+            const faderTrack = domoPanel.querySelector('.fader-track-pro');
+            const faderFill = domoPanel.querySelector('.fader-fill-pro');
+            const faderThumb = domoPanel.querySelector('.fader-thumb-pro');
             const trackRect = faderTrack.getBoundingClientRect();
             if (trackRect.height > 0) {
+                faderFill.style.transform = `scaleY(${this.lastTuyaIntensity / 100})`;
                 faderThumb.style.transform = `translate(-50%, calc(50% - ${(this.lastTuyaIntensity / 100) * trackRect.height}px))`;
             }
         });
@@ -551,11 +571,11 @@ class StreamDeckClient {
         btn.addEventListener('pointermove', (e) => {
             if (!startPos) return;
             const dist = Math.hypot(e.clientX - startPos.x, e.clientY - startPos.y);
-            if (dist > 15) clearTimer(); // Si se mueve mucho, cancelamos la detección de long-press
-        });
-        btn.addEventListener('pointerup', clearTimer);
-        btn.addEventListener('pointercancel', clearTimer);
-        btn.addEventListener('pointerleave', clearTimer);
+            if (dist > 15) clearTimer();
+        }, { passive: true });
+        btn.addEventListener('pointerup', clearTimer, { passive: true });
+        btn.addEventListener('pointercancel', clearTimer, { passive: true });
+        btn.addEventListener('pointerleave', clearTimer, { passive: true });
 
         btn.addEventListener('click', () => {
             // En modo edición, el drag se encarga. No ejecutar acciones.
@@ -620,6 +640,44 @@ class StreamDeckClient {
         });
 
         window.streamDeck = this;
+    }
+
+    // --- PANEL CACHE MANAGER ---
+    showPanel(panelId) {
+        const start = performance.now();
+        
+        // Ocultar todos los paneles
+        Object.values(this.panels).forEach(p => p.classList.add('hidden'));
+        this.container.classList.add('hidden'); // Ocultar grid principal
+        
+        this.panelsContainer.classList.remove('hidden');
+        const panel = this.panels[panelId];
+        if (panel) {
+            panel.classList.remove('hidden');
+        }
+        
+        this.perf.markRender(performance.now() - start);
+    }
+
+    hidePanels() {
+        this.panelsContainer.classList.add('hidden');
+        Object.values(this.panels).forEach(p => p.classList.add('hidden'));
+        this.container.classList.remove('hidden');
+    }
+
+    // --- BATCH UPDATE SYSTEM ---
+    queueUpdate(id, fn) {
+        this.updateQueue.set(id, fn);
+        if (!this.isBatching) {
+            this.isBatching = true;
+            requestAnimationFrame(() => {
+                const start = performance.now();
+                this.updateQueue.forEach(fn => fn());
+                this.updateQueue.clear();
+                this.isBatching = false;
+                this.perf.markRender(performance.now() - start);
+            });
+        }
     }
 
     async requestWakeLock() {
@@ -708,47 +766,32 @@ class StreamDeckClient {
 
     openMixer() {
         this._setEditButtonVisibility(false);
-        this.currentPage = 'mixer_panel'; // Bloquea gestos de carrusel
-        this.container.innerHTML = '';
-        this.container.className = 'mixer-fullscreen-view';
+        this.currentPage = 'mixer_panel';
 
-        const mixerPanel = document.createElement('div');
-        mixerPanel.className = 'mixer-panel mixer-panel-fullscreen';
-        mixerPanel.id = 'mixer-interface';
-
-        mixerPanel.innerHTML = `
-            <div id="master-mixer" class="mixer-row master-row"></div>
-            <div class="mixer-divider"></div>
-            <div id="app-mixers" class="app-mixers-container"></div>
-        `;
-
-        // Botón Volver Premium (Cuerpo del Documento para evitar caché/interferencias)
-        const oldBtn = document.getElementById('panel-back-button');
-        if (oldBtn) oldBtn.remove();
-
-        const backBtn = document.createElement('button');
-        backBtn.id = 'panel-back-button';
-        backBtn.className = 'panel-back-btn-sketch-circle';
-        backBtn.innerHTML = '<span>←</span>';
-        backBtn.addEventListener('pointerup', (e) => {
-            e.preventDefault();
-            e.stopImmediatePropagation();
-            backBtn.remove();
-
-            const shield = document.createElement('div');
-            shield.className = 'pointer-shield';
-            document.body.appendChild(shield);
-            setTimeout(() => shield.remove(), 500);
-
-            setTimeout(() => {
+        const mixerPanel = this.panels.mixer;
+        if (!mixerPanel.innerHTML) {
+            mixerPanel.className = 'panel-cache-node mixer-fullscreen-view';
+            mixerPanel.innerHTML = `
+                <div class="mixer-panel mixer-panel-fullscreen">
+                    <div id="master-mixer" class="mixer-row master-row"></div>
+                    <div class="mixer-divider"></div>
+                    <div id="app-mixers" class="app-mixers-container"></div>
+                </div>
+            `;
+            
+            const backBtn = document.createElement('button');
+            backBtn.className = 'panel-back-btn-sketch-circle';
+            backBtn.innerHTML = '<span>←</span>';
+            backBtn.addEventListener('pointerup', (e) => {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                this.hidePanels();
                 this.renderCarouselSlide(this.carouselIndex, 0);
-            }, 100);
-        });
-        document.body.appendChild(backBtn);
+            });
+            mixerPanel.appendChild(backBtn);
+        }
 
-        this.container.appendChild(mixerPanel);
-
-        // Pedir estado actualizado al servidor cada vez que abrimos el panel
+        this.showPanel('mixer');
         this.socket.emit('mixer_initial_state');
         this.socket.emit('mixer_bind_commands');
 
@@ -802,10 +845,14 @@ class StreamDeckClient {
             let percent = 100 - (y / containerRect.height) * 100;
             percent = Math.max(0, Math.min(100, Math.round(percent)));
 
-            // 1. Visual (SIN LATENCIA)
-            fill.style.transform = `scaleY(${percent / 100})`;
-            thumb.style.bottom = `${percent}%`;
+            if (percent === this[`last_mixer_${id}`]) return;
             this[`last_mixer_${id}`] = percent;
+
+            // 1. Visual (SIN LATENCIA - GPU)
+            requestAnimationFrame(() => {
+                fill.style.transform = `scaleY(${percent / 100})`;
+                thumb.style.bottom = `${percent}%`;
+            });
 
             // 2. Network (Throttled)
             this.pendingVolUpdates[id] = percent;
@@ -816,7 +863,7 @@ class StreamDeckClient {
                 } else {
                     this.socket.emit('set_session_volume', { app: id, value: val });
                 }
-            }, 100);
+            }, 120);
         };
 
         const onPointerDown = (e) => {
@@ -856,19 +903,23 @@ class StreamDeckClient {
         const appsContainer = document.getElementById('app-mixers');
         if (!masterContainer || !appsContainer || !this.lastMixerState) return;
 
-        this.mixerRefs = {}; // Limpiamos referencias viejas
+        this.mixerRefs = {};
         masterContainer.innerHTML = '';
         appsContainer.innerHTML = '';
 
-        masterContainer.appendChild(this.createMixerRow(this.lastMixerState.master, true));
+        const masterFragment = document.createDocumentFragment();
+        masterFragment.appendChild(this.createMixerRow(this.lastMixerState.master, true));
+        masterContainer.appendChild(masterFragment);
 
+        const appsFragment = document.createDocumentFragment();
         const renderizadas = new Set();
         this.lastMixerState.sessions.forEach(session => {
             if (!renderizadas.has(session.name)) {
-                appsContainer.appendChild(this.createMixerRow(session));
+                appsFragment.appendChild(this.createMixerRow(session));
                 renderizadas.add(session.name);
             }
         });
+        appsContainer.appendChild(appsFragment);
 
         // --- FIX DE INICIALIZACIÓN MIXER (PREMIUM FLUIDITY) ---
         requestAnimationFrame(() => {
@@ -1015,14 +1066,31 @@ class StreamDeckClient {
         });
 
         this.socket.on('discord_user_speaking', (data) => {
-            const row = document.querySelector(`.user-fader-row[data-user-id="${data.userId}"]`);
-            if (row) {
-                const avatarCircle = row.querySelector('.user-avatar-circle');
-                if (avatarCircle) {
-                    avatarCircle.classList.toggle('speaking', !!data.speaking);
+            this.queueUpdate(`speaking_${data.userId}`, () => {
+                const row = document.querySelector(`.user-fader-row[data-user-id="${data.userId}"]`);
+                if (row) {
+                    const avatarCircle = row.querySelector('.user-avatar-circle');
+                    if (avatarCircle) {
+                        avatarCircle.classList.toggle('speaking', !!data.speaking);
+                    }
                 }
+            });
+        });
+
+        this.socket.on('performance:update', (data) => {
+            if (this.perf) {
+                this.perf.updateServerStats(data);
             }
         });
+
+        // Ping calculation
+        setInterval(() => {
+            const start = Date.now();
+            this.socket.emit('ping', () => {
+                const latency = Date.now() - start;
+                if (this.perf) this.perf.updatePing(latency);
+            });
+        }, 3000);
 
         this.socket.on('mixer_initial_state', (state) => {
             this.lastMixerState = state;
@@ -1088,117 +1156,71 @@ class StreamDeckClient {
         const refs = this.mixerRefs[id];
         if (!refs) return;
 
-        if (data.type === 'volume') {
-            if (!this.activeSliders.has(id)) {
-                const h = Number(data.value);
-                refs.fill.style.transform = `scaleY(${h / 100})`;
-                refs.thumb.style.bottom = `${h}%`;
-                this[`last_mixer_${id}`] = h;
+        this.queueUpdate(`mixer_${id}_${data.type}`, () => {
+            if (data.type === 'volume') {
+                if (!this.activeSliders.has(id)) {
+                    const h = Number(data.value);
+                    refs.fill.style.transform = `scaleY(${h / 100})`;
+                    refs.thumb.style.bottom = `${h}%`;
+                    this[`last_mixer_${id}`] = h;
+                }
+            } else if (data.type === 'mute') {
+                if (this.activeMutes.has(id)) return;
+                const iconContainer = refs.wrapper.closest('.mixer-icon-btn');
+                if (data.value) {
+                    if (iconContainer) iconContainer.classList.add('muted-active');
+                    refs.wrapper.classList.add('mixer-icon-wrapper--muted');
+                } else {
+                    if (iconContainer) iconContainer.classList.remove('muted-active');
+                    refs.wrapper.classList.remove('mixer-icon-wrapper--muted');
+                }
             }
-        } else if (data.type === 'mute') {
-            if (this.activeMutes.has(id)) return;
-            const iconContainer = refs.wrapper.closest('.mixer-icon-btn');
-            if (data.value) {
-                if (iconContainer) iconContainer.classList.add('muted-active');
-                refs.wrapper.classList.add('mixer-icon-wrapper--muted');
-            } else {
-                if (iconContainer) iconContainer.classList.remove('muted-active');
-                refs.wrapper.classList.remove('mixer-icon-wrapper--muted');
-            }
-        }
+        });
     }
 
     openDiscordPanel() {
         this._setEditButtonVisibility(false);
-        this.currentPage = 'discord_panel'; // Bloquea gestos de carrusel
-        this.overlayContainer.innerHTML = '';
-        this.overlayContainer.className = 'discord-sketch-match-view';
+        this.currentPage = 'discord_panel';
+        
+        const discordPanel = this.panels.discord;
+        if (!discordPanel.innerHTML) {
+            discordPanel.className = 'panel-cache-node discord-sketch-match-view';
+            discordPanel.innerHTML = `
+                <div class="discord-sketch-header">
+                    <div id="discord-status-pill" class="discord-status-pill disconnected">DESCONECTADO</div>
+                </div>
+                <div class="discord-sketch-content">
+                    <div class="discord-card-mixer" id="discord-mixer-container"></div>
+                    <div class="discord-card-tactical">
+                        <div id="tactical-mute-btn" class="discord-tactical-btn"><span class="t-icon">🎙️</span><span class="t-label">MICRO</span></div>
+                        <div id="tactical-deaf-btn" class="discord-tactical-btn"><span class="t-icon">🎧</span><span class="t-label">SORDO</span></div>
+                    </div>
+                </div>
+            `;
 
-        // 1. HEADER (Status + Close)
-        const header = document.createElement('div');
-        header.className = 'discord-sketch-header';
+            const backBtn = document.createElement('button');
+            backBtn.className = 'panel-back-btn-sketch-circle';
+            backBtn.innerHTML = '<span>←</span>';
+            backBtn.addEventListener('pointerup', (e) => {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                this.hidePanels();
+                this.renderCarouselSlide(this.carouselIndex, 0);
+            });
+            discordPanel.appendChild(backBtn);
 
-        const statusPill = document.createElement('div');
-        statusPill.id = 'discord-status-pill';
-        const isConnected = ['connected', 'fallback'].includes(this.discordConnectionStatus);
-        statusPill.className = `discord-status-pill ${isConnected ? 'connected' : 'disconnected'}`;
-        statusPill.textContent = isConnected ? 'CONECTADO' : 'DESCONECTADO';
+            discordPanel.querySelector('#tactical-mute-btn').addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                this.toggleDiscordMute();
+            });
+            discordPanel.querySelector('#tactical-deaf-btn').addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                this.toggleDiscordDeaf();
+            });
+        }
 
-        // Botón Volver Premium (Cuerpo del Documento para evitar caché/interferencias)
-        const oldBtn = document.getElementById('panel-back-button');
-        if (oldBtn) oldBtn.remove();
-
-        const backBtn = document.createElement('button');
-        backBtn.id = 'panel-back-button';
-        backBtn.className = 'panel-back-btn-sketch-circle';
-        backBtn.innerHTML = '<span>←</span>';
-        backBtn.addEventListener('pointerup', (e) => {
-            e.preventDefault();
-            e.stopImmediatePropagation();
-            if (backBtn.parentNode) backBtn.remove();
-            
-            // ESCUDO ANTI-PENETRACIÓN TOTAL (Huawei Tablet Fix)
-            const shield = document.createElement('div');
-            shield.className = 'pointer-shield';
-            document.body.appendChild(shield);
-            setTimeout(() => shield.remove(), 500);
-
-            // Feedback visual + Delay para que el evento no traspase
-            setTimeout(() => {
-                this.overlay.classList.add('hidden');
-                this.renderCarouselSlide(this.carouselIndex, 0); // Restaurar carrusel, dots y botón editar
-            }, 100);
-        });
-        document.body.appendChild(backBtn);
-
-        header.appendChild(statusPill);
-        // header.appendChild(backBtn); // Ya no se añade al header, sino al overlayContainer directamente
-
-        // 2. CONTENT (Split View)
-        const contentGrid = document.createElement('div');
-        contentGrid.className = 'discord-sketch-content';
-
-        // 2a. Mezclador (Izquierda)
-        const mixerPanel = document.createElement('div');
-        mixerPanel.className = 'discord-card-mixer';
-        mixerPanel.id = 'discord-mixer-container';
-
-        // 2b. Controles Globales (Derecha)
-        const controlsPanel = document.createElement('div');
-        controlsPanel.className = 'discord-card-tactical';
-
-        const muteBtn = document.createElement('div');
-        muteBtn.id = 'tactical-mute-btn';
-        muteBtn.className = 'discord-tactical-btn';
-        muteBtn.addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            this.toggleDiscordMute();
-        });
-        muteBtn.innerHTML = `<span class="t-icon">🎙️</span><span class="t-label">MICRO</span>`;
-
-        const deafBtn = document.createElement('div');
-        deafBtn.id = 'tactical-deaf-btn';
-        deafBtn.className = 'discord-tactical-btn';
-        deafBtn.addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            this.toggleDiscordDeaf();
-        });
-        deafBtn.innerHTML = `<span class="t-icon">🎧</span><span class="t-label">SORDO</span>`;
-
-        controlsPanel.appendChild(muteBtn);
-        controlsPanel.appendChild(deafBtn);
-
-        contentGrid.appendChild(mixerPanel);
-        contentGrid.appendChild(controlsPanel);
-
-        this.overlayContainer.appendChild(header);
-        this.overlayContainer.appendChild(contentGrid);
-
-        this.overlay.classList.remove('hidden');
-
-        // Pedir estado actualizado de Discord
+        this.showPanel('discord');
         this.socket.emit('discord_initial_state');
-
         this.updateDiscordButtons();
         this.renderDiscordMixer();
     }
@@ -1390,19 +1412,22 @@ class StreamDeckClient {
 
                 mixerContainer.appendChild(row);
             } else {
-                // Actualización externa si no se está tocando
-                const avatarCircle = row.querySelector('.user-avatar-circle');
-                if (avatarCircle) {
-                    avatarCircle.classList.toggle('speaking', !!user.speaking);
-                }
-
                 if (!this.activeSliders.has('discord_' + id)) {
                     const fill = row.querySelector('.slider-fill');
                     const thumb = row.querySelector('.fader-thumb-mixer');
                     const h = (user.volume / 200) * 100;
-                    fill.style.transform = `scaleY(${h / 100})`;
-                    thumb.style.bottom = `${h}%`;
+                    this.queueUpdate(`discord_${id}_vol`, () => {
+                        fill.style.transform = `scaleY(${h / 100})`;
+                        thumb.style.bottom = `${h}%`;
+                    });
                 }
+                
+                this.queueUpdate(`discord_${id}_speaking`, () => {
+                    const avatarCircle = row.querySelector('.user-avatar-circle');
+                    if (avatarCircle) {
+                        avatarCircle.classList.toggle('speaking', !!user.speaking);
+                    }
+                });
             }
         });
     }
@@ -1462,11 +1487,12 @@ class StreamDeckClient {
         if (slideClass) this.container.classList.add(slideClass);
 
         const pageData = this.getPageData(pageId);
-        console.log('RENDER CAROUSEL SLIDE:', pageId, 'pageData isArray:', Array.isArray(pageData), 'length:', pageData.length, 'pages object keys:', Object.keys(this.pages));
+        const fragment = document.createDocumentFragment();
 
         pageData.forEach((btnData, i) => {
-            this.container.appendChild(this.createButton(btnData, i));
+            fragment.appendChild(this.createButton(btnData, i));
         });
+        this.container.appendChild(fragment);
 
         // Forzar reflow para que la animación funcione
         if (slideClass) {
@@ -1501,6 +1527,7 @@ class StreamDeckClient {
 
         dots.style.display = 'flex';
         dots.innerHTML = '';
+        const fragment = document.createDocumentFragment();
         this.carouselPages.forEach((_, i) => {
             const dot = document.createElement('div');
             dot.className = 'carousel-dot' + (i === this.carouselIndex ? ' active' : '');
@@ -1512,8 +1539,9 @@ class StreamDeckClient {
             };
             dot.addEventListener('pointerup', navigateTo);
             dot.addEventListener('click', navigateTo);
-            dots.appendChild(dot);
+            fragment.appendChild(dot);
         });
+        dots.appendChild(fragment);
     }
 
     /** Detecta swipe de 1 o 2 dedos para navegar entre slides */

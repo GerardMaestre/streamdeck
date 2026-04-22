@@ -148,11 +148,11 @@ function initAudioMixer(io) {
         defaultDevice = AudioMixer.getDefaultDevice(DeviceType.RENDER);
 
         if (!defaultDevice) {
-            console.error('❌ No se encontró dispositivo de audio principal.');
+            console.error('[Audio] No se encontro dispositivo de audio principal.');
         } else {
             try {
                 localMasterMute = defaultDevice.mute;
-                console.log(`🔊 Dispositivo inicial: ${defaultDevice.name} | mute=${localMasterMute}`);
+                console.log(`[Audio] Dispositivo inicial: ${defaultDevice.name} | mute=${localMasterMute}`);
             } catch (e) {}
 
             assignListenersToDefaultDevice(defaultDevice, io);

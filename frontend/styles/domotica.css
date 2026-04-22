@@ -11,7 +11,7 @@
     width: 100vw !important;
     padding: 0 !important;
     margin: 0 !important;
-    background: #06090e !important;
+    background: radial-gradient(circle at center, #1e293b 0%, #06090e 100%) !important;
     user-select: none !important;
     touch-action: none !important;
 }
@@ -19,7 +19,7 @@
 .domotica-master-frame {
     width: 100vw !important;
     height: 100dvh !important;
-    background: #06080b !important;
+    background: transparent !important;
     border-radius: 0 !important;
     padding: clamp(20px, 5vw, 60px) !important;
     display: flex;
@@ -60,9 +60,11 @@
 /* --- TARJETA IZQUIERDA (Slider de Brillo) --- */
 .domotica-card-fader {
     flex: 0 0 clamp(100px, 22%, 240px) !important;
-    background: #0f172a !important;
+    background: var(--glass-panel-strong) !important;
+    backdrop-filter: blur(var(--blur-strong));
+    -webkit-backdrop-filter: blur(var(--blur-strong));
     border-radius: var(--radius-xl) !important;
-    border: 1px solid rgba(255, 255, 255, 0.05) !important;
+    border: 1px solid var(--glass-border) !important;
     display: flex !important;
     flex-direction: column !important;
     align-items: center !important;
@@ -75,12 +77,12 @@
 .fader-track-pro {
     width: 72px !important;
     height: 100% !important;
-    background: #000 !important;
+    background: rgba(0, 0, 0, 0.6) !important;
     border-radius: 40px !important;
     position: relative !important;
     cursor: pointer !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
-    box-shadow: inset 0 4px 12px rgba(0, 0, 0, 0.8), 0 1px 1px rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.06) !important;
+    box-shadow: inset 0 4px 12px rgba(0, 0, 0, 0.6) !important;
 }
 
 .fader-fill-pro {
@@ -118,9 +120,11 @@
 /* --- TARJETA DERECHA (Botones 2x2) --- */
 .domotica-card-buttons {
     flex: 1 !important;
-    background: #0f172a !important;
+    background: var(--glass-panel-strong) !important;
+    backdrop-filter: blur(var(--blur-strong));
+    -webkit-backdrop-filter: blur(var(--blur-strong));
     border-radius: var(--radius-xl) !important;
-    border: 1px solid rgba(255, 255, 255, 0.05) !important;
+    border: 1px solid var(--glass-border) !important;
     padding: clamp(20px, 4vw, 50px) !important;
     display: flex !important;
     flex-direction: column !important;

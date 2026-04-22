@@ -17,7 +17,6 @@
     <link rel="stylesheet" href="styles/domotica.css?v=3.0">
     <link rel="stylesheet" href="styles/mixer.css?v=3.0">
     <link rel="stylesheet" href="styles/discord.css?v=3.0">
-
     <style>
         /* INLINE CSS PARA EVITAR CACHE EN TABLETS */
         .panel-back-btn-sketch-circle {
@@ -64,6 +63,13 @@
 <body>
     <!-- Pantalla Principal -->
     <div id="deck-container" class="grid-container"></div>
+
+    <!-- Contenedores de Paneles (CACHÉ) -->
+    <div id="panels-container" class="panels-container hidden">
+        <div id="panel-mixer" class="panel-cache-node hidden"></div>
+        <div id="panel-discord" class="panel-cache-node hidden"></div>
+        <div id="panel-domotica" class="panel-cache-node hidden"></div>
+    </div>
 
     <!-- Overlay/Popover Modal -->
     <div id="overlay" class="overlay hidden">

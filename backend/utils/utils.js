@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 
 /**
- * Resuelve rutas de forma dinámica para que funcionen tanto en desarrollo
+ * Resuelve rutas de forma dinamica para que funcionen tanto en desarrollo
  * como en la aplicación empaquetada (Portable/Instalador).
  * Prioriza archivos al lado del ejecutable para permitir edición del usuario.
  */

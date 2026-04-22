@@ -1,27 +1,21 @@
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const fs = require('fs');
 const { emitErrorToFrontend, getErrorMessage, getDataPath } = require('./backend/utils/utils');
 
-// --- SISTEMA DE RESILIENCIA (Zero-Crash) ---
-process.on('uncaughtException', (error) => {
-    const isDiscordRpcError = error?.message?.includes('Cannot read properties of null') || error?.stack?.includes('discord-rpc');
-    if (isDiscordRpcError) {
-        // Ignorar fallos internos de discord-rpc que no afectan al flujo principal
-        return;
-    }
-    console.error('🔥 [CRÍTICO] Error no capturado:', error.message);
-});
+// --- SISTEMA COMPLETO DE LOGS Y DEBUG ---
+const Logger = require("./backend/core/logger/logger");
+const initErrorTracking = require("./backend/core/logger/error-tracker");
+const startPerformanceMonitor = require("./backend/core/logger/performance");
+const initSocketMonitoring = require("./backend/core/logger/socket-monitor");
 
-process.on('unhandledRejection', (reason) => {
-    const message = reason?.message || String(reason);
-    if (message.includes('write AFTER end') || message.includes('null (reading \'write\')')) return;
-    console.warn('🔥 [PROMESA] Rechazo no manejado:', message);
-});
+// INIT SYSTEM
+initErrorTracking();
+Logger.system("Server starting...");
 
-// Importar controladores (Lógica modularizada)
+// Importar controladores (Logica modularizada)
 const { initAudioMixer, sendInitialState, handleSocketCommands } = require('./backend/audio/audioMixerController');
 const { abrirAplicacionOWeb } = require('./backend/launcher/appController');
 const { ejecutarMacro, controlMultimedia } = require('./backend/automation/macroController');
@@ -29,6 +23,7 @@ const { hacerCaptura } = require('./backend/system/captureController');
 const { ejecutarScript, ejecutarScriptDinamico, listarScripts } = require('./backend/scripts/scriptController');
 const { initDiscordRPC, requestInitialDiscordState, discordToggleMute, discordToggleDeaf, discordSetUserVolume } = require('./backend/discord/discordController');
 const { sendTuyaCommand, controlMultipleDevices } = require('./backend/iot/smart_home');
+const { minimizarTodo, cambiarResolucion, apagarPC, reiniciarPC } = require('./backend/system/systemController');
 
 // --- CACHE DE SISTEMA ---
 let configCache = null;
@@ -39,6 +34,10 @@ const SCRIPTS_CACHE_TTL = 30000; // 30 segundos
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+
+// Init logger para Socket y Performance
+initSocketMonitoring(io);
+startPerformanceMonitor(io);
 
 // --- SEGURIDAD: TOKEN DE ACCESO ---
 const SECURITY_TOKEN = process.env.SECURITY_TOKEN || 'streamdeck_secure_2026';
@@ -51,17 +50,17 @@ io.use((socket, next) => {
     if (token === SECURITY_TOKEN || isLocal) {
         return next();
     }
-    console.warn(`⚠️ Intento de conexión rechazada desde ${socket.handshake.address} (Token inválido)`);
-    return next(new Error('Acceso denegado: Token de seguridad inválido'));
+    console.warn(`[!] Intento de conexion rechazada desde ${socket.handshake.address} (Token invalido)`);
+    return next(new Error('Acceso denegado: Token de seguridad invalido'));
 });
 
 app.use(express.static(getDataPath('frontend')));
 app.use(express.text());
 
 
-// Endpoint para entregar el JSON de configuración de los botones
+// Endpoint para entregar el JSON de configuracion de los botones
 app.get('/api/config', (req, res) => {
-    // Verificación de seguridad para la API
+    // Verificacion de seguridad para la API
     const token = req.headers['authorization'] || req.query.token;
     const isLocal = req.ip === '::1' || req.ip === '127.0.0.1' || req.ip === '::ffff:127.0.0.1';
 
@@ -78,14 +77,14 @@ app.get('/api/config', (req, res) => {
         res.json(configCache);
     } catch(err) {
         console.error('Error leyendo config.json', err);
-        res.status(500).json({ error: 'No se pudo cargar la configuración.' });
+        res.status(500).json({ error: 'No se pudo cargar la configuracion.' });
     }
 });
 
-// Endpoint para guardar config reordenada (Modo Edición Tablet)
+// Endpoint para guardar config reordenada (Modo Edicion Tablet)
 app.use(express.json({ limit: '1mb' }));
 app.post('/api/config', (req, res) => {
-    // Verificación de seguridad para la API
+    // Verificacion de seguridad para la API
     const token = req.headers['authorization'] || req.query.token;
     if (token !== SECURITY_TOKEN && req.ip !== '::1' && req.ip !== '127.0.0.1') {
         return res.status(403).json({ error: 'Acceso denegado' });
@@ -94,16 +93,16 @@ app.post('/api/config', (req, res) => {
     try {
         const newConfig = req.body;
         if (!newConfig || !newConfig.pages) {
-            return res.status(400).json({ error: 'Payload inválido: falta "pages".' });
+            return res.status(400).json({ error: 'Payload invalido: falta "pages".' });
         }
         const configPath = getDataPath('config.json');
         fs.writeFileSync(configPath, JSON.stringify(newConfig, null, 4), 'utf8');
-        configCache = newConfig; // Actualizar caché en memoria
-        console.log('💾 config.json actualizado desde la tablet');
+        configCache = newConfig; // Actualizar cache en memoria
+        console.log('[Config] config.json actualizado desde la tablet');
         res.json({ ok: true });
     } catch(err) {
         console.error('Error guardando config.json', err);
-        res.status(500).json({ error: 'No se pudo guardar la configuración.' });
+        res.status(500).json({ error: 'No se pudo guardar la configuracion.' });
     }
 });
 
@@ -112,7 +111,7 @@ initAudioMixer(io);
 initDiscordRPC(io);
 
 const handleSocketError = (socket, eventName, error, ack) => {
-    console.error(`❌ Error en evento socket [${eventName}]:`, error);
+    console.error(`[Error] Error en evento socket [${eventName}]:`, error);
     emitErrorToFrontend(socket, eventName, error);
 
     if (typeof ack === 'function') {
@@ -130,7 +129,7 @@ const runSafely = async (socket, eventName, action, ack) => {
 };
 
 io.on('connection', (socket) => {
-    console.log('📱 Centro de mando conectado');
+    console.log('[Socket] Centro de mando conectado');
 
     // Routing de Eventos -> Controladores
     socket.on('mixer_initial_state', async (ack) => {
@@ -171,13 +170,13 @@ io.on('connection', (socket) => {
     });
 
     socket.on('ejecutar_script_dinamico', async (payload, ack) => {
-        // Si el script requiere parámetros pero no han llegado en el payload, los pedimos en el PC
+        // Si el script requiere parametros pero no han llegado en el payload, los pedimos en el PC
         if (payload.requiresParams && (payload.args === undefined || payload.args === null)) {
             const scriptLabel = payload.archivo ? payload.archivo.replace(/_/g, ' ').replace(/\.[^.]+$/, '') : 'Script';
             
             // Llamamos a la función global de Electron si existe
             if (global.showPCPrompt) {
-                console.log(`[Server] Solicitando parámetros en PC para: ${scriptLabel}`);
+                console.log(`[Server] Solicitando parametros en PC para: ${scriptLabel}`);
                 const pcArgs = await global.showPCPrompt(scriptLabel);
                 
                 if (pcArgs === null) {
@@ -245,7 +244,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Nueva ruta para comandos genéricos (Ej: Cambiar de escena o brillo)
+    // Nueva ruta para comandos genericos (Ej: Cambiar de escena o brillo)
     socket.on('tuya_command', async (payload, ack) => {
         const { deviceId, deviceIds, code, value } = payload;
         
@@ -263,8 +262,38 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('minimizar_todo', async (ack) => {
+        await runSafely(socket, 'minimizar_todo', () => minimizarTodo(), ack);
+        if (typeof ack === 'function') ack({ ok: true });
+    });
+
+    socket.on('cambiar_resolucion', async (payload, ack) => {
+        const { width, height } = payload;
+        const result = await runSafely(socket, 'cambiar_resolucion', () => cambiarResolucion(width, height), ack);
+        if (typeof ack === 'function') ack(result);
+    });
+
+    socket.on('abrir_keep', async (ack) => {
+        await runSafely(socket, 'abrir_keep', () => abrirAplicacionOWeb('google-keep'), ack);
+        if (typeof ack === 'function') ack({ ok: true });
+    });
+
+    socket.on('apagar_pc', async (ack) => {
+        await runSafely(socket, 'apagar_pc', () => apagarPC(), ack);
+        if (typeof ack === 'function') ack({ ok: true });
+    });
+
+    socket.on('reiniciar_pc', async (ack) => {
+        await runSafely(socket, 'reiniciar_pc', () => reiniciarPC(), ack);
+        if (typeof ack === 'function') ack({ ok: true });
+    });
+
+    socket.on('ping', (ack) => {
+        if (typeof ack === 'function') ack();
+    });
+
     socket.on('disconnect', () => {
-        console.log('📴 Centro de mando desconectado');
+        console.log('[Socket] Centro de mando desconectado');
     });
 });
 
@@ -274,10 +303,10 @@ let portRetries = 0;
 
 server.on('error', (err) => {
     if (err && err.code === 'EADDRINUSE') {
-        console.warn(`⚠️ Puerto ${PORT} en uso. Intentando puerto ${PORT + 1}...`);
+        console.warn(`[!] Puerto ${PORT} en uso. Intentando puerto ${PORT + 1}...`);
         portRetries += 1;
         if (portRetries > MAX_PORT_RETRIES) {
-            console.error(`❌ No se pudo iniciar el servidor: puerto ${PORT} en uso y se agotaron ${MAX_PORT_RETRIES} reintentos.`);
+            console.error(`[Error] No se pudo iniciar el servidor: puerto ${PORT} en uso y se agotaron ${MAX_PORT_RETRIES} reintentos.`);
             process.exit(1);
         } else {
             PORT = PORT + 1;
@@ -285,30 +314,30 @@ server.on('error', (err) => {
                 try {
                     server.listen(PORT);
                 } catch (e) {
-                    console.error('❌ Error al reintentar server.listen:', e);
+                    console.error('[Error] Error al reintentar server.listen:', e);
                     process.exit(1);
                 }
             }, 200);
         }
         return;
     }
-    console.error('❌ Error en el servidor:', err);
+    console.error('[Error] Error en el servidor:', err);
     process.exit(1);
 });
 
 server.listen(PORT, () => {
     console.log(`
     ---------------------------------------------------
-    🚀  STREAM DECK PRO — BACKEND OPERATIVO
-    🔗  Local:  http://localhost:${PORT}
-    📡  Red:    http://0.0.0.0:${PORT}
+    >>  STREAM DECK PRO -- BACKEND OPERATIVO
+    >>  Local:  http://localhost:${PORT}
+    >>  Red:    http://0.0.0.0:${PORT}
     ---------------------------------------------------
     `);
 });
 
 // Endpoint para listar scripts disponibles en el directorio `scripts`
 app.get('/api/scripts', async (req, res) => {
-    // Verificación de seguridad para la API
+    // Verificacion de seguridad para la API
     const token = req.headers['authorization'] || req.query.token;
     const isLocal = req.ip === '::1' || req.ip === '127.0.0.1' || req.ip === '::ffff:127.0.0.1';
 

@@ -5,9 +5,15 @@ const abrirAplicacionOWeb = async (destino) => {
         if (destino === 'youtube') await open('https://www.youtube.com');
         if (destino === 'twitch') await open('https://www.twitch.tv');
         if (destino === 'spotify') await open('spotify:');
-        console.log(`🌐 Abriendo app/web: ${destino}`);
+        if (destino === 'google-keep') {
+            // Abrir como app de Chrome si es posible para una UX limpia
+            const command = 'start chrome --app="https://keep.google.com/"';
+            const { exec } = require('child_process');
+            exec(command);
+        }
+        console.log(`[App] Abriendo app/web: ${destino}`);
     } catch (error) {
-        console.error(`❌ Error intentando abrir ${destino}:`, error);
+        console.error(`[Error] Error intentando abrir ${destino}:`, error);
     }
 };
 

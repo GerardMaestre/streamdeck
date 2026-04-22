@@ -26,18 +26,22 @@
     --state-error-border: rgba(231, 76, 60, 0.45);
     --state-error-text: #ffd8d4;
     --console-green: #5bf08a;
-    --blur-light: 15px;
-    --blur-medium: 25px;
-    --blur-strong: 40px;
+    --blur-light: 10px;
+    --blur-medium: 18px;
+    --blur-strong: 30px;
     --radius-md: 15px;
     --radius-lg: 20px;
     --radius-xl: 28px;
     --duration-fast: 0.18s;
     --duration-normal: 0.32s;
     --duration-slow: 0.56s;
+    --duration-slow: 0.56s;
     --ease-standard: cubic-bezier(0.25, 0.8, 0.25, 1);
     --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
     --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    
+    /* OPTIMIZATION TOKENS */
+    --gpu-accel: translate3d(0,0,0);
 }
 
 * {
@@ -79,6 +83,61 @@ body {
     /* Ocupar toda la altura disponible */
     min-height: 100vh;
     box-sizing: border-box;
+    will-change: transform, opacity;
+    transform: var(--gpu-accel);
+}
+
+/* CACHE SYSTEM STYLES */
+.panels-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1500;
+    pointer-events: none;
+    background: transparent;
+}
+
+.panels-container:not(.hidden) {
+    pointer-events: auto;
+}
+
+.panel-cache-node {
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+    will-change: transform, opacity;
+    transform: var(--gpu-accel);
+    background: var(--bg-base);
+    transition: opacity 0.3s var(--ease-smooth), transform 0.3s var(--ease-smooth);
+}
+
+.panel-cache-node.hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.98) translateY(10px);
+}
+
+/* PERFORMANCE MONITOR */
+#perf-monitor {
+    position: fixed;
+    top: 5px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.7);
+    color: var(--console-green);
+    font-family: monospace;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    z-index: 99999;
+    pointer-events: none;
+    border: 1px solid rgba(255,255,255,0.1);
+    display: flex;
+    gap: 10px;
 }
 
 .boton {
