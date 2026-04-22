@@ -4,7 +4,8 @@ const {
     getErrorMessage,
     isPathInsideBase,
     logControllerError,
-    getDataPath
+    getDataPath,
+    sanitizeShellArgs
 } = require('../utils/utils');
 const { exec } = require('child_process');
 
@@ -23,7 +24,8 @@ const scripts = {
 
 const buildExecutionCommand = (absolutePath, args) => {
     const extension = path.extname(absolutePath).toLowerCase();
-    const argsStr = args ? ` ${args}` : '';
+    const sanitizedArgs = sanitizeShellArgs(args);
+    const argsStr = sanitizedArgs ? ` ${sanitizedArgs}` : '';
 
     if (extension === '.py') {
         return `start "StreamDeck Script" cmd.exe /k "python "${absolutePath}"${argsStr}"`;
@@ -62,7 +64,8 @@ const validateDynamicPayload = (payload = {}) => {
         throw new Error('Payload inválido para script dinámico');
     }
 
-    return { carpeta, archivo, args: typeof args === 'string' ? args : '' };
+    const sanitizedArgs = sanitizeShellArgs(args);
+    return { carpeta, archivo, args: sanitizedArgs };
 };
 
 const resolveSafeScriptPath = (carpeta, archivo) => {
@@ -143,7 +146,6 @@ async function listarScripts() {
             if (archivos.length > 0) {
                 result[carpetaName] = {
                     carpeta: carpetaName,
-                    path: path.join('scripts', carpetaName),
                     archivos
                 };
             }

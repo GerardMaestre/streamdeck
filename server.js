@@ -5,6 +5,22 @@ const { Server } = require('socket.io');
 const fs = require('fs');
 const { emitErrorToFrontend, getErrorMessage, getDataPath } = require('./backend/utils/utils');
 
+// --- SISTEMA DE RESILIENCIA (Zero-Crash) ---
+process.on('uncaughtException', (error) => {
+    const isDiscordRpcError = error?.message?.includes('Cannot read properties of null') || error?.stack?.includes('discord-rpc');
+    if (isDiscordRpcError) {
+        // Ignorar fallos internos de discord-rpc que no afectan al flujo principal
+        return;
+    }
+    console.error('🔥 [CRÍTICO] Error no capturado:', error.message);
+});
+
+process.on('unhandledRejection', (reason) => {
+    const message = reason?.message || String(reason);
+    if (message.includes('write AFTER end') || message.includes('null (reading \'write\')')) return;
+    console.warn('🔥 [PROMESA] Rechazo no manejado:', message);
+});
+
 // Importar controladores (Lógica modularizada)
 const { initAudioMixer, sendInitialState, handleSocketCommands } = require('./backend/audio/audioMixerController');
 const { abrirAplicacionOWeb } = require('./backend/launcher/appController');
@@ -24,10 +40,35 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+// --- SEGURIDAD: TOKEN DE ACCESO ---
+const SECURITY_TOKEN = process.env.SECURITY_TOKEN || 'streamdeck_secure_2026';
+
+// Middleware de Socket.io para verificar el token
+io.use((socket, next) => {
+    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+    const isLocal = socket.handshake.address === '::1' || socket.handshake.address === '127.0.0.1' || socket.handshake.address === '::ffff:127.0.0.1';
+    
+    if (token === SECURITY_TOKEN || isLocal) {
+        return next();
+    }
+    console.warn(`⚠️ Intento de conexión rechazada desde ${socket.handshake.address} (Token inválido)`);
+    return next(new Error('Acceso denegado: Token de seguridad inválido'));
+});
+
 app.use(express.static(getDataPath('frontend')));
+app.use(express.text());
+
 
 // Endpoint para entregar el JSON de configuración de los botones
 app.get('/api/config', (req, res) => {
+    // Verificación de seguridad para la API
+    const token = req.headers['authorization'] || req.query.token;
+    const isLocal = req.ip === '::1' || req.ip === '127.0.0.1' || req.ip === '::ffff:127.0.0.1';
+
+    if (token !== SECURITY_TOKEN && !isLocal) {
+        return res.status(403).json({ error: 'Acceso denegado' });
+    }
+
     try {
         if (configCache) return res.json(configCache);
 
@@ -44,6 +85,12 @@ app.get('/api/config', (req, res) => {
 // Endpoint para guardar config reordenada (Modo Edición Tablet)
 app.use(express.json({ limit: '1mb' }));
 app.post('/api/config', (req, res) => {
+    // Verificación de seguridad para la API
+    const token = req.headers['authorization'] || req.query.token;
+    if (token !== SECURITY_TOKEN && req.ip !== '::1' && req.ip !== '127.0.0.1') {
+        return res.status(403).json({ error: 'Acceso denegado' });
+    }
+
     try {
         const newConfig = req.body;
         if (!newConfig || !newConfig.pages) {
@@ -250,11 +297,25 @@ server.on('error', (err) => {
 });
 
 server.listen(PORT, () => {
-    console.log(`🚀 Stream Deck Pro operando en http://localhost:${PORT}`);
+    console.log(`
+    ---------------------------------------------------
+    🚀  STREAM DECK PRO — BACKEND OPERATIVO
+    🔗  Local:  http://localhost:${PORT}
+    📡  Red:    http://0.0.0.0:${PORT}
+    ---------------------------------------------------
+    `);
 });
 
 // Endpoint para listar scripts disponibles en el directorio `scripts`
 app.get('/api/scripts', async (req, res) => {
+    // Verificación de seguridad para la API
+    const token = req.headers['authorization'] || req.query.token;
+    const isLocal = req.ip === '::1' || req.ip === '127.0.0.1' || req.ip === '::ffff:127.0.0.1';
+
+    if (token !== SECURITY_TOKEN && !isLocal) {
+        return res.status(403).json({ error: 'Acceso denegado' });
+    }
+
     try {
         const now = Date.now();
         if (scriptsCache && (now - lastScriptsUpdate < SCRIPTS_CACHE_TTL)) {

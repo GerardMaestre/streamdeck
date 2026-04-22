@@ -84,6 +84,21 @@
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
-    <script src="app.js?v=3.1"></script>
+    <script>
+        // Interceptar todos los errores del cliente y enviarlos al servidor (si fetch funciona)
+        const oldConsoleError = console.error;
+        console.error = function(...args) {
+            oldConsoleError.apply(console, args);
+            try {
+                fetch('/debug-dom', { method: 'POST', headers: {'Content-Type':'text/plain'}, body: 'CONSOLE ERROR: ' + args.join(' ') });
+            } catch(e) {}
+        };
+        window.addEventListener('error', function(e) {
+            try {
+                fetch('/debug-dom', { method: 'POST', headers: {'Content-Type':'text/plain'}, body: 'UNCAUGHT ERROR: ' + e.message + ' at ' + e.filename + ':' + e.lineno });
+            } catch(ex) {}
+        });
+    </script>
+    <script src="app.js?v=3.2"></script>
 </body>
 </html>

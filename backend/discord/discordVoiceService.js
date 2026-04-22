@@ -189,7 +189,6 @@ class DiscordVoiceService {
 
             // LOG PARA DEBUG (Lo verás en el terminal)
             if (isSpeaking) {
-                console.log(`[Discord Voice] 🎙️ Usuario ${uId} HABLANDO`);
                 this.speakingUsers.add(uId);
             } else {
                 this.speakingUsers.delete(uId);
@@ -260,53 +259,52 @@ class DiscordVoiceService {
 
     async toggleMute() {
         try {
+            // REGLA DE ORO: Si no hay conexión RPC completa (VoiceCapable),
+            // ejecutamos la macro inmediatamente para que el usuario no espere.
             const state = this.ensureRpcAction();
-            if (state.fallbackOk) {
+            if (!state.ok) {
+                console.log('[Discord Voice] Ejecutando Macro de Mute (Modo Fallback/Macro activo)');
                 await ejecutarMacro('mutear_discord');
                 this.fallbackVoiceState.mute = !this.fallbackVoiceState.mute;
                 this.publishFallbackSettings();
                 return { ok: true, message: 'Micro alternado por atajo', fallback: true };
             }
 
-            if (!state.ok) throw new Error('Cliente RPC no disponible');
-
             const rpc = this.connectionManager.rpc;
             const settings = await rpc.getVoiceSettings();
-
-            // FIX: SET_VOICE_SETTINGS solo acepta 'mute' y 'deaf' (no self_mute)
             await rpc.setVoiceSettings({ mute: !parseMute(settings) });
             await this.publishVoiceSettings();
             return { ok: true };
 
         } catch (error) {
             console.error('[Discord Voice] Fallo Mute:', error.message);
-            return { ok: false, message: error.message };
+            // Si el RPC falla por cualquier motivo, intentamos la macro como último recurso
+            await ejecutarMacro('mutear_discord');
+            return { ok: true, message: 'Fallo RPC, usado Atajo', fallback: true };
         }
     }
 
     async toggleDeaf() {
         try {
             const state = this.ensureRpcAction();
-            if (state.fallbackOk) {
+            if (!state.ok) {
+                console.log('[Discord Voice] Ejecutando Macro de Sordera (Modo Fallback/Macro activo)');
                 await ejecutarMacro('ensordecer_discord');
                 this.fallbackVoiceState.deaf = !this.fallbackVoiceState.deaf;
                 this.publishFallbackSettings();
                 return { ok: true, message: 'Cascos alternados por atajo', fallback: true };
             }
 
-            if (!state.ok) throw new Error('Cliente RPC no disponible');
-
             const rpc = this.connectionManager.rpc;
             const settings = await rpc.getVoiceSettings();
-
-            // FIX: SET_VOICE_SETTINGS solo acepta 'deaf' 
             await rpc.setVoiceSettings({ deaf: !parseDeaf(settings) });
             await this.publishVoiceSettings();
             return { ok: true };
 
         } catch (error) {
             console.error('[Discord Voice] Fallo Deaf:', error.message);
-            return { ok: false, message: error.message };
+            await ejecutarMacro('ensordecer_discord');
+            return { ok: true, message: 'Fallo RPC, usado Atajo', fallback: true };
         }
     }
 

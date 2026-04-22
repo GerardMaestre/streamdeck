@@ -1,7 +1,21 @@
 class StreamDeckClient {
     constructor() {
         if (window.streamDeck) return window.streamDeck;
-        this.socket = io();
+        
+        window.addEventListener('error', (e) => {
+            console.error('GLOBAL FRONTEND ERROR:', e.message);
+            document.body.innerHTML += `<div style="position:fixed;top:0;left:0;z-index:9999;background:red;color:white;padding:10px;">${e.message}</div>`;
+        });
+        
+        // Recuperar token de seguridad de localStorage
+        this.securityToken = localStorage.getItem('streamdeck_token') || '';
+        
+        // Inicializar socket con autenticación
+        this.socket = io({
+            auth: {
+                token: this.securityToken
+            }
+        });
         this.pages = {};
         this.currentPage = 'main';
 
@@ -56,33 +70,89 @@ class StreamDeckClient {
         this.setupSocketListeners();
         this.setupDOMListeners();
 
-        // Solicitar estados iniciales al conectar
-        this.socket.emit('mixer_initial_state');
-        this.socket.emit('mixer_bind_commands');
-        this.socket.emit('discord_initial_state');
-
         try {
-            const res = await fetch('/api/config');
+            const fetchOptions = {
+                headers: {
+                    'Authorization': this.securityToken
+                }
+            };
+
+            const res = await fetch(`/api/config?token=${encodeURIComponent(this.securityToken)}`, fetchOptions);
+            
+            if (!res.ok) {
+                console.warn(`Error de autenticación o red (Status: ${res.status}). Mostrando login...`);
+                document.getElementById('deck-container').style.display = 'none';
+                this.requestSecurityToken();
+                return;
+            }
+
             const data = await res.json();
             this.pages = data.pages || {};
             this.carouselPages = Array.isArray(data.carouselPages) && data.carouselPages.length > 0
                 ? data.carouselPages
                 : ['main'];
-            try {
-                const scriptsRes = await fetch('/api/scripts');
-                if (scriptsRes.ok) {
-                    this.scriptsByFolder = await scriptsRes.json();
-                } else {
-                    this.scriptsByFolder = {};
-                }
-            } catch (err) {
+
+            // Cargar scripts con token
+            const scriptsRes = await fetch(`/api/scripts?token=${encodeURIComponent(this.securityToken)}`, fetchOptions);
+            if (scriptsRes.ok) {
+                this.scriptsByFolder = await scriptsRes.json();
+            } else {
                 this.scriptsByFolder = {};
             }
-        } catch (e) { }
 
-        this.initMainGrid();
-        this.setupCarouselSwipe();
-        this.renderEditModeButton();
+            // Una vez autenticado, pedir estados iniciales
+            this.socket.emit('mixer_initial_state');
+            this.socket.emit('mixer_bind_commands');
+            this.socket.emit('discord_initial_state');
+
+            // Renderizar la interfaz solo si todo ha ido bien
+            this.initMainGrid();
+            this.setupCarouselSwipe();
+            this.renderEditModeButton();
+
+        } catch (e) {
+            console.error('Error crítico durante la inicialización:', e);
+            document.getElementById('deck-container').style.display = 'none';
+            this.requestSecurityToken();
+        }
+    }
+
+    requestSecurityToken() {
+        if (document.querySelector('.auth-overlay')) return;
+
+        // Crear el overlay de autenticación
+        const authOverlay = document.createElement('div');
+        authOverlay.className = 'auth-overlay';
+        
+        authOverlay.innerHTML = `
+            <div class="auth-card">
+                <h2>Stream Deck Pro</h2>
+                <p>🔒 Acceso Protegido: Introduce el Token de Seguridad para continuar.</p>
+                <input type="password" class="auth-input" id="auth-password" placeholder="••••••••" autofocus>
+                <button class="auth-btn" id="auth-submit">Desbloquear Sistema</button>
+            </div>
+        `;
+
+        document.body.appendChild(authOverlay);
+
+        const input = document.getElementById('auth-password');
+        const submit = document.getElementById('auth-submit');
+
+        const doLogin = () => {
+            const token = input.value.trim();
+            if (token) {
+                localStorage.setItem('streamdeck_token', token);
+                window.location.reload();
+            }
+        };
+
+        submit.addEventListener('click', doLogin);
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') doLogin();
+        });
+
+        // Intentar dar foco al input (algunas tablets requieren toque previo)
+        setTimeout(() => input.focus(), 100);
     }
 
     initMainGrid() {
@@ -445,8 +515,16 @@ class StreamDeckClient {
         if (btnData.color) btn.style.background = btnData.color;
         btn.style.animationDelay = `${index * 0.05}s`;
 
-        btn.innerHTML = `<span class="icon">${btnData.icon}</span>${btnData.label}`;
+        const iconEl = document.createElement('div');
+        iconEl.className = 'button-icon';
+        iconEl.innerHTML = btnData.icon || ''; // Los iconos pueden ser HTML/Emojis
 
+        const labelEl = document.createElement('div');
+        labelEl.className = 'button-label';
+        labelEl.textContent = btnData.label || ''; // USAMOS textContent POR SEGURIDAD (Evita XSS)
+
+        btn.appendChild(iconEl);
+        btn.appendChild(labelEl);
         // === LÓGICA DE PULSACIÓN LARGA PARA EDITAR ===
         let longPressTimer = null;
         let startPos = null;
@@ -996,6 +1074,14 @@ class StreamDeckClient {
 
         // Removed script_log, script_success, and script_error listeners as execution
         // is now handled via external detached CMD windows.
+
+        this.socket.on('connect_error', (err) => {
+            console.error('Socket Connection Error:', err.message);
+            if (err.message.includes('Acceso denegado')) {
+                localStorage.removeItem('streamdeck_token');
+                this.requestSecurityToken();
+            }
+        });
     }
 
     updateSliderUI(id, data) {
@@ -1332,7 +1418,11 @@ class StreamDeckClient {
     }
 
     updateDiscordVolumeServer(userId, value) {
-        if (this.discordConnectionStatus !== 'connected') return;
+        // El volumen requiere conexión avanzada (OAuth)
+        if (this.discordConnectionStatus !== 'connected') {
+            console.warn('Volumen individual requiere conexión avanzada de Discord');
+            return;
+        }
         const fill = document.getElementById(`discord-slider-fill-${userId}`);
         this.setSliderFillScale(fill, value / 200);
 
@@ -1372,6 +1462,7 @@ class StreamDeckClient {
         if (slideClass) this.container.classList.add(slideClass);
 
         const pageData = this.getPageData(pageId);
+        console.log('RENDER CAROUSEL SLIDE:', pageId, 'pageData isArray:', Array.isArray(pageData), 'length:', pageData.length, 'pages object keys:', Object.keys(this.pages));
 
         pageData.forEach((btnData, i) => {
             this.container.appendChild(this.createButton(btnData, i));
@@ -1707,9 +1798,12 @@ class StreamDeckClient {
     async _saveConfig() {
         try {
             const payload = { carouselPages: this.carouselPages, pages: this.pages };
-            const res = await fetch('/api/config', {
+            const res = await fetch(`/api/config?token=${encodeURIComponent(this.securityToken)}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': this.securityToken
+                },
                 body: JSON.stringify(payload)
             });
             if (!res.ok) throw new Error('HTTP ' + res.status);

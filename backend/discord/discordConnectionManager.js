@@ -8,9 +8,6 @@ const redirectUri = process.env.DISCORD_REDIRECT_URI || 'http://localhost';
 const LOGIN_SCOPES = ['rpc', 'rpc.voice.read', 'rpc.voice.write'];
 const DEFAULT_RECONNECT_MS = 10000;
 const FALLBACK_RETRY_MS = 60000;
-// BUG FIX #4: LOGIN_ATTEMPT_TIMEOUT_MS estaba declarada pero nunca usada.
-// Los timeouts reales están en buildLoginAttempts() (20000ms y 45000ms).
-// Eliminada para evitar confusión.
 const RPC_DYNAMIC_EVENTS = ['VOICE_SETTINGS_UPDATE', 'VOICE_CHANNEL_SELECT', 'VOICE_STATE_UPDATE'];
 
 class DiscordConnectionManager {
@@ -28,7 +25,6 @@ class DiscordConnectionManager {
             message: 'Discord no conectado'
         };
 
-        // Callbacks registrados por DiscordVoiceService
         this.onConnected = () => {};
         this.onDisconnected = () => {};
         this.onFallback = () => {};
@@ -66,33 +62,22 @@ class DiscordConnectionManager {
         }
     }
 
-    removeRpcListenersByEvent(client, eventNames = []) {
-        if (!client || typeof client.removeAllListeners !== 'function') return;
-        for (const eventName of eventNames) {
-            try {
-                client.removeAllListeners(eventName);
-            } catch (error) {
-                console.warn(`[Discord Connection] Fallo al limpiar listeners ${eventName}:`, error.message);
-            }
-        }
-    }
-
     destroyRpcClient(client) {
         if (!client) return;
-
-        // Parche de seguridad para discord-rpc: evita crash de Node cuando el socket IPC
-        // ha muerto pero el client intenta enviar el opcode de cierre.
-        if (client.transport && !client.transport.socket) {
-            client.transport.send = () => {};
-            client.transport.close = () => {};
-        }
-
-        this.removeRpcListenersByEvent(client, ['disconnected', ...RPC_DYNAMIC_EVENTS]);
         try {
-            client.destroy();
+            // Eliminar listeners primero para evitar que eventos de error disparen reconexiones bucle
+            if (typeof client.removeAllListeners === 'function') {
+                client.removeAllListeners();
+            }
+            
+            // Intentar cerrar la conexión de forma segura
+            if (typeof client.destroy === 'function') {
+                client.destroy().catch(() => {}); // Ignorar errores de destrucción
+            }
         } catch (error) {
-            console.warn('[Discord Connection] Fallo al destruir cliente:', error.message);
+            // Silencioso: no queremos spam si falla la limpieza
         }
+
         if (client === this.rpc) {
             this.rpc = null;
         }
@@ -104,6 +89,16 @@ class DiscordConnectionManager {
             this.reconnectTimer = null;
             this.connect(forceFreshAuth);
         }, delayMs);
+    }
+
+    async isDiscordRunning() {
+        if (process.platform !== 'win32') return true;
+        return new Promise((resolve) => {
+            exec('tasklist /FI "IMAGENAME eq Discord.exe"', (err, stdout) => {
+                if (err) return resolve(true);
+                resolve(stdout.toLowerCase().includes('discord.exe'));
+            });
+        });
     }
 
     maybeLaunchDiscordDesktop() {
@@ -121,75 +116,99 @@ class DiscordConnectionManager {
 
     buildLoginAttempts() {
         const attempts = [];
+        
         const redirectCandidates = [redirectUri, 'http://localhost', 'http://127.0.0.1']
             .filter(Boolean)
             .filter((value, index, list) => list.indexOf(value) === index);
 
+        // 1. INTENTOS AVANZADOS (OAuth) - Para control de volumen y voz
         for (const candidate of redirectCandidates) {
             attempts.push({
-                label: `oauth-none-${candidate}`,
+                label: `Avanzado (Silent)`,
+                id: `oauth-none-${candidate}`,
                 voiceCapable: true,
-                timeoutMs: 20000,
+                timeoutMs: 5000,
+                delayMs: 200,
                 options: { clientId, clientSecret, scopes: LOGIN_SCOPES, redirectUri: candidate, prompt: 'none' }
             });
+        }
+
+        // 2. INTENTO BÁSICO (IPC Directo) - Fallback rápido para mute/deaf global
+        attempts.push({
+            label: 'Básico',
+            id: 'basic-ipc',
+            voiceCapable: false,
+            timeoutMs: 3000,
+            options: { clientId }
+        });
+
+        // 3. INTENTO CON UI (Último recurso, requiere interacción)
+        for (const candidate of redirectCandidates) {
             attempts.push({
-                label: `oauth-consent-${candidate}`,
+                label: `Avanzado (Autorizar)`,
+                id: `oauth-ui-${candidate}`,
                 voiceCapable: true,
-                timeoutMs: 45000,
+                timeoutMs: 30000,
+                delayMs: 1000,
                 options: { clientId, clientSecret, scopes: LOGIN_SCOPES, redirectUri: candidate, prompt: 'consent' }
             });
         }
-        attempts.push({
-            label: 'basic-ipc',
-            voiceCapable: false,
-            timeoutMs: 12000,
-            options: { clientId }
-        });
         return attempts;
     }
 
-    async loginAttemptWithTimeout(client, options, timeoutMs) {
-        const timeoutToken = Symbol('login-timeout');
-        let timer = null;
-        try {
-            const timeoutPromise = new Promise((resolve) => {
-                timer = setTimeout(() => resolve(timeoutToken), timeoutMs);
-            });
-            const result = await Promise.race([client.login(options), timeoutPromise]);
-            if (result === timeoutToken) throw new Error('DISCORD_LOGIN_TIMEOUT');
-            return result;
-        } finally {
-            if (timer) clearTimeout(timer);
-        }
-    }
-
     async loginWithAttempts() {
+        const isRunning = await this.isDiscordRunning();
+        if (!isRunning) {
+            throw new Error('Discord no está ejecutándose en este PC');
+        }
+
         const attempts = this.buildLoginAttempts();
         let lastError = new Error('No se pudo autenticar con Discord RPC');
         let authFailureDetected = false;
 
         for (const attempt of attempts) {
+            if (attempt.delayMs) {
+                await new Promise(r => setTimeout(r, attempt.delayMs));
+            }
+
             const attemptClient = new RPC.Client({ transport: 'ipc' });
+            
             try {
-                const loggedClient = await this.loginAttemptWithTimeout(attemptClient, attempt.options, attempt.timeoutMs);
+                const loginPromise = attemptClient.login(attempt.options);
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('TIMEOUT_EXCEEDED')), attempt.timeoutMs)
+                );
+
+                const loggedClient = await Promise.race([loginPromise, timeoutPromise]);
+                
                 if (attempt.voiceCapable) {
                     try {
                         await loggedClient.getVoiceSettings();
                     } catch (voiceError) {
-                        lastError = voiceError;
-                        this.destroyRpcClient(loggedClient);
+                        this.destroyRpcClient(attemptClient);
                         continue;
                     }
                 }
                 return { client: loggedClient, attemptLabel: attempt.label, voiceCapable: !!attempt.voiceCapable };
             } catch (error) {
-                lastError = error;
-                if (this.isAuthLoginError(error?.message)) authFailureDetected = true;
                 this.destroyRpcClient(attemptClient);
+                if (this.isAuthLoginError(error?.message)) authFailureDetected = true;
+                lastError = error;
             }
         }
         if (authFailureDetected) lastError.authFailureDetected = true;
         throw lastError;
+    }
+
+    removeRpcListenersByEvent(client, eventNames = []) {
+        if (!client || typeof client.removeAllListeners !== 'function') return;
+        for (const eventName of eventNames) {
+            try {
+                client.removeAllListeners(eventName);
+            } catch (error) {
+                console.warn(`[Discord Connection] Fallo al limpiar listeners ${eventName}:`, error.message);
+            }
+        }
     }
 
     async connect(forceFreshAuth = false) {
@@ -230,19 +249,19 @@ class DiscordConnectionManager {
 
             if (voiceCapable) {
                 this.updateConnectionState('connected', `Conectado como ${client.user?.username || 'Discord'}`);
-                console.log(`[Discord Connection] Online como ${client.user?.username} (${attemptLabel})`);
+                console.log(`[Discord] ✅ Conectado como ${client.user?.username} (${attemptLabel})`);
                 try {
                     await this.onConnected(currentClient);
                 } catch (e) {
-                    console.error('[Discord Connection] Error durante callback de conexión:', e.message);
+                    // Silencioso
                 }
             } else {
                 this.updateConnectionState('fallback', `Conectado básico como ${client.user?.username || 'Usuario'}`);
-                console.log(`[Discord Connection] Online modo básico (${attemptLabel})`);
+                console.log(`[Discord] ⚠️ Conectado en modo básico (${attemptLabel})`);
                 try {
                     this.onFallback();
                 } catch (e) {
-                    console.error('[Discord Connection] Error activando fallback:', e.message);
+                    // Silencioso
                 }
                 this.scheduleReconnect(FALLBACK_RETRY_MS, { allowInFallback: true, forceFreshAuth: true });
             }

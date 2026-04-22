@@ -139,9 +139,23 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.icon {
+.button-icon {
     font-size: 2.5rem;
-    margin-bottom: 10px;
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.button-label {
+    font-size: clamp(0.75rem, 1.1vw, 1.05rem);
+    font-weight: 500;
+    text-align: center;
+    opacity: 0.9;
+    width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* Modal / Overlay */
@@ -674,6 +688,87 @@ body.edge-hover-right::after {
 }
 
 @keyframes fadeInFast {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* Security Auth Overlay */
+.auth-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--bg-base);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    animation: fadeIn var(--duration-normal) var(--ease-smooth);
+}
+
+.auth-card {
+    background: var(--glass-panel-strong);
+    backdrop-filter: blur(var(--blur-medium));
+    -webkit-backdrop-filter: blur(var(--blur-medium));
+    border: 1px solid var(--glass-border);
+    padding: 35px;
+    border-radius: var(--radius-xl);
+    width: 100%;
+    max-width: 380px;
+    text-align: center;
+    box-shadow: 0 30px 60px rgba(0, 0, 0, 0.5);
+}
+
+.auth-card h2 {
+    margin: 0 0 10px 0;
+    font-size: 1.6rem;
+    color: var(--accent-cyan);
+}
+
+.auth-card p {
+    margin: 0 0 25px 0;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+}
+
+.auth-input {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--glass-border);
+    padding: 15px;
+    border-radius: var(--radius-md);
+    color: white;
+    font-size: 1.1rem;
+    text-align: center;
+    margin-bottom: 20px;
+    transition: border-color var(--duration-fast);
+}
+
+.auth-input:focus {
+    border-color: var(--accent-cyan);
+}
+
+.auth-btn {
+    width: 100%;
+    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+    border: none;
+    padding: 15px;
+    border-radius: var(--radius-md);
+    color: #000;
+    font-weight: 700;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: transform var(--duration-fast);
+}
+
+.auth-btn:active {
+    transform: scale(0.96);
+}
+
+@keyframes fadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
 }

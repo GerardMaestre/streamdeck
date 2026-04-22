@@ -31,7 +31,6 @@ const getDataPath = (relativePath) => {
         resolvedPath = path.resolve(__dirname, '../../', relativePath);
     }
 
-    console.log(`[Rutas] Resolviendo ${relativePath} -> ${resolvedPath}`);
     return resolvedPath;
 };
 
@@ -155,6 +154,12 @@ const createSafeSocketHandler = (socket, eventName, handler) => {
     };
 };
 
+const sanitizeShellArgs = (args) => {
+    if (typeof args !== 'string') return '';
+    // Eliminar caracteres peligrosos para la shell
+    return args.replace(/[&|;<>`$()!]/g, '').trim();
+};
+
 module.exports = {
     createSafeSocketHandler,
     emitErrorToFrontend,
@@ -164,5 +169,6 @@ module.exports = {
     runExecCommand,
     runSpawnCommand,
     safeSocketEmit,
-    getDataPath
+    getDataPath,
+    sanitizeShellArgs
 };
