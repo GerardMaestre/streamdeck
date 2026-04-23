@@ -6,11 +6,11 @@ const isWindows = () => os.platform() === 'win32';
 const DISCORD_SHORTCUTS = {
     mutear_discord: {
         keyCodes: [17, 16, 77],
-        successMessage: '🎙️ Micrófono de Discord alternado (Ctrl+Shift+M)'
+        successMessage: '[Macro] Micrófono de Discord alternado (Ctrl+Shift+M)'
     },
     ensordecer_discord: {
         keyCodes: [17, 16, 68],
-        successMessage: '🎧 Auriculares de Discord alternados (Ctrl+Shift+D)'
+        successMessage: '[Macro] Auriculares de Discord alternados (Ctrl+Shift+D)'
     }
 };
 
@@ -32,7 +32,7 @@ const buildKeypressPowerShell = (keyCodes) => {
 
 const executeWindowsKeypress = async (keyCodes, successMessage, errorScope) => {
     if (!isWindows()) {
-        console.log('⚠️ Macro no soportada en este SO.');
+        console.log('[!] Macro no soportada en este SO.');
         return;
     }
 
@@ -41,7 +41,7 @@ const executeWindowsKeypress = async (keyCodes, successMessage, errorScope) => {
         await runExecCommand(command);
         console.log(successMessage);
     } catch (error) {
-        console.error(`❌ Error ${errorScope}:`, getErrorMessage(error));
+        console.error(`[Error] Error ${errorScope}:`, getErrorMessage(error));
         throw error;
     }
 };
@@ -51,13 +51,13 @@ const ejecutarMacro = async (tipo) => {
         const shortcut = DISCORD_SHORTCUTS[tipo];
 
         if (!shortcut) {
-            console.warn(`⚠️ Macro desconocida: ${tipo}`);
+            console.warn(`[!] Macro desconocida: ${tipo}`);
             return;
         }
 
         await executeWindowsKeypress(shortcut.keyCodes, shortcut.successMessage, tipo);
     } catch (error) {
-        console.error(`❌ Error ejecutando la macro ${tipo}:`, error);
+        console.error(`[Error] Error ejecutando la macro ${tipo}:`, error);
         throw error;
     }
 };
@@ -67,18 +67,18 @@ const controlMultimedia = async (accion) => {
         const keyCode = MULTIMEDIA_KEY_CODES[accion];
 
         if (!keyCode) {
-            console.warn(`⚠️ Acción multimedia no reconocida: ${accion}`);
+            console.warn(`[!] Acción multimedia no reconocida: ${accion}`);
             return;
         }
 
         if (!isWindows()) {
-            console.log('⚠️ El control multimedia de Windows no está soportado en este SO.');
+            console.log('[!] El control multimedia de Windows no está soportado en este SO.');
             return;
         }
 
-        await executeWindowsKeypress([keyCode], `🎵 Comando multimedia ejecutado: ${accion}`, 'multimedia');
+        await executeWindowsKeypress([keyCode], `[Media] Comando multimedia ejecutado: ${accion}`, 'multimedia');
     } catch (error) {
-        console.error(`❌ Error intentando ejecutar el control multimedia ${accion}:`, error);
+        console.error(`[Error] Error intentando ejecutar el control multimedia ${accion}:`, error);
         throw error;
     }
 };

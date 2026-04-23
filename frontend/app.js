@@ -1,7 +1,68 @@
+class PerfMonitor {
+    constructor() {
+        this.fps = 0;
+        this.frames = 0;
+        this.lastTime = performance.now();
+        this.el = document.createElement('div');
+        this.el.id = 'perf-monitor';
+        this.el.innerHTML = `
+            <span id="perf-fps">FPS: 0</span>
+            <span id="perf-render">Render: 0ms</span>
+            <span id="perf-ram" style="color: #f39c12">RAM: --</span>
+            <span id="perf-cpu" style="color: #3498db">CPU: --</span>
+            <span id="perf-ping" style="color: #e74c3c">Ping: --</span>
+        `;
+        /*
+        document.body.appendChild(this.el);
+        this.update();
+        */
+
+        
+        // Ping testing
+        this.lastPing = 0;
+    }
+
+    update() {
+        // No-op
+    }
+
+
+
+    markRender(ms) {
+        // document.getElementById('perf-render').textContent = `Render: ${ms.toFixed(1)}ms`;
+    }
+
+
+    updateServerStats(data) {
+        // No-op
+    }
+
+
+
+    updatePing(ms) {
+        // document.getElementById('perf-ping').textContent = `Ping: ${ms}ms`;
+    }
+
+}
+
 class StreamDeckClient {
     constructor() {
         if (window.streamDeck) return window.streamDeck;
-        this.socket = io();
+        
+        window.addEventListener('error', (e) => {
+            console.error('GLOBAL FRONTEND ERROR:', e.message);
+            document.body.innerHTML += `<div style="position:fixed;top:0;left:0;z-index:9999;background:red;color:white;padding:10px;">${e.message}</div>`;
+        });
+        
+        // Recuperar token de seguridad de localStorage
+        this.securityToken = localStorage.getItem('streamdeck_token') || '';
+        
+        // Inicializar socket con autenticación
+        this.socket = io({
+            auth: {
+                token: this.securityToken
+            }
+        });
         this.pages = {};
         this.currentPage = 'main';
 
@@ -19,6 +80,7 @@ class StreamDeckClient {
         this.pendingVolUpdates = {};
         this.volUpdateTimes = {};
         this.volUpdateTimers = {};
+        this.lastEmittedVol = {};
         this.listenersInitialized = false;
 
         this.discordMute = false;
@@ -36,7 +98,7 @@ class StreamDeckClient {
 
         this.pendingScriptData = null;
         this.wakeLock = null;
-        this.volumeEmitIntervalMs = 350; // Mismo que Domótica para consistency
+        this.volumeEmitIntervalMs = 50; // Red local: 50ms suficiente para respuesta instantánea
         this.mixerRefs = {}; // Caché de referencias DOM para el mixer
 
         // --- CARRUSEL MULTITOUCH ---
@@ -49,6 +111,26 @@ class StreamDeckClient {
         this._dragState = null; // Estado del drag en progreso
         this._edgeScrollTimeout = null; // Temporizador para cambio de página en borde
 
+        // --- PERFORMANCE CACHE & BATCHING ---
+        this.panels = {
+            mixer: document.getElementById('panel-mixer'),
+            discord: document.getElementById('panel-discord'),
+            domotica: document.getElementById('panel-domotica')
+        };
+        this.panelsContainer = document.getElementById('panels-container');
+        this.confirmModal = document.getElementById('parameter-modal');
+        this.confirmTitle = document.getElementById('parameter-title');
+        this.confirmDescription = document.getElementById('parameter-description');
+        this.confirmInput = document.getElementById('parameter-input');
+        this.confirmCancelButton = document.getElementById('parameter-cancel');
+        this.confirmSubmitButton = document.getElementById('parameter-submit');
+        this.confirmResolve = null;
+        this.initialLoad = true;
+        this.updateQueue = new Map();
+        this.isBatching = false;
+        
+        this.perf = new PerfMonitor();
+        this._setupConfirmModalListeners();
         this.init();
     }
 
@@ -56,33 +138,272 @@ class StreamDeckClient {
         this.setupSocketListeners();
         this.setupDOMListeners();
 
-        // Solicitar estados iniciales al conectar
-        this.socket.emit('mixer_initial_state');
-        this.socket.emit('mixer_bind_commands');
-        this.socket.emit('discord_initial_state');
-
         try {
-            const res = await fetch('/api/config');
+            const fetchOptions = {
+                headers: {
+                    'Authorization': this.securityToken
+                }
+            };
+
+            const res = await fetch(`/api/config`, fetchOptions);
+            
+            if (!res.ok) {
+                console.warn(`Error de autenticación o red (Status: ${res.status}). Mostrando login...`);
+                document.getElementById('deck-container').style.display = 'none';
+                this.requestSecurityToken();
+                return;
+            }
+
             const data = await res.json();
             this.pages = data.pages || {};
             this.carouselPages = Array.isArray(data.carouselPages) && data.carouselPages.length > 0
                 ? data.carouselPages
                 : ['main'];
-            try {
-                const scriptsRes = await fetch('/api/scripts');
-                if (scriptsRes.ok) {
-                    this.scriptsByFolder = await scriptsRes.json();
-                } else {
-                    this.scriptsByFolder = {};
-                }
-            } catch (err) {
+
+            // Cargar scripts con token
+            const scriptsRes = await fetch(`/api/scripts`, fetchOptions);
+            if (scriptsRes.ok) {
+                this.scriptsByFolder = await scriptsRes.json();
+            } else {
                 this.scriptsByFolder = {};
             }
-        } catch (e) { }
 
-        this.initMainGrid();
-        this.setupCarouselSwipe();
-        this.renderEditModeButton();
+            // Una vez autenticado, pedir estados iniciales
+            this.socket.emit('mixer_initial_state');
+            this.socket.emit('mixer_bind_commands');
+            this.socket.emit('discord_initial_state');
+
+            // Renderizar la interfaz solo si todo ha ido bien
+            this.initMainGrid();
+            this.renderEditModeButton();
+
+        } catch (e) {
+            console.error('Error crítico durante la inicialización:', e);
+            document.getElementById('deck-container').style.display = 'none';
+            this.requestSecurityToken();
+        }
+    }
+
+    requestSecurityToken() {
+        if (document.querySelector('.auth-overlay')) return;
+
+        // Crear el overlay de autenticación
+        const authOverlay = document.createElement('div');
+        authOverlay.className = 'auth-overlay';
+        
+        authOverlay.innerHTML = `
+            <div class="auth-card">
+                <h2>Stream Deck Pro</h2>
+                <p>🔒 Acceso Protegido: Introduce el Token de Seguridad para continuar.</p>
+                <input type="password" class="auth-input" id="auth-password" placeholder="••••••••" autofocus>
+                <button class="auth-btn" id="auth-submit">Desbloquear Sistema</button>
+            </div>
+        `;
+
+        document.body.appendChild(authOverlay);
+
+        const input = document.getElementById('auth-password');
+        const submit = document.getElementById('auth-submit');
+
+        const doLogin = () => {
+            const token = input.value.trim();
+            if (token) {
+                localStorage.setItem('streamdeck_token', token);
+                window.location.reload();
+            }
+        };
+
+        submit.addEventListener('click', doLogin);
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') doLogin();
+        });
+
+        // Intentar dar foco al input (algunas tablets requieren toque previo)
+        setTimeout(() => input.focus(), 100);
+    }
+
+    _setupConfirmModalListeners() {
+        if (!this.confirmModal) return;
+
+        this.confirmCancelButton?.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            this._closeConfirmModal(false);
+        });
+        this.confirmSubmitButton?.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            this._closeConfirmModal(true);
+        });
+        this.confirmModal.addEventListener('click', (event) => {
+            if (event.target === this.confirmModal) {
+                this._closeConfirmModal(false);
+            }
+        });
+    }
+
+    _closeConfirmModal(confirmed) {
+        if (!this.confirmModal) return;
+        this.confirmModal.classList.add('hidden');
+        if (this.confirmInput) {
+            this.confirmInput.style.display = '';
+        }
+        if (this.confirmSubmitButton) {
+            this.confirmSubmitButton.textContent = 'Aceptar';
+        }
+        if (this.confirmCancelButton) {
+            this.confirmCancelButton.style.display = '';
+            this.confirmCancelButton.textContent = 'Cancelar';
+        }
+        if (this.confirmTitle) {
+            this.confirmTitle.textContent = '';
+        }
+        if (this.confirmDescription) {
+            this.confirmDescription.textContent = '';
+        }
+        if (this.confirmResolve) {
+            this.confirmResolve(confirmed);
+            this.confirmResolve = null;
+        }
+    }
+
+    showConfirmModal(message, title = 'Confirmar acción') {
+        if (!this.confirmModal) return Promise.resolve(false);
+
+        if (this.confirmResolve) {
+            this._closeConfirmModal(false);
+        }
+
+        if (this.confirmTitle) this.confirmTitle.textContent = title;
+        if (this.confirmDescription) this.confirmDescription.textContent = message;
+        if (this.confirmInput) this.confirmInput.style.display = 'none';
+        if (this.confirmSubmitButton) this.confirmSubmitButton.textContent = 'Sí';
+        if (this.confirmCancelButton) {
+            this.confirmCancelButton.style.display = '';
+            this.confirmCancelButton.textContent = 'Cancelar';
+        }
+
+        this.confirmModal.classList.remove('hidden');
+
+        return new Promise((resolve) => {
+            this.confirmResolve = resolve;
+        });
+    }
+
+    showInfoModal(message, title = 'Información') {
+        if (!this.confirmModal) return Promise.resolve(false);
+
+        if (this.confirmResolve) {
+            this._closeConfirmModal(false);
+        }
+
+        if (this.confirmTitle) this.confirmTitle.textContent = title;
+        if (this.confirmDescription) this.confirmDescription.textContent = message;
+        if (this.confirmInput) this.confirmInput.style.display = 'none';
+        if (this.confirmSubmitButton) {
+            this.confirmSubmitButton.textContent = 'Cerrar';
+        }
+        if (this.confirmCancelButton) {
+            this.confirmCancelButton.style.display = 'none';
+        }
+
+        this.confirmModal.classList.remove('hidden');
+
+        return new Promise((resolve) => {
+            this.confirmResolve = resolve;
+        });
+    }
+
+    _getButtonHelpText(btnData) {
+        if (btnData.helpText) return btnData.helpText;
+
+        if (btnData.type === 'folder' || btnData.targetPage) {
+            return `Abre la pantalla “${btnData.label || btnData.targetPage}”.`;
+        }
+
+        if (btnData.type === 'mixer') {
+            return 'Abre los controles de audio y volumen del mezclador.';
+        }
+
+        if (btnData.type === 'discord_panel') {
+            return 'Abre el panel de Discord para gestionar mute y volumen.';
+        }
+
+        if (btnData.type === 'domotica_panel') {
+            return 'Abre el panel de domótica para controlar tus dispositivos.';
+        }
+
+        if (btnData.type === 'action') {
+            const action = btnData.action || btnData.channel;
+            const normalizeKey = (text = '') => text.toString().trim().toLowerCase().replace(/[._\-]+/g, ' ').replace(/\s+/g, ' ');
+            const scriptDescriptions = {
+                'activar win 11': 'Activa optimizaciones y ajustes recomendados para Windows 11.',
+                'quitar bloatware': 'Desinstala aplicaciones y componentes no deseados de Windows.',
+                'god mode': 'Activa el menú oculto de configuración avanzada de Windows.',
+                'salud disco': 'Revisa el estado del disco y corrige problemas básicos.',
+                'limpiar ram': 'Libera memoria RAM cerrando procesos temporales y caché.',
+                'anti stuttering': 'Reduce micro-tartamudeos en juegos cerrando tareas innecesarias.',
+                'modo tryhard': 'Maximiza el rendimiento del CPU para sesiones exigentes.',
+                'ping optimizer': 'Optimiza la conexión de red para reducir latencia.',
+                'asesino zombies': 'Cierra procesos inactivos y aplicaciones de “zombies” que consumen recursos.',
+                'mac spoofer': 'Cambia la dirección MAC para proteger tu privacidad en red.',
+                'identidad falsa': 'Genera un perfil de red falso y mejora tu anonimato en línea.',
+                'panic button': 'Ejecuta una acción rápida de emergencia para cerrar o proteger el sistema.',
+                'limpieza extrema': 'Realiza una limpieza profunda de archivos temporales y basura del sistema.',
+                'buscador dupl': 'Busca y elimina archivos duplicados para liberar espacio.',
+                'organizador': 'Organiza archivos y carpetas según reglas predefinidas.',
+                'servidor desc': 'Lanza el servidor de descargas para gestionar descargas locales.',
+                'descargador': 'Inicia el descargador maestro para bajar archivos automáticamente.',
+                'spicetify': 'Aplica temas personalizados a Spotify usando Spicetify.',
+                'macros': 'Abre el gestor de macros para automatizar tareas repetitivas.',
+                'cloud gaming': 'Configura accesos rápidos para servicios de gaming en la nube.',
+                'purgar ram': 'Limpia la memoria RAM liberando caché y procesos temporales.',
+                'purgador shaders': 'Elimina shaders temporales para forzar regeneración limpia.',
+                'despertar nucleos': 'Activa todos los núcleos del procesador para alto rendimiento.',
+                'limpieza extrema global': 'Ejecuta una limpieza profunda general del sistema.'
+            };
+
+            const labelKey = normalizeKey(btnData.label);
+            const fileKey = normalizeKey(btnData.payload?.archivo || btnData.payload?.label || '');
+            const mapKey = labelKey || fileKey;
+            if (mapKey && scriptDescriptions[mapKey]) {
+                return scriptDescriptions[mapKey];
+            }
+
+            switch (action) {
+                case 'abrir_keep':
+                    return 'Abre Google Keep en tu equipo.';
+                case 'abrir_calendario':
+                    return 'Abre Google Calendar en tu equipo.';
+                case 'cambiar_resolucion':
+                    return `Cambia la resolución de pantalla a ${btnData.payload?.width || '?'}x${btnData.payload?.height || '?'}.`;
+                case 'apagar_pc':
+                    return 'Apaga el equipo de forma segura.';
+                case 'reiniciar_pc':
+                    return 'Reinicia el equipo de forma segura.';
+                case 'minimizar_todo':
+                    return 'Minimiza todas las ventanas abiertas.';
+                case 'ejecutar_script':
+                case 'ejecutar_script_dinamico':
+                    if (btnData.payload?.archivo) {
+                        const scriptName = btnData.payload.archivo.replace(/[_\-]/g, ' ').replace(/\.[^.]+$/, '');
+                        return `Ejecuta el script '${scriptName}' ubicado en la carpeta '${btnData.payload.carpeta || 'scripts'}'.`;
+                    }
+                    return `Ejecuta el script asociado a este botón: ${btnData.label || action}.`;
+                case 'macro':
+                    return `Ejecuta la macro ${btnData.payload || btnData.action}.`;
+                default:
+                    if (btnData.channel === 'tuya_command') {
+                        return 'Envía un comando a tus dispositivos domóticos.';
+                    }
+                    if (btnData.channel === 'multimedia') {
+                        return `Control multimedia: ${btnData.action || 'acción'}.`;
+                    }
+                    return `Ejecuta la acción ${action || btnData.label || 'desconocida'}.`;
+            }
+        }
+
+        return `Botón: ${btnData.label || 'Acción desconocida'}.`;
     }
 
     initMainGrid() {
@@ -100,46 +421,25 @@ class StreamDeckClient {
 
         const pageData = this.getPageData(pageId);
         const shouldInjectBack = pageId !== 'main';
+        const fragment = document.createDocumentFragment();
 
         if (shouldInjectBack) {
-            this.container.appendChild(this.createBackButton(0));
+            fragment.appendChild(this.createBackButton(0));
         }
 
         pageData.forEach((btnData, index) => {
             const visualIndex = shouldInjectBack ? index + 1 : index;
-            this.container.appendChild(this.createButton(btnData, visualIndex));
+            fragment.appendChild(this.createButton(btnData, visualIndex));
         });
+
+        this.container.appendChild(fragment);
 
         this._setEditButtonVisibility(true);
     }
-    // --- DISCORD PANEL ---
+
     renderDiscordPanel() {
         this.container.innerHTML = '';
         this.container.className = 'grid-container';
-
-        // Botón Volver Premium (Cuerpo del Documento para evitar caché/interferencias)
-        const oldBtn = document.getElementById('panel-back-button');
-        if (oldBtn) oldBtn.remove();
-
-        const backBtn = document.createElement('button');
-        backBtn.id = 'panel-back-button';
-        backBtn.className = 'panel-back-btn-sketch-circle';
-        backBtn.innerHTML = '<span>←</span>';
-        backBtn.addEventListener('pointerup', (e) => {
-            e.preventDefault();
-            e.stopImmediatePropagation();
-            backBtn.remove();
-
-            const shield = document.createElement('div');
-            shield.className = 'pointer-shield';
-            document.body.appendChild(shield);
-            setTimeout(() => shield.remove(), 500);
-
-            setTimeout(() => {
-                this.renderCarouselSlide(this.carouselIndex, 0);
-            }, 100);
-        });
-        document.body.appendChild(backBtn);
 
         const fragment = document.createDocumentFragment();
 
@@ -199,153 +499,133 @@ class StreamDeckClient {
     // --- DOMÓTICA INTEGRADA (STRICT SKETCH MATCH) ---
     renderDomoticaModernView() {
         this._setEditButtonVisibility(false);
-        this.currentPage = 'domotica_panel'; // Bloquea gestos de carrusel
-        this.container.innerHTML = '';
-        this.container.className = 'grid-container domotica-sketch-match-view';
+        this.currentPage = 'domotica_panel';
+        
+        const domoPanel = this.panels.domotica;
+        if (!domoPanel.innerHTML) {
+            domoPanel.className = 'panel-cache-node domotica-sketch-match-view';
+            domoPanel.innerHTML = `
+                <div class="domotica-master-frame">
+                    <div class="domotica-sketch-content">
+                        <div class="domotica-card-fader">
+                            <div class="fader-track-pro">
+                                <div class="fader-fill-pro"></div>
+                                <div class="fader-thumb-pro"></div>
+                            </div>
+                        </div>
+                        <div class="domotica-card-buttons">
+                            <div class="domotica-sketch-grid"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
 
-        // 0. Marco maestro del dibujo
-        const masterFrame = document.createElement('div');
-        masterFrame.className = 'domotica-master-frame';
+            const backBtn = document.createElement('button');
+            backBtn.className = 'panel-back-btn-sketch-circle';
+            backBtn.innerHTML = '<span>←</span>';
+            backBtn.addEventListener('pointerup', (e) => {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                
+                const shield = document.createElement('div');
+                shield.className = 'pointer-shield';
+                document.body.appendChild(shield);
+                setTimeout(() => shield.remove(), 400);
 
-        // Botón Volver Premium (Cuerpo del Documento para evitar caché/interferencias)
-        const oldBtn = document.getElementById('panel-back-button');
-        if (oldBtn) oldBtn.remove();
-
-        const backBtn = document.createElement('button');
-        backBtn.id = 'panel-back-button';
-        backBtn.className = 'panel-back-btn-sketch-circle';
-        backBtn.innerHTML = '<span>←</span>';
-        backBtn.addEventListener('pointerup', (e) => {
-            e.preventDefault();
-            e.stopImmediatePropagation();
-            backBtn.remove();
-
-            const shield = document.createElement('div');
-            shield.className = 'pointer-shield';
-            document.body.appendChild(shield);
-            setTimeout(() => shield.remove(), 500);
-
-            setTimeout(() => {
+                this.hidePanels();
                 this.renderCarouselSlide(this.carouselIndex, 0);
-            }, 100);
-        });
-        document.body.appendChild(backBtn);
-
-        // 2. Contenedor de División
-        const contentArea = document.createElement('div');
-        contentArea.className = 'domotica-sketch-content';
-
-        // --- IZQUIERDA: TARJETA SLIDER ---
-        const sliderCard = document.createElement('div');
-        sliderCard.className = 'domotica-card-fader';
-
-        const faderTrack = document.createElement('div');
-        faderTrack.className = 'fader-track-pro';
-
-        const faderFill = document.createElement('div');
-        faderFill.className = 'fader-fill-pro';
-        faderFill.style.transform = `scaleY(${this.lastTuyaIntensity / 100})`;
-
-        const faderThumb = document.createElement('div');
-        faderThumb.className = 'fader-thumb-pro';
-        // Inicialización aproximada (se corregirá en el primer movimiento o resize)
-        faderThumb.style.transform = `translate(-50%, -${this.lastTuyaIntensity}%)`;
-
-        faderTrack.appendChild(faderFill);
-        faderTrack.appendChild(faderThumb);
-
-        let trackRect = null;
-        const updateFader = (e) => {
-            if (!trackRect) trackRect = faderTrack.getBoundingClientRect();
-            const y = e.clientY - trackRect.top;
-            let percent = 100 - (y / trackRect.height) * 100;
-            percent = Math.max(1, Math.min(100, Math.round(percent)));
-
-            if (percent === this.lastTuyaIntensity) return;
-            this.lastTuyaIntensity = percent;
-            localStorage.setItem('lastTuyaIntensity', percent);
-
-            // Visual instantáneo (GPU Accelerado)
-            requestAnimationFrame(() => {
-                faderFill.style.transform = `scaleY(${percent / 100})`;
-                // Usamos 50% para que el centro de la bola coincida con el valor
-                faderThumb.style.transform = `translate(-50%, calc(50% - ${(percent / 100) * trackRect.height}px))`;
             });
+            domoPanel.appendChild(backBtn);
 
-            // Emisión de red diferida pero con valor ACTUAL
-            const currentVal = percent;
-            const tuyaVal = Math.round(10 + (currentVal / 100) * 990);
+            const faderTrack = domoPanel.querySelector('.fader-track-pro');
+            const faderFill = domoPanel.querySelector('.fader-fill-pro');
+            const faderThumb = domoPanel.querySelector('.fader-thumb-pro');
+            const controlGrid = domoPanel.querySelector('.domotica-sketch-grid');
 
-            this.scheduleThrottledEmit('tuya_brightness', () => {
-                this.socket.emit('tuya_command', {
-                    deviceIds: this.tuyaDevices,
-                    code: 'bright_value_v2',
-                    value: tuyaVal
+            const controls = [
+                { label: 'ENCENDER', value: true, action: 'tuya_scene_toggle', icon: '🌟', color: '#2ecc71' },
+                { label: 'APAGAR', value: false, action: 'tuya_scene_toggle', icon: '🌑', color: '#e74c3c' },
+                { label: 'BLANCO', value: 'white', code: 'work_mode', icon: '⚪', color: '#ecf0f1' },
+                { label: 'ESCENA', value: 'scene', code: 'work_mode', icon: '🔮', color: '#9b59b6' }
+            ];
+
+            controls.forEach(c => {
+                const btn = document.createElement('button');
+                btn.className = 'domotica-sketch-btn';
+                btn.style.setProperty('--btn-accent', c.color);
+                btn.innerHTML = `<span class="k-icon">${c.icon}</span><span class="k-label">${c.label}</span>`;
+                btn.addEventListener('pointerdown', () => {
+                    if (navigator.vibrate) navigator.vibrate(40);
+                    const payload = c.action === 'tuya_scene_toggle'
+                        ? { deviceIds: this.tuyaDevices, code: 'switch_led', value: c.value }
+                        : { deviceIds: this.tuyaDevices, code: c.code, value: c.value };
+                    this.socket.emit('tuya_command', payload);
                 });
-            }, 350);
-        };
-
-        faderThumb.addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            trackRect = faderTrack.getBoundingClientRect();
-            faderThumb.setPointerCapture(e.pointerId);
-            updateFader(e);
-            faderThumb.addEventListener('pointermove', updateFader);
-        });
-
-        faderThumb.addEventListener('pointerup', (e) => {
-            if (faderThumb.hasPointerCapture && faderThumb.hasPointerCapture(e.pointerId)) {
-                faderThumb.releasePointerCapture(e.pointerId);
-            }
-            faderThumb.removeEventListener('pointermove', updateFader);
-        });
-
-        sliderCard.appendChild(faderTrack);
-        contentArea.appendChild(sliderCard);
-
-        // --- DERECHA: TARJETA BOTONES ---
-        const buttonsCard = document.createElement('div');
-        buttonsCard.className = 'domotica-card-buttons';
-
-        const controlGrid = document.createElement('div');
-        controlGrid.className = 'domotica-sketch-grid';
-
-        const controls = [
-            { label: 'ENCENDER', value: true, action: 'tuya_scene_toggle', icon: '🌟', color: '#2ecc71' },
-            { label: 'APAGAR', value: false, action: 'tuya_scene_toggle', icon: '🌑', color: '#e74c3c' },
-            { label: 'BLANCO', value: 'white', code: 'work_mode', icon: '⚪', color: '#ecf0f1' },
-            { label: 'ESCENA', value: 'scene', code: 'work_mode', icon: '🔮', color: '#9b59b6' }
-        ];
-
-        controls.forEach(c => {
-            const btn = document.createElement('button');
-            btn.className = 'domotica-sketch-btn';
-            btn.style.setProperty('--btn-accent', c.color);
-            btn.innerHTML = `<span class="k-icon">${c.icon}</span><span class="k-label">${c.label}</span>`;
-
-            btn.addEventListener('pointerdown', () => {
-                if (navigator.vibrate) navigator.vibrate(40);
-                const payload = c.action === 'tuya_scene_toggle'
-                    ? { deviceIds: this.tuyaDevices, code: 'switch_led', value: c.value }
-                    : { deviceIds: this.tuyaDevices, code: c.code, value: c.value };
-                this.socket.emit('tuya_command', payload);
+                controlGrid.appendChild(btn);
             });
 
-            controlGrid.appendChild(btn);
-        });
+            let trackRect = null;
+            let trackH = 0;
+            let isRAFActive = false;
 
-        buttonsCard.appendChild(controlGrid);
-        contentArea.appendChild(buttonsCard);
+            const updateFader = (e) => {
+                if (!trackRect) {
+                    trackRect = faderTrack.getBoundingClientRect();
+                    trackH = trackRect.height;
+                }
+                const y = e.clientY - trackRect.top;
+                let percent = 100 - (y / trackH) * 100;
+                percent = Math.max(1, Math.min(100, Math.round(percent)));
+                if (percent === this.lastTuyaIntensity) return;
+                this.lastTuyaIntensity = percent;
 
-        masterFrame.appendChild(contentArea);
-        this.container.appendChild(masterFrame);
+                if (!isRAFActive) {
+                    isRAFActive = true;
+                    requestAnimationFrame(() => {
+                        const p = this.lastTuyaIntensity;
+                        faderFill.style.transform = `scale3d(1, ${p / 100}, 1)`;
+                        this.setThumbTransform(faderThumb, p, trackH);
+                        isRAFActive = false;
+                    });
+                }
 
-        // --- FIX DE INICIALIZACIÓN (PREMIUM FLUIDITY) ---
-        // Esperamos al siguiente frame para medir el track y posicionar la bola correctamente
+                const tuyaVal = Math.round(10 + (percent / 100) * 990);
+                this.scheduleThrottledEmit('tuya_brightness', () => {
+                    this.socket.emit('tuya_command', { deviceIds: this.tuyaDevices, code: 'bright_value_v2', value: tuyaVal });
+                }, 350);
+            };
+            faderThumb.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                trackRect = faderTrack.getBoundingClientRect();
+                trackH = trackRect.height;
+                faderThumb.setPointerCapture(e.pointerId);
+                document.body.classList.add('dragging-active');
+                updateFader(e);
+                faderThumb.addEventListener('pointermove', updateFader);
+            });
+
+            faderThumb.addEventListener('pointerup', (e) => {
+                if (faderThumb.hasPointerCapture && faderThumb.hasPointerCapture(e.pointerId)) faderThumb.releasePointerCapture(e.pointerId);
+                document.body.classList.remove('dragging-active');
+                faderThumb.removeEventListener('pointermove', updateFader);
+                // Guardar al final para evitar lag durante el movimiento
+                localStorage.setItem('lastTuyaIntensity', this.lastTuyaIntensity);
+            });
+
+        }
+
+        this.showPanel('domotica');
+        
+        // Fix de inicialización fader
         requestAnimationFrame(() => {
+            const faderTrack = domoPanel.querySelector('.fader-track-pro');
+            const faderFill = domoPanel.querySelector('.fader-fill-pro');
+            const faderThumb = domoPanel.querySelector('.fader-thumb-pro');
             const trackRect = faderTrack.getBoundingClientRect();
             if (trackRect.height > 0) {
-                faderThumb.style.transform = `translate(-50%, calc(50% - ${(this.lastTuyaIntensity / 100) * trackRect.height}px))`;
+                const trackH = trackRect.height;
+                faderFill.style.transform = `scale3d(1, ${this.lastTuyaIntensity / 100}, 1)`;
+                this.setThumbTransform(faderThumb, this.lastTuyaIntensity, trackH);
             }
         });
     }
@@ -382,10 +662,22 @@ class StreamDeckClient {
                             color: 'linear-gradient(145deg, #2980b9, #3498db)',
                             type: 'action',
                             action: 'ejecutar_script_dinamico',
-                            payload: { carpeta, archivo: f.archivo }
+                            payload: { carpeta, archivo: f.archivo },
+                            helpText: f.helpText || f.description || f.descripcion || ''
                         });
                     }
                 });
+
+                // Attach detected helpText to pre-configured buttons when applicable
+                for (let i = 0; i < configured.length; i++) {
+                    const item = configured[i];
+                    if (item && item.payload && item.payload.archivo) {
+                        const found = detected.find(d => d.archivo === item.payload.archivo);
+                        if (found && found.helpText) {
+                            item.helpText = item.helpText || found.helpText || found.description || found.descripcion || '';
+                        }
+                    }
+                }
 
                 pageData = configured;
             }
@@ -399,7 +691,8 @@ class StreamDeckClient {
                 color: 'linear-gradient(145deg, #2980b9, #3498db)',
                 type: 'action',
                 action: 'ejecutar_script_dinamico',
-                payload: { carpeta, archivo: f.archivo }
+                payload: { carpeta, archivo: f.archivo },
+                helpText: f.helpText || f.description || f.descripcion || ''
             }));
         }
 
@@ -443,22 +736,40 @@ class StreamDeckClient {
         const btn = document.createElement('button');
         btn.className = 'boton btn-streamdeck';
         if (btnData.color) btn.style.background = btnData.color;
-        btn.style.animationDelay = `${index * 0.05}s`;
 
-        btn.innerHTML = `<span class="icon">${btnData.icon}</span>${btnData.label}`;
+        if (this.initialLoad) {
+            btn.style.animation = 'none';
+            btn.style.opacity = '1';
+            btn.style.transform = 'scale(1)';
+            btn.style.transition = 'none';
+        } else {
+            btn.style.animationDelay = `${index * 0.05}s`;
+        }
 
-        // === LÓGICA DE PULSACIÓN LARGA PARA EDITAR ===
+        const iconEl = document.createElement('div');
+        iconEl.className = 'button-icon';
+        iconEl.innerHTML = btnData.icon || ''; // Los iconos pueden ser HTML/Emojis
+
+        const labelEl = document.createElement('div');
+        labelEl.className = 'button-label';
+        labelEl.textContent = btnData.label || ''; // USAMOS textContent POR SEGURIDAD (Evita XSS)
+
+        btn.appendChild(iconEl);
+        btn.appendChild(labelEl);
+        // === LÓGICA DE PULSACIÓN LARGA PARA MOSTRAR AYUDA ===
         let longPressTimer = null;
         let startPos = null;
+        let longPressHandled = false;
 
         const startTimer = (e) => {
             if (this.editMode) return;
             startPos = { x: e.clientX, y: e.clientY };
-            longPressTimer = setTimeout(() => {
+            btn.classList.add('pressing');
+            longPressTimer = setTimeout(async () => {
                 if (navigator.vibrate) navigator.vibrate([40, 20, 40]);
-                this.enterEditMode();
-                // Forzamos el inicio del drag con el evento actual
-                this._onEditPointerDown(e);
+                longPressHandled = true;
+                const helpText = this._getButtonHelpText(btnData);
+                await this.showInfoModal(helpText, btnData.label || 'Información');
             }, 600);
         };
 
@@ -467,21 +778,34 @@ class StreamDeckClient {
                 clearTimeout(longPressTimer);
                 longPressTimer = null;
             }
+            btn.classList.remove('pressing');
+        };
+
+        const handlePointerUp = (e) => {
+            clearTimer();
+            if (longPressHandled) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
         };
 
         btn.addEventListener('pointerdown', startTimer);
         btn.addEventListener('pointermove', (e) => {
             if (!startPos) return;
             const dist = Math.hypot(e.clientX - startPos.x, e.clientY - startPos.y);
-            if (dist > 15) clearTimer(); // Si se mueve mucho, cancelamos la detección de long-press
-        });
-        btn.addEventListener('pointerup', clearTimer);
-        btn.addEventListener('pointercancel', clearTimer);
-        btn.addEventListener('pointerleave', clearTimer);
+            if (dist > 15) clearTimer();
+        }, { passive: true });
+        btn.addEventListener('pointerup', handlePointerUp);
+        btn.addEventListener('pointercancel', handlePointerUp);
+        btn.addEventListener('pointerleave', clearTimer, { passive: true });
 
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async () => {
             // En modo edición, el drag se encarga. No ejecutar acciones.
             if (this.editMode) return;
+            if (longPressHandled) {
+                longPressHandled = false;
+                return;
+            }
 
             if (navigator.vibrate) navigator.vibrate(50);
 
@@ -496,6 +820,15 @@ class StreamDeckClient {
             } else if (btnData.type === 'domotica_panel') {
                 this.renderDomoticaModernView();
             } else if (btnData.type === 'action') {
+                if (btnData.action === 'apagar_pc' || btnData.action === 'reiniciar_pc') {
+                    const confirmMessage = btnData.action === 'apagar_pc'
+                        ? 'Se apagará el PC. ¿Deseas continuar?'
+                        : 'Se reiniciará el PC. ¿Deseas continuar?';
+
+                    const confirmed = await this.showConfirmModal(confirmMessage, btnData.action === 'apagar_pc' ? 'Apagar equipo' : 'Reiniciar equipo');
+                    if (!confirmed) return;
+                }
+
                 const isScript = btnData.channel === 'ejecutar_script' || btnData.action === 'ejecutar_script_dinamico';
                 if (isScript && btnData.payload && btnData.payload.requiresParams) {
                     // Delegamos al servidor para que pida los parámetros en el PC
@@ -542,6 +875,44 @@ class StreamDeckClient {
         });
 
         window.streamDeck = this;
+    }
+
+    // --- PANEL CACHE MANAGER ---
+    showPanel(panelId) {
+        const start = performance.now();
+        
+        // Ocultar todos los paneles
+        Object.values(this.panels).forEach(p => p.classList.add('hidden'));
+        this.container.classList.add('hidden'); // Ocultar grid principal
+        
+        this.panelsContainer.classList.remove('hidden');
+        const panel = this.panels[panelId];
+        if (panel) {
+            panel.classList.remove('hidden');
+        }
+        
+        this.perf.markRender(performance.now() - start);
+    }
+
+    hidePanels() {
+        this.panelsContainer.classList.add('hidden');
+        Object.values(this.panels).forEach(p => p.classList.add('hidden'));
+        this.container.classList.remove('hidden');
+    }
+
+    // --- BATCH UPDATE SYSTEM ---
+    queueUpdate(id, fn) {
+        this.updateQueue.set(id, fn);
+        if (!this.isBatching) {
+            this.isBatching = true;
+            requestAnimationFrame(() => {
+                const start = performance.now();
+                this.updateQueue.forEach(fn => fn());
+                this.updateQueue.clear();
+                this.isBatching = false;
+                this.perf.markRender(performance.now() - start);
+            });
+        }
     }
 
     async requestWakeLock() {
@@ -630,25 +1001,25 @@ class StreamDeckClient {
 
     openMixer() {
         this._setEditButtonVisibility(false);
-        this.currentPage = 'mixer_panel'; // Bloquea gestos de carrusel
-        this.container.innerHTML = '';
-        this.container.className = 'mixer-fullscreen-view';
+        this.currentPage = 'mixer_panel';
 
-        const mixerPanel = document.createElement('div');
-        mixerPanel.className = 'mixer-panel mixer-panel-fullscreen';
-        mixerPanel.id = 'mixer-interface';
+        const mixerPanel = this.panels.mixer;
+        if (!mixerPanel.innerHTML) {
+            mixerPanel.className = 'panel-cache-node mixer-fullscreen-view';
+            mixerPanel.innerHTML = `
+                <div class="mixer-panel mixer-panel-fullscreen">
+                    <div id="master-mixer" class="mixer-row master-row"></div>
+                    <div class="mixer-divider"></div>
+                    <div id="app-mixers" class="app-mixers-container"></div>
+                </div>
+            `;
+        }
 
-        mixerPanel.innerHTML = `
-            <div id="master-mixer" class="mixer-row master-row"></div>
-            <div class="mixer-divider"></div>
-            <div id="app-mixers" class="app-mixers-container"></div>
-        `;
+        // Siempre asegurarnos de que el botón de volver existe y está limpio
+        let backBtn = document.getElementById('panel-back-button');
+        if (backBtn) backBtn.remove();
 
-        // Botón Volver Premium (Cuerpo del Documento para evitar caché/interferencias)
-        const oldBtn = document.getElementById('panel-back-button');
-        if (oldBtn) oldBtn.remove();
-
-        const backBtn = document.createElement('button');
+        backBtn = document.createElement('button');
         backBtn.id = 'panel-back-button';
         backBtn.className = 'panel-back-btn-sketch-circle';
         backBtn.innerHTML = '<span>←</span>';
@@ -660,23 +1031,21 @@ class StreamDeckClient {
             const shield = document.createElement('div');
             shield.className = 'pointer-shield';
             document.body.appendChild(shield);
-            setTimeout(() => shield.remove(), 500);
+            setTimeout(() => shield.remove(), 400);
 
-            setTimeout(() => {
-                this.renderCarouselSlide(this.carouselIndex, 0);
-            }, 100);
+            this.hidePanels();
+            this.renderCarouselSlide(this.carouselIndex, 0);
         });
         document.body.appendChild(backBtn);
 
-        this.container.appendChild(mixerPanel);
-
-        // Pedir estado actualizado al servidor cada vez que abrimos el panel
-        this.socket.emit('mixer_initial_state');
-        this.socket.emit('mixer_bind_commands');
-
+        // Renderizar el estado actual ANTES de mostrar el panel para evitar el collapse visual
         if (this.lastMixerState) {
             this.renderInitialMixer();
         }
+
+        this.showPanel('mixer');
+        this.socket.emit('mixer_initial_state');
+        this.socket.emit('mixer_bind_commands');
     }
 
     createMixerRow(appData, isMaster = false) {
@@ -693,17 +1062,27 @@ class StreamDeckClient {
         row.id = `mixer-row-${id}`;
 
         row.innerHTML = `
-            <div class="mixer-icon-btn${mutedClass}" onpointerup="window.streamDeck.toggleMute('${id}', ${isMaster})">
+            <div class="mixer-icon-btn${mutedClass}">
                 <div id="icon-wrapper-${id}" class="mixer-icon-wrapper${mutedWrapperClass}">
                     ${iconHTML}
                 </div>
             </div>
             <div class="slider-container" data-app="${appData.name}">
-                <div class="slider-fill" style="transform: scaleY(${vol / 100})"></div>
-                <div class="fader-thumb-mixer" style="bottom: ${vol}%"></div>
+                <div class="slider-fill" style="transform: scale3d(1, ${vol / 100}, 1); transform-origin: bottom;"></div>
+                <div class="fader-thumb-mixer"></div>
             </div>
+
             <div class="mixer-label">${labelName}</div>
         `;
+
+        const iconBtn = row.querySelector('.mixer-icon-btn');
+        if (iconBtn) {
+            iconBtn.addEventListener('pointerup', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                this.toggleMute(id, isMaster);
+            });
+        }
 
         const container = row.querySelector('.slider-container');
         const fill = container.querySelector('.slider-fill');
@@ -711,54 +1090,71 @@ class StreamDeckClient {
         const wrapper = row.querySelector('.mixer-icon-wrapper');
 
         // Guardamos las referencias para actualizaciones en tiempo real
-        this.mixerRefs[id] = { fill, thumb, wrapper, track: container };
-
-        fill.style.height = `${vol}%`;
-        thumb.style.bottom = `${vol}%`;
-
+        this.mixerRefs[id] = { fill, thumb, wrapper, track: container, trackH: 0 };
         let containerRect = null;
+        let trackH = 0;
+        let isRAFActive = false;
 
         const updateUI = (e) => {
-            if (!containerRect) containerRect = container.getBoundingClientRect();
-            let y = e.clientY - containerRect.top;
-            let percent = 100 - (y / containerRect.height) * 100;
+            if (!containerRect) {
+                containerRect = container.getBoundingClientRect();
+                trackH = containerRect.height;
+                this.mixerRefs[id].trackH = trackH; // cachear para updateSliderUI
+            }
+            
+            const clientY = e.clientY;
+            let y = clientY - containerRect.top;
+            let percent = 100 - (y / trackH) * 100;
             percent = Math.max(0, Math.min(100, Math.round(percent)));
 
-            // 1. Visual (SIN LATENCIA)
-            fill.style.transform = `scaleY(${percent / 100})`;
-            thumb.style.bottom = `${percent}%`;
+            if (percent === this[`last_mixer_${id}`]) return;
             this[`last_mixer_${id}`] = percent;
 
+            // 1. Visual (Optimized RAF - solo compositor, cero layout reflow)
+            if (!isRAFActive) {
+                isRAFActive = true;
+                requestAnimationFrame(() => {
+                    const p = this[`last_mixer_${id}`];
+                    fill.style.transform = `scale3d(1, ${p / 100}, 1)`;
+                    this.setThumbTransform(thumb, p, trackH);
+                    isRAFActive = false;
+                });
+            }
+
             // 2. Network (Throttled)
-            this.pendingVolUpdates[id] = percent;
-            this.scheduleThrottledEmit(id, () => {
-                const val = Math.round(this.pendingVolUpdates[id]);
-                if (isMaster) {
-                    this.socket.emit('set_master_volume', val);
-                } else {
-                    this.socket.emit('set_session_volume', { app: id, value: val });
-                }
-            }, 100);
+            this.updateVolumeServer(id, percent, isMaster);
         };
 
         const onPointerDown = (e) => {
             e.preventDefault();
             const row = container.closest('.mixer-row');
             if (row) row.classList.add('dragging'); // Modo Zero Lag
+
+            this.activeSliders.add(id);
             
             containerRect = container.getBoundingClientRect();
+            trackH = containerRect.height;
             thumb.setPointerCapture(e.pointerId);
+            document.body.classList.add('dragging-active');
             thumb.addEventListener('pointermove', updateUI);
             updateUI(e);
         };
 
-        thumb.addEventListener('pointerdown', onPointerDown);
+
+        container.addEventListener('pointerdown', onPointerDown);
 
         const releaseSlider = (e) => {
             if (thumb.hasPointerCapture && thumb.hasPointerCapture(e.pointerId)) {
                 thumb.releasePointerCapture(e.pointerId);
             }
+            document.body.classList.remove('dragging-active');
             thumb.removeEventListener('pointermove', updateUI);
+
+
+            const finalPercent = this[`last_mixer_${id}`];
+            if (Number.isFinite(finalPercent)) {
+                this.updateVolumeServer(id, finalPercent, isMaster, true);
+            }
 
             // Grace period: permite que el último update se procese
             setTimeout(() => {
@@ -778,37 +1174,61 @@ class StreamDeckClient {
         const appsContainer = document.getElementById('app-mixers');
         if (!masterContainer || !appsContainer || !this.lastMixerState) return;
 
-        this.mixerRefs = {}; // Limpiamos referencias viejas
+        // Comprobación de integridad para evitar re-renders innecesarios si nada ha cambiado
+        const currentStateStr = JSON.stringify(this.lastMixerState);
+        if (this._renderedMixerState === currentStateStr) return;
+        this._renderedMixerState = currentStateStr;
+
+        this.mixerRefs = {};
         masterContainer.innerHTML = '';
         appsContainer.innerHTML = '';
 
-        masterContainer.appendChild(this.createMixerRow(this.lastMixerState.master, true));
+        const masterFragment = document.createDocumentFragment();
+        masterFragment.appendChild(this.createMixerRow(this.lastMixerState.master, true));
+        masterContainer.replaceChildren(masterFragment);
 
+        const appsFragment = document.createDocumentFragment();
         const renderizadas = new Set();
         this.lastMixerState.sessions.forEach(session => {
             if (!renderizadas.has(session.name)) {
-                appsContainer.appendChild(this.createMixerRow(session));
+                appsFragment.appendChild(this.createMixerRow(session));
                 renderizadas.add(session.name);
             }
         });
+        appsContainer.replaceChildren(appsFragment);
 
         // --- FIX DE INICIALIZACIÓN MIXER (PREMIUM FLUIDITY) ---
+        // Forzamos un reflow antes del RAF para asegurar que getBoundingClientRect tenga valores reales
+        void masterContainer.offsetWidth; 
+
         requestAnimationFrame(() => {
             Object.keys(this.mixerRefs).forEach(id => {
                 const refs = this.mixerRefs[id];
                 if (!refs) return;
-                const trackRect = refs.track.getBoundingClientRect();
-                if (trackRect.height > 0) {
-                    let vol = 0;
-                    if (id === 'global') {
-                        vol = this.lastMixerState.master.volume;
-                    } else {
-                        const sess = this.lastMixerState.sessions.find(s => s.name === id);
-                        if (sess) vol = sess.volume;
-                    }
-                    refs.fill.style.transform = `scaleY(${vol / 100})`;
-                    refs.thumb.style.bottom = `${vol}%`;
+                
+                let trackRect = refs.track.getBoundingClientRect();
+                let trackH = trackRect.height;
+
+                // Si aún es 0 (panel oculto), usamos un valor por defecto basado en clamp del CSS
+                // clamp(160px, 40dvh, 300px). Calculamos el valor real aproximado.
+                if (trackH === 0) {
+                    const dvh = window.innerHeight * 0.4;
+                    trackH = Math.max(160, Math.min(300, dvh));
                 }
+                
+                refs.trackH = trackH;
+                
+                let vol = 0;
+                if (id === 'global') {
+                    vol = this.lastMixerState.master.volume;
+                } else {
+                    const sess = this.lastMixerState.sessions.find(s => s.name === id);
+                    if (sess) vol = sess.volume;
+                }
+                
+                refs.fill.style.transform = `scale3d(1, ${vol / 100}, 1)`;
+                this.setThumbTransform(refs.thumb, vol, trackH);
+                this[`last_mixer_${id}`] = vol;
             });
         });
     }
@@ -845,13 +1265,35 @@ class StreamDeckClient {
         }
     }
 
-    updateVolumeServer(app, value, isMaster) {
+    updateVolumeServer(app, value, isMaster, immediate = false) {
         const id = isMaster ? 'global' : app;
         const queueKey = isMaster ? 'mix_master' : `mix_${app}`;
-        this.pendingVolUpdates[queueKey] = Number(value);
+        const roundedValue = Math.round(Number(value));
+        if (!Number.isFinite(roundedValue)) return;
+        this.pendingVolUpdates[queueKey] = roundedValue;
+
+        if (immediate) {
+            if (this.volUpdateTimers[queueKey]) {
+                clearTimeout(this.volUpdateTimers[queueKey]);
+                this.volUpdateTimers[queueKey] = null;
+            }
+
+            this.volUpdateTimes[queueKey] = Date.now();
+            const currentVolume = this.pendingVolUpdates[queueKey];
+            if (this.lastEmittedVol[queueKey] === currentVolume) return;
+            this.lastEmittedVol[queueKey] = currentVolume;
+            if (isMaster) {
+                this.socket.emit('set_master_volume', currentVolume);
+            } else {
+                this.socket.emit('set_session_volume', { app, value: currentVolume });
+            }
+            return;
+        }
 
         this.scheduleThrottledEmit(queueKey, () => {
-            const valToEmit = Math.round(this.pendingVolUpdates[queueKey]);
+            const valToEmit = this.pendingVolUpdates[queueKey];
+            if (this.lastEmittedVol[queueKey] === valToEmit) return;
+            this.lastEmittedVol[queueKey] = valToEmit;
             if (isMaster) {
                 this.socket.emit('set_master_volume', valToEmit);
             } else {
@@ -937,14 +1379,37 @@ class StreamDeckClient {
         });
 
         this.socket.on('discord_user_speaking', (data) => {
-            const row = document.querySelector(`.user-fader-row[data-user-id="${data.userId}"]`);
-            if (row) {
-                const avatarCircle = row.querySelector('.user-avatar-circle');
-                if (avatarCircle) {
-                    avatarCircle.classList.toggle('speaking', !!data.speaking);
+            this.queueUpdate(`speaking_${data.userId}`, () => {
+                const row = document.querySelector(`.user-fader-row[data-user-id="${data.userId}"]`);
+                if (row) {
+                    const avatarCircle = row.querySelector('.user-avatar-circle');
+                    if (avatarCircle) {
+                        avatarCircle.classList.toggle('speaking', !!data.speaking);
+                    }
                 }
+            });
+        });
+
+        /*
+        this.socket.on('performance:update', (data) => {
+            if (this.perf) {
+                this.perf.updateServerStats(data);
             }
         });
+        */
+
+
+        /*
+        // Ping calculation
+        setInterval(() => {
+            const start = Date.now();
+            this.socket.emit('ping', () => {
+                const latency = Date.now() - start;
+                if (this.perf) this.perf.updatePing(latency);
+            });
+        }, 3000);
+        */
+
 
         this.socket.on('mixer_initial_state', (state) => {
             this.lastMixerState = state;
@@ -996,125 +1461,102 @@ class StreamDeckClient {
 
         // Removed script_log, script_success, and script_error listeners as execution
         // is now handled via external detached CMD windows.
+
+        this.socket.on('connect_error', (err) => {
+
+            console.error('Socket Connection Error:', err.message);
+            if (err.message.includes('Acceso denegado')) {
+                localStorage.removeItem('streamdeck_token');
+                this.requestSecurityToken();
+            }
+        });
     }
 
     updateSliderUI(id, data) {
         const refs = this.mixerRefs[id];
         if (!refs) return;
 
-        if (data.type === 'volume') {
-            if (!this.activeSliders.has(id)) {
-                const h = Number(data.value);
-                refs.fill.style.transform = `scaleY(${h / 100})`;
-                refs.thumb.style.bottom = `${h}%`;
-                this[`last_mixer_${id}`] = h;
+        this.queueUpdate(`mixer_${id}_${data.type}`, () => {
+            if (data.type === 'volume') {
+                if (!this.activeSliders.has(id)) {
+                    const h = Number(data.value);
+                    // Usar trackH cacheado; fallback a getBoundingClientRect solo si no está disponible
+                    const trackH = refs.trackH || (() => {
+                        const r = refs.track.getBoundingClientRect();
+                        refs.trackH = r.height;
+                        return r.height;
+                    })();
+                    refs.fill.style.transform = `scale3d(1, ${h / 100}, 1)`;
+                    this.setThumbTransform(refs.thumb, h, trackH);
+                    this[`last_mixer_${id}`] = h;
+                }
+            } else if (data.type === 'mute') {
+                if (this.activeMutes.has(id)) return;
+                const iconContainer = refs.wrapper.closest('.mixer-icon-btn');
+                if (data.value) {
+                    if (iconContainer) iconContainer.classList.add('muted-active');
+                    refs.wrapper.classList.add('mixer-icon-wrapper--muted');
+                } else {
+                    if (iconContainer) iconContainer.classList.remove('muted-active');
+                    refs.wrapper.classList.remove('mixer-icon-wrapper--muted');
+                }
             }
-        } else if (data.type === 'mute') {
-            if (this.activeMutes.has(id)) return;
-            const iconContainer = refs.wrapper.closest('.mixer-icon-btn');
-            if (data.value) {
-                if (iconContainer) iconContainer.classList.add('muted-active');
-                refs.wrapper.classList.add('mixer-icon-wrapper--muted');
-            } else {
-                if (iconContainer) iconContainer.classList.remove('muted-active');
-                refs.wrapper.classList.remove('mixer-icon-wrapper--muted');
-            }
-        }
+        });
     }
 
     openDiscordPanel() {
         this._setEditButtonVisibility(false);
-        this.currentPage = 'discord_panel'; // Bloquea gestos de carrusel
-        this.overlayContainer.innerHTML = '';
-        this.overlayContainer.className = 'discord-sketch-match-view';
+        this.currentPage = 'discord_panel';
+        
+        const discordPanel = this.panels.discord;
+        if (!discordPanel.innerHTML) {
+            discordPanel.className = 'panel-cache-node discord-sketch-match-view';
+            discordPanel.innerHTML = `
+                <div class="discord-sketch-header">
+                    <div id="discord-status-pill" class="discord-status-pill disconnected">DESCONECTADO</div>
+                </div>
+                <div class="discord-sketch-content">
+                    <div class="discord-card-mixer" id="discord-mixer-container"></div>
+                    <div class="discord-card-tactical">
+                        <div id="tactical-mute-btn" class="discord-tactical-btn"><span class="t-icon">🎙️</span><span class="t-label">MICRO</span></div>
+                        <div id="tactical-deaf-btn" class="discord-tactical-btn"><span class="t-icon">🎧</span><span class="t-label">SORDO</span></div>
+                    </div>
+                </div>
+            `;
 
-        // 1. HEADER (Status + Close)
-        const header = document.createElement('div');
-        header.className = 'discord-sketch-header';
+            const backBtn = document.createElement('button');
+            backBtn.className = 'panel-back-btn-sketch-circle';
+            backBtn.innerHTML = '<span>←</span>';
+            backBtn.addEventListener('pointerup', (e) => {
+                e.preventDefault();
+                e.stopImmediatePropagation();
 
-        const statusPill = document.createElement('div');
-        statusPill.id = 'discord-status-pill';
-        const isConnected = ['connected', 'fallback'].includes(this.discordConnectionStatus);
-        statusPill.className = `discord-status-pill ${isConnected ? 'connected' : 'disconnected'}`;
-        statusPill.textContent = isConnected ? 'CONECTADO' : 'DESCONECTADO';
+                const shield = document.createElement('div');
+                shield.className = 'pointer-shield';
+                document.body.appendChild(shield);
+                setTimeout(() => shield.remove(), 400);
 
-        // Botón Volver Premium (Cuerpo del Documento para evitar caché/interferencias)
-        const oldBtn = document.getElementById('panel-back-button');
-        if (oldBtn) oldBtn.remove();
+                this.hidePanels();
+                this.renderCarouselSlide(this.carouselIndex, 0);
+            });
+            discordPanel.appendChild(backBtn);
 
-        const backBtn = document.createElement('button');
-        backBtn.id = 'panel-back-button';
-        backBtn.className = 'panel-back-btn-sketch-circle';
-        backBtn.innerHTML = '<span>←</span>';
-        backBtn.addEventListener('pointerup', (e) => {
-            e.preventDefault();
-            e.stopImmediatePropagation();
-            if (backBtn.parentNode) backBtn.remove();
-            
-            // ESCUDO ANTI-PENETRACIÓN TOTAL (Huawei Tablet Fix)
-            const shield = document.createElement('div');
-            shield.className = 'pointer-shield';
-            document.body.appendChild(shield);
-            setTimeout(() => shield.remove(), 500);
+            discordPanel.querySelector('#tactical-mute-btn').addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                this.toggleDiscordMute();
+            });
+            discordPanel.querySelector('#tactical-deaf-btn').addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                this.toggleDiscordDeaf();
+            });
+        }
 
-            // Feedback visual + Delay para que el evento no traspase
-            setTimeout(() => {
-                this.overlay.classList.add('hidden');
-                this.renderCarouselSlide(this.carouselIndex, 0); // Restaurar carrusel, dots y botón editar
-            }, 100);
-        });
-        document.body.appendChild(backBtn);
-
-        header.appendChild(statusPill);
-        // header.appendChild(backBtn); // Ya no se añade al header, sino al overlayContainer directamente
-
-        // 2. CONTENT (Split View)
-        const contentGrid = document.createElement('div');
-        contentGrid.className = 'discord-sketch-content';
-
-        // 2a. Mezclador (Izquierda)
-        const mixerPanel = document.createElement('div');
-        mixerPanel.className = 'discord-card-mixer';
-        mixerPanel.id = 'discord-mixer-container';
-
-        // 2b. Controles Globales (Derecha)
-        const controlsPanel = document.createElement('div');
-        controlsPanel.className = 'discord-card-tactical';
-
-        const muteBtn = document.createElement('div');
-        muteBtn.id = 'tactical-mute-btn';
-        muteBtn.className = 'discord-tactical-btn';
-        muteBtn.addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            this.toggleDiscordMute();
-        });
-        muteBtn.innerHTML = `<span class="t-icon">🎙️</span><span class="t-label">MICRO</span>`;
-
-        const deafBtn = document.createElement('div');
-        deafBtn.id = 'tactical-deaf-btn';
-        deafBtn.className = 'discord-tactical-btn';
-        deafBtn.addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            this.toggleDiscordDeaf();
-        });
-        deafBtn.innerHTML = `<span class="t-icon">🎧</span><span class="t-label">SORDO</span>`;
-
-        controlsPanel.appendChild(muteBtn);
-        controlsPanel.appendChild(deafBtn);
-
-        contentGrid.appendChild(mixerPanel);
-        contentGrid.appendChild(controlsPanel);
-
-        this.overlayContainer.appendChild(header);
-        this.overlayContainer.appendChild(contentGrid);
-
-        this.overlay.classList.remove('hidden');
-
-        // Pedir estado actualizado de Discord
-        this.socket.emit('discord_initial_state');
-
+        // Renderizar antes de mostrar para evitar flicker
         this.updateDiscordButtons();
         this.renderDiscordMixer();
+        
+        this.showPanel('discord');
+        this.socket.emit('discord_initial_state');
     }
 
     toggleDiscordMute() {
@@ -1243,8 +1685,8 @@ class StreamDeckClient {
                 row.innerHTML = `
                     <div class="user-avatar-circle${isSpeaking}">${avatarHTML}</div>
                     <div class="slider-container discord-slider-tall">
-                        <div class="slider-fill discord-fill-warm" style="transform: scaleY(${fillHeight / 100})"></div>
-                        <div class="fader-thumb-mixer" style="bottom: ${fillHeight}%"></div>
+                        <div class="slider-fill discord-fill-warm" style="transform: scale3d(1, ${fillHeight / 100}, 1); transform-origin: bottom;"></div>
+                        <div class="fader-thumb-mixer" style="bottom: 0"></div>
                     </div>
                     <div class="discord-username-tag">${user.username}</div>
                 `;
@@ -1253,38 +1695,53 @@ class StreamDeckClient {
                 const fill = row.querySelector('.slider-fill');
                 const thumb = row.querySelector('.fader-thumb-mixer');
 
+                requestAnimationFrame(() => {
+                    const rect = track.getBoundingClientRect();
+                    if (rect.height > 0) {
+                        this.setThumbTransform(thumb, fillHeight, rect.height);
+                    }
+                });
+
                 let trackRect = null;
+                let trackH = 0;
+                let isRAFActive = false;
+
                 const updateDiscordVol = (e) => {
-                    if (!trackRect) trackRect = track.getBoundingClientRect();
+                    if (!trackRect) {
+                        trackRect = track.getBoundingClientRect();
+                        trackH = trackRect.height;
+                    }
                     const y = e.clientY - trackRect.top;
-                    let percentRaw = 100 - (y / trackRect.height) * 100;
+                    let percentRaw = 100 - (y / trackH) * 100;
                     percentRaw = Math.max(0, Math.min(100, Math.round(percentRaw)));
 
-                    // 1. Visual (SIN LATENCIA)
-                    fill.style.transform = `scaleY(${percentRaw / 100})`;
-                    thumb.style.bottom = `${percentRaw}%`;
+                    if (percentRaw === this[`last_discord_${id}`]) return;
+                    this[`last_discord_${id}`] = percentRaw;
+
+                    // 1. Visual (Optimized RAF)
+                    if (!isRAFActive) {
+                        isRAFActive = true;
+                        requestAnimationFrame(() => {
+                            const p = this[`last_discord_${id}`];
+                            fill.style.transform = `scale3d(1, ${p / 100}, 1)`;
+                            this.setThumbTransform(thumb, p, trackH);
+                            isRAFActive = false;
+                        });
+                    }
 
                     // 2. Logic (Discord is 0-200)
                     const discordVol = Math.round(percentRaw * 2);
-                    if (discordVol === this[`last_d_${id}`]) return;
-                    this[`last_d_${id}`] = discordVol;
-
-                    // 3. Network (Throttled 350ms)
-                    const queueKey = `discord_${id}`;
-                    this.pendingVolUpdates[queueKey] = discordVol;
-
-                    this.scheduleThrottledEmit(queueKey, () => {
-                        const valToEmit = Math.round(this.pendingVolUpdates[queueKey]);
-                        this.socket.emit('discord_set_user_volume', { userId: id, volume: valToEmit });
-                    }, 350);
+                    this.updateVolumeServer(`discord_${id}`, discordVol, false);
                 };
 
-                thumb.addEventListener('pointerdown', (e) => {
+                track.addEventListener('pointerdown', (e) => {
                     e.preventDefault();
-                    row.classList.add('dragging'); // Inicia modo Zero Lag
+                    row.classList.add('dragging');
+                    this.activeSliders.add('discord_' + id);
                     trackRect = track.getBoundingClientRect();
+                    trackH = trackRect.height;
                     thumb.setPointerCapture(e.pointerId);
-                    this.markDiscordSliderActive(id);
+                    document.body.classList.add('dragging-active');
                     updateDiscordVol(e);
 
                     const moveH = (m) => updateDiscordVol(m);
@@ -1293,9 +1750,11 @@ class StreamDeckClient {
                         if (thumb.hasPointerCapture && thumb.hasPointerCapture(u.pointerId)) {
                             thumb.releasePointerCapture(u.pointerId);
                         }
+                        document.body.classList.remove('dragging-active');
                         thumb.removeEventListener('pointermove', moveH);
                         thumb.removeEventListener('pointerup', stopH);
                         this.unmarkDiscordSliderActive(id);
+
                         trackRect = null;
                     };
                     thumb.addEventListener('pointermove', moveH);
@@ -1304,19 +1763,24 @@ class StreamDeckClient {
 
                 mixerContainer.appendChild(row);
             } else {
-                // Actualización externa si no se está tocando
-                const avatarCircle = row.querySelector('.user-avatar-circle');
-                if (avatarCircle) {
-                    avatarCircle.classList.toggle('speaking', !!user.speaking);
-                }
-
                 if (!this.activeSliders.has('discord_' + id)) {
                     const fill = row.querySelector('.slider-fill');
                     const thumb = row.querySelector('.fader-thumb-mixer');
                     const h = (user.volume / 200) * 100;
-                    fill.style.transform = `scaleY(${h / 100})`;
-                    thumb.style.bottom = `${h}%`;
+                    this.queueUpdate(`discord_${id}_vol`, () => {
+                        const track = row.querySelector('.slider-container');
+                        const trackHeight = track.getBoundingClientRect().height;
+                        fill.style.transform = `scale3d(1, ${h / 100}, 1)`;
+                        this.setThumbTransform(thumb, h, trackHeight);
+                    });
                 }
+                
+                this.queueUpdate(`discord_${id}_speaking`, () => {
+                    const avatarCircle = row.querySelector('.user-avatar-circle');
+                    if (avatarCircle) {
+                        avatarCircle.classList.toggle('speaking', !!user.speaking);
+                    }
+                });
             }
         });
     }
@@ -1332,7 +1796,11 @@ class StreamDeckClient {
     }
 
     updateDiscordVolumeServer(userId, value) {
-        if (this.discordConnectionStatus !== 'connected') return;
+        // El volumen requiere conexión avanzada (OAuth)
+        if (this.discordConnectionStatus !== 'connected') {
+            console.warn('Volumen individual requiere conexión avanzada de Discord');
+            return;
+        }
         const fill = document.getElementById(`discord-slider-fill-${userId}`);
         this.setSliderFillScale(fill, value / 200);
 
@@ -1369,28 +1837,34 @@ class StreamDeckClient {
 
         this.container.innerHTML = '';
         this.container.className = 'grid-container';
-        if (slideClass) this.container.classList.add(slideClass);
+        const useSlideAnimation = !this.initialLoad && Boolean(slideClass);
+        if (useSlideAnimation) this.container.classList.add(slideClass);
 
         const pageData = this.getPageData(pageId);
+        const fragment = document.createDocumentFragment();
 
         pageData.forEach((btnData, i) => {
-            this.container.appendChild(this.createButton(btnData, i));
+            fragment.appendChild(this.createButton(btnData, i));
         });
+        this.container.appendChild(fragment);
 
         // Forzar reflow para que la animación funcione
-        if (slideClass) {
+        if (useSlideAnimation) {
             void this.container.offsetWidth;
             this.container.classList.remove(slideClass);
             this.container.classList.add('slide-active');
         }
 
-        this.renderCarouselDots();
-
+        this.renderCarouselNavigationButtons();
         this._setEditButtonVisibility(true);
 
         // Si estamos en modo edición, reactivar drag en los nuevos botones
         if (this.editMode) {
             this._applyEditModeToButtons();
+        }
+
+        if (this.initialLoad) {
+            this.initialLoad = false;
         }
     }
 
@@ -1410,6 +1884,7 @@ class StreamDeckClient {
 
         dots.style.display = 'flex';
         dots.innerHTML = '';
+        const fragment = document.createDocumentFragment();
         this.carouselPages.forEach((_, i) => {
             const dot = document.createElement('div');
             dot.className = 'carousel-dot' + (i === this.carouselIndex ? ' active' : '');
@@ -1421,61 +1896,56 @@ class StreamDeckClient {
             };
             dot.addEventListener('pointerup', navigateTo);
             dot.addEventListener('click', navigateTo);
-            dots.appendChild(dot);
+            fragment.appendChild(dot);
         });
+        dots.appendChild(fragment);
     }
 
-    /** Detecta swipe de 1 o 2 dedos para navegar entre slides */
-    setupCarouselSwipe() {
-        let t0 = null; // Punto inicial del toque
+    renderCarouselNavigationButtons() {
+        let nav = document.getElementById('carousel-nav-buttons');
+        if (!nav) {
+            nav = document.createElement('div');
+            nav.id = 'carousel-nav-buttons';
+            document.body.appendChild(nav);
+        }
 
-        this.container.addEventListener('touchstart', (e) => {
-            // Ahora permitimos el swipe con un solo dedo (o más)
-            if (e.touches.length >= 1) {
-                t0 = { 
-                    x: e.touches[0].clientX, 
-                    y: e.touches[0].clientY 
-                };
+        if (!this.carouselPages || this.carouselPages.length <= 1) {
+            nav.style.display = 'none';
+            return;
+        }
+
+        nav.style.display = 'flex';
+        nav.innerHTML = '';
+
+        const createNavButton = (label, disabled, handler) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'carousel-nav-btn';
+            btn.textContent = label;
+            btn.disabled = disabled;
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (disabled || this.editMode) return;
+                handler();
+            });
+            return btn;
+        };
+
+        const prevBtn = createNavButton('← Anterior', this.carouselIndex <= 0, () => {
+            if (this.carouselIndex > 0) {
+                this.renderCarouselSlide(this.carouselIndex - 1, -1);
             }
-        }, { passive: true });
+        });
 
-        this.container.addEventListener('touchend', (e) => {
-            // --- VALIDACIONES DE SEGURIDAD ---
-            if (!t0 || this.editMode) return;
-
-            // 1. Bloquear si el overlay está abierto (Discord táctico, etc)
-            if (this.overlay && !this.overlay.classList.contains('hidden')) return;
-
-            // 2. Bloquear si estamos en una página que no es del carrusel (Domótica, Mixer, Subcarpetas)
-            if (!this.carouselPages || !this.carouselPages.includes(this.currentPage)) return;
-
-            // 3. Bloquear si hay algún slider activo (previniendo saltos mientras se ajusta el volumen)
-            if (this.activeSliders && this.activeSliders.size > 0) return;
-
-            // 4. Bloqueo extra por clase de contenedor (Doble seguridad para Mixer/Domótica)
-            if (this.container.classList.contains('mixer-fullscreen-view') || 
-                this.container.classList.contains('domotica-sketch-match-view')) return;
-            
-            const changed = e.changedTouches;
-            if (changed.length < 1) return;
-
-            const dx = changed[0].clientX - t0.x;
-            const dy = changed[0].clientY - t0.y;
-
-            // Threshold: movimiento horizontal > 70px y vertical < 80px para evitar swipes diagonales accidentales
-            if (Math.abs(dx) > 70 && Math.abs(dy) < 80) {
-                if (dx < 0 && this.carouselIndex < this.carouselPages.length - 1) {
-                    // Swipe hacia la izquierda (dedo se mueve a la izquierda) -> Siguiente página
-                    if (navigator.vibrate) navigator.vibrate(30);
-                    this.renderCarouselSlide(this.carouselIndex + 1, 1);
-                } else if (dx > 0 && this.carouselIndex > 0) {
-                    // Swipe hacia la derecha (dedo se mueve a la derecha) -> Página anterior
-                    if (navigator.vibrate) navigator.vibrate(30);
-                    this.renderCarouselSlide(this.carouselIndex - 1, -1);
-                }
+        const nextBtn = createNavButton('Siguiente →', this.carouselIndex >= this.carouselPages.length - 1, () => {
+            if (this.carouselIndex < this.carouselPages.length - 1) {
+                this.renderCarouselSlide(this.carouselIndex + 1, 1);
             }
-            t0 = null;
-        }, { passive: true });
+        });
+
+        nav.appendChild(prevBtn);
+        nav.appendChild(nextBtn);
     }
 
     // ================================================================
@@ -1509,12 +1979,7 @@ class StreamDeckClient {
 
         const dots = document.getElementById('carousel-dots');
         if (dots) {
-            // Solo mostramos los dots si hay más de una página
-            if (visible && this.carouselPages.length > 1) {
-                dots.style.display = 'flex';
-            } else {
-                dots.style.display = 'none';
-            }
+            dots.style.display = 'none';
         }
     }
 
@@ -1596,6 +2061,8 @@ class StreamDeckClient {
             originPageId
         };
 
+        let lastTargetBtn = null;
+
         const onMove = (me) => {
             // Mover el ghost
             ghost.style.left = (me.clientX - rect.width / 2) + 'px';
@@ -1625,12 +2092,17 @@ class StreamDeckClient {
             ghost.style.pointerEvents = '';
 
             const targetBtn = el ? el.closest('.boton') : null;
-            const allBtns = [...this.container.querySelectorAll('.boton')];
-            allBtns.forEach(b => b.classList.remove('drag-over'));
-
-            if (targetBtn) {
-                targetBtn.classList.add('drag-over');
-                this._dragState.lastOverIndex = parseInt(targetBtn.dataset.editIndex);
+            if (targetBtn !== lastTargetBtn) {
+                if (lastTargetBtn) {
+                    lastTargetBtn.classList.remove('drag-over');
+                }
+                if (targetBtn) {
+                    targetBtn.classList.add('drag-over');
+                    this._dragState.lastOverIndex = parseInt(targetBtn.dataset.editIndex);
+                } else {
+                    this._dragState.lastOverIndex = sourceIndex;
+                }
+                lastTargetBtn = targetBtn;
             }
         };
 
@@ -1707,9 +2179,12 @@ class StreamDeckClient {
     async _saveConfig() {
         try {
             const payload = { carouselPages: this.carouselPages, pages: this.pages };
-            const res = await fetch('/api/config', {
+            const res = await fetch(`/api/config`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': this.securityToken
+                },
                 body: JSON.stringify(payload)
             });
             if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -1717,11 +2192,26 @@ class StreamDeckClient {
             console.warn('No se pudo guardar config:', err);
         }
     }
+
+    // Helper: posiciona el thumb usando SOLO transform (compositor-only, sin layout reflow)
+    // Formula: translate3d(-50%, offset - (p/100)*H, 0)
+    setThumbTransform(thumbEl, p, h) {
+        if (!thumbEl) return;
+        // Si el thumb es el de Domótica (110px), el offset es 55px.
+        // Si es el de Mixer/Discord (64px), el offset es 32px.
+        const isDomo = thumbEl.classList.contains('fader-thumb-pro');
+        const offset = isDomo ? 55 : 32;
+        const ty = offset - (p / 100) * h;
+        thumbEl.style.transform = `translate3d(-50%, ${ty}px, 0)`;
+    }
 }
 
 const btnFullscreen = document.createElement('div');
-btnFullscreen.innerHTML = '🔲';
+btnFullscreen.innerHTML = `<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+</svg>`;
 btnFullscreen.className = 'btn-fullscreen';
+btnFullscreen.title = 'Pantalla Completa';
 document.body.appendChild(btnFullscreen);
 
 btnFullscreen.addEventListener('click', () => {
@@ -1730,7 +2220,15 @@ btnFullscreen.addEventListener('click', () => {
         if (elem.requestFullscreen) elem.requestFullscreen();
         else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
         else if (elem.msRequestFullscreen) elem.msRequestFullscreen();
+    }
+});
+
+// Mostrar/Ocultar botón según el estado de pantalla completa
+document.addEventListener('fullscreenchange', () => {
+    if (document.fullscreenElement) {
         btnFullscreen.classList.add('btn-fullscreen--hidden');
+    } else {
+        btnFullscreen.classList.remove('btn-fullscreen--hidden');
     }
 });
 

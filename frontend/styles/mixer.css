@@ -17,17 +17,45 @@
 
 .btn-fullscreen {
     position: fixed;
-    top: 10px;
-    right: 10px;
-    font-size: 24px;
-    opacity: 0.3;
-    z-index: 9999;
+    top: 20px;
+    right: 20px;
+    width: 50px;
+    height: 50px;
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 20px;
+    z-index: 10000;
     cursor: pointer;
+    transition: all 0.3s var(--ease-smooth);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+}
+
+.btn-fullscreen svg {
+    display: block;
+    transition: transform 0.3s ease;
+}
+
+.btn-fullscreen:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.8);
+    transform: scale(1.1);
+}
+
+.btn-fullscreen:active {
+    transform: scale(0.9);
 }
 
 .btn-fullscreen--hidden {
     opacity: 0 !important;
     pointer-events: none;
+    transform: scale(0.5) !important;
 }
 
 .pointer-shield {
@@ -57,18 +85,25 @@
     gap: clamp(20px, 4vw, 40px); 
     position: relative;
     box-shadow: 0 40px 100px rgba(0,0,0,0.6);
-    overflow-x: auto;
-    overflow-y: auto;
+    overflow: hidden;
     transform: translateZ(0);
     box-sizing: border-box;
+    will-change: transform, backdrop-filter;
 }
+
+body.dragging-active .mixer-panel {
+    backdrop-filter: none !important;
+    background: rgba(13, 20, 31, 0.95);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+
 
 .mixer-panel-with-back {
     padding-top: 68px;
 }
 
 .master-row {
-    flex-shrink: 0;
+    flex-shrink: 1;
     padding: 0;
     margin: 0;
 }
@@ -77,9 +112,8 @@
     display: flex;
     gap: 30px;
     align-items: flex-end;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding-bottom: 10px;
+    overflow: hidden;
+    padding-bottom: 0;
     scrollbar-width: none;
     margin: 0;
 }
@@ -106,25 +140,41 @@
     padding: 0;
     margin: 0;
     overflow: hidden;
-    background: #000;
+    background: radial-gradient(circle at center, #1e293b 0%, #06090e 100%);
+    touch-action: none !important;
 }
 
 .mixer-panel-fullscreen {
-    background: #000 !important;
-    backdrop-filter: none !important;
-    box-shadow: none !important;
-    border: none !important;
-    border-radius: 0 !important;
-    width: 100% !important;
-    max-width: none !important;
-    height: 100% !important;
-    max-height: none !important;
-    padding: clamp(20px, 3.4vw, 34px) clamp(12px, 2.2vw, 24px) clamp(8px, 1.4vw, 14px) clamp(12px, 2.2vw, 24px) !important;
+    touch-action: none !important;
+    background: var(--glass-panel-strong) !important;
+    backdrop-filter: blur(var(--blur-strong)) !important;
+    -webkit-backdrop-filter: blur(var(--blur-strong)) !important;
+    box-shadow: 0 40px 100px rgba(0,0,0,0.6) !important;
+    border: 1px solid var(--glass-border) !important;
+    border-radius: var(--radius-xl) !important;
+    width: auto !important;
+    min-width: clamp(300px, 50vw, 500px) !important;
+    max-width: 95vw !important;
+    height: auto !important;
+    max-height: 90vh !important;
+    padding: clamp(20px, 4vw, 40px) !important;
     box-sizing: border-box !important;
     overflow: hidden !important;
     display: flex !important;
     flex-direction: row !important;
-    align-items: flex-end !important;
+    align-items: center !important;
+    justify-content: center !important;
+    
+    /* Centrado Absoluto Premium (más estable que margin:auto en fit-content) */
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    scrollbar-width: none;
+}
+
+.mixer-panel-fullscreen::-webkit-scrollbar {
+    display: none;
 }
 
 /* --- FILAS (CANALES) --- */
@@ -137,7 +187,8 @@
     position: relative;
     user-select: none;
     padding: 0;
-    will-change: auto;
+    will-change: transform;
+    contain: paint; /* Mejora rendimiento al aislar repintados */
 }
 
 .mixer-row.fade-out {
@@ -228,11 +279,12 @@
 .slider-container {
     width: 60px !important;
     height: clamp(160px, 40dvh, 300px) !important;
-    background: #111 !important;
-    border-radius: 30px !important;
+    background: rgba(0, 0, 0, 0.6) !important;
+    border-radius: 40px !important;
     position: relative !important;
     cursor: pointer !important;
-    border: 1px solid #333 !important;
+    border: 1px solid rgba(255, 255, 255, 0.06) !important;
+    box-shadow: inset 0 4px 12px rgba(0, 0, 0, 0.6) !important;
     touch-action: none !important;
     user-select: none;
     overflow: visible !important;
@@ -241,6 +293,12 @@
     transform: translate3d(0, 0, 0);
     -webkit-transform: translate3d(0, 0, 0);
 }
+
+.mixer-row.dragging .slider-container {
+    box-shadow: none !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
 
 .slider-fill {
     position: absolute !important;
@@ -261,20 +319,37 @@
 .fader-thumb-mixer {
     position: absolute !important;
     left: 50% !important;
-    bottom: 0;
-    transform: translate(-50%, 50%);
-    width: 60px !important;
-    height: 60px !important;
-    background: #fff !important;
-    border: 3px solid #3498db !important;
+    bottom: 0;           /* ← Sin !important: permite que el inline style de JS funcione */
+    top: auto !important;
+    width: 64px !important;
+    height: 64px !important;
+    background: radial-gradient(circle at 35% 35%, #ffffff 0%, #f0f0f0 40%, #d0d0d0 100%) !important;
+    border: 2px solid rgba(255, 255, 255, 0.8) !important;
     border-radius: 50% !important;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
-    transition: none !important;
+    box-shadow: 
+        0 10px 20px rgba(0, 0, 0, 0.4),
+        inset 0 -4px 8px rgba(0, 0, 0, 0.2),
+        inset 0 4px 8px rgba(255, 255, 255, 0.6) !important;
+    /* Solo transición en transform: compositor-only, sin layout reflow */
+    transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1) !important;
     will-change: transform !important;
     z-index: 10;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
+    /* Posición base: center horizontal, center en el borde inferior del container */
+    transform: translate3d(-50%, 50%, 0);
 }
+
+.mixer-row.dragging .fader-thumb-mixer,
+body.dragging-active .fader-thumb-mixer {
+    transition: none !important;
+    background: radial-gradient(circle at 35% 35%, #ffffff 0%, #3498db 100%) !important;
+    box-shadow: 0 0 20px rgba(52, 152, 219, 0.5) !important;
+}
+
+body.dragging-active .fader-thumb-mixer {
+    box-shadow: none !important;
+    border-color: #fff !important;
+}
+
 
 .mixer-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
@@ -349,5 +424,3 @@
         margin-top: 15px;
     }
 }
-
-

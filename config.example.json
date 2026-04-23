@@ -74,6 +74,14 @@
                 "type": "action",
                 "channel": "captura",
                 "action": "1"
+            },
+            {
+                "label": "G. Calendar",
+                "icon": "📅",
+                "color": "linear-gradient(145deg, #4285f4, #0f9d58)",
+                "type": "action",
+                "action": "abrir_calendario",
+                "payload": {}
             }
         ],
         "multimedia": [

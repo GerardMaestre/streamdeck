@@ -43,7 +43,7 @@ const hacerCaptura = async (pantallaID) => {
 
         // Verificar si el monitor solicitado existe
         if (monIndex >= monitores.length) {
-            console.warn(`⚠️ Monitor ${monIndex + 1} no disponible (total: ${monitores.length}). Usando monitor principal.`);
+            console.warn(`[Capture] Monitor ${monIndex + 1} no disponible (total: ${monitores.length}). Usando monitor principal.`);
             monIndex = 0;
         }
 
@@ -57,7 +57,7 @@ const hacerCaptura = async (pantallaID) => {
             filename: nombreArchivo 
         });
 
-        console.log(`📸 Captura guardada con éxito en: ${nombreArchivo}`);
+        console.log(`[Capture] Captura guardada con exito en: ${nombreArchivo}`);
 
         // COPIAR AL PORTAPAPELES (Solo Windows)
         if (os.platform() === 'win32') {
@@ -67,21 +67,21 @@ const hacerCaptura = async (pantallaID) => {
                 // MÉTODO 1: Usar API nativa de Electron (Recomendado)
                 const img = electron.nativeImage.createFromPath(rutaAbsoluta);
                 electron.clipboard.writeImage(img);
-                console.log('📋 Portapapeles: Imagen copiada correctamente vía Electron.');
+                console.log('[Capture] Portapapeles: Imagen copiada correctamente via Electron.');
             } else {
                 // MÉTODO 2: Fallback a PowerShell si Electron no está disponible
                 const escapedPath = rutaAbsoluta.replace(/'/g, "''");
                 const comandoPS = `powershell -command "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; [System.Windows.Forms.Clipboard]::SetImage([System.Drawing.Image]::FromFile('${escapedPath}'))"`;
                 
                 await runExecCommand(comandoPS);
-                console.log('📋 Portapapeles: Imagen copiada correctamente vía PowerShell.');
+                console.log('[Capture] Portapapeles: Imagen copiada correctamente via PowerShell.');
             }
         }
 
         return { ok: true, path: nombreArchivo };
 
     } catch (error) {
-        console.error('❌ Error en el controlador de captura:', getErrorMessage(error));
+        console.error('[Capture] Error en el controlador de captura:', getErrorMessage(error));
         throw error;
     }
 };
