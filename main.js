@@ -117,6 +117,8 @@ app.whenReady().then(() => {
     // --- LÓGICA DE PROMPT EN PC ---
     let promptWindow = null;
     let promptResolve = null;
+    const terminalWindows = new Map();
+    let nextTerminalId = 1;
 
     global.showPCPrompt = (title) => {
         return new Promise((resolve) => {
@@ -144,6 +146,9 @@ app.whenReady().then(() => {
 
             promptWindow.once('ready-to-show', () => {
                 promptWindow.show();
+            });
+
+            promptWindow.webContents.once('did-finish-load', () => {
                 promptWindow.webContents.send('setup-prompt', { title });
             });
 
@@ -156,6 +161,68 @@ app.whenReady().then(() => {
             });
         });
     };
+
+    global.showTerminal = (title) => {
+        const terminalId = `terminal-${nextTerminalId++}`;
+
+        const terminalWindow = new BrowserWindow({
+            width: 920,
+            height: 700,
+            frame: false,
+            transparent: true,
+            alwaysOnTop: true,
+            skipTaskbar: false,
+            center: true,
+            resizable: true,
+            movable: true,
+            webPreferences: {
+                preload: path.join(__dirname, 'frontend', 'preload_terminal.js'),
+                nodeIntegration: false,
+                contextIsolation: true
+            }
+        });
+
+        const terminalState = {
+            window: terminalWindow,
+            ready: false,
+            queue: []
+        };
+
+        terminalWindows.set(terminalId, terminalState);
+
+        terminalWindow.loadFile(path.join(__dirname, 'frontend', 'terminal.html'));
+
+        terminalWindow.once('ready-to-show', () => {
+            terminalState.ready = true;
+            terminalWindow.show();
+            terminalWindow.webContents.send('terminal-setup', { id: terminalId, title });
+            terminalState.queue.forEach((text) => terminalWindow.webContents.send('terminal-log', text));
+            terminalState.queue = [];
+        });
+
+        terminalWindow.on('closed', () => {
+            terminalWindows.delete(terminalId);
+        });
+
+        return terminalId;
+    };
+
+    global.appendTerminalLog = (terminalId, text) => {
+        if (!terminalId) return;
+        const terminalState = terminalWindows.get(terminalId);
+        if (!terminalState) return;
+
+        if (terminalState.ready) {
+            terminalState.window.webContents.send('terminal-log', text);
+        } else {
+            terminalState.queue.push(text);
+        }
+    };
+
+    ipcMain.on('terminal-close', (event, terminalId) => {
+        const terminalState = terminalWindows.get(terminalId);
+        if (terminalState) terminalState.window.close();
+    });
 
     ipcMain.on('prompt-submit', (event, value) => {
         if (promptResolve) {

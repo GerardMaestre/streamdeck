@@ -191,6 +191,18 @@
                 }
             },
             {
+                "label": "Game Priority",
+                "icon": "🎮",
+                "color": "linear-gradient(145deg, #8e44ad, #9b59b6)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "02_Gaming",
+                    "archivo": "Game_Priority.bat",
+                    "requiresParams": true
+                }
+            },
+            {
                 "label": "Ping Optimizer",
                 "icon": "🌐",
                 "color": "linear-gradient(145deg, #8e44ad, #9b59b6)",
@@ -198,8 +210,7 @@
                 "action": "ejecutar_script_dinamico",
                 "payload": {
                     "carpeta": "02_Gaming",
-                    "archivo": "Ping_Optimizer.py",
-                    "requiresParams": true
+                    "archivo": "Ping_Optimizer.py"
                 }
             }
         ],
@@ -282,8 +293,7 @@
                 "action": "ejecutar_script_dinamico",
                 "payload": {
                     "carpeta": "04_Archivos",
-                    "archivo": "Organizador.py",
-                    "requiresParams": true
+                    "archivo": "Organizador.py"
                 }
             }
         ],

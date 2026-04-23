@@ -34,27 +34,25 @@ const quoteForCmd = (value) => {
 const buildExecutionCommand = (absolutePath, args) => {
     const extension = path.extname(absolutePath).toLowerCase();
     const parsedArgs = Array.isArray(args) ? args : parseShellArgs(args);
-    const quotedPath = quoteForCmd(absolutePath);
-    const quotedArgs = parsedArgs.map(quoteForCmd);
 
     if (extension === '.py') {
         return {
-            bin: 'cmd.exe',
-            args: ['/c', 'start', '""', 'python', quotedPath, ...quotedArgs]
+            bin: 'python',
+            args: [absolutePath, ...parsedArgs]
         };
     }
 
     if (extension === '.bat' || extension === '.cmd') {
         return {
             bin: 'cmd.exe',
-            args: ['/c', 'start', '""', quotedPath, ...quotedArgs]
+            args: ['/c', absolutePath, ...parsedArgs]
         };
     }
 
     if (extension === '.exe') {
         return {
-            bin: 'cmd.exe',
-            args: ['/c', 'start', '""', quotedPath, ...quotedArgs]
+            bin: absolutePath,
+            args: parsedArgs
         };
     }
 
@@ -126,25 +124,45 @@ const readScriptDescription = async (absolutePath) => {
 };
 
 const runScriptExternally = async (scriptLabel, absolutePath, args) => {
-    console.log(`[Script] Ejecutando externamente [${scriptLabel}] con args: ${args || 'ninguno'}`);
+    let terminalId = null;
+    if (global.showTerminal) {
+        terminalId = global.showTerminal(path.basename(absolutePath));
+    }
 
     try {
         const command = buildExecutionCommand(absolutePath, args);
-        console.log(`Ejecutando: ${command.bin} ${command.args.join(' ')}`);
+        if (global.appendTerminalLog) {
+            global.appendTerminalLog(terminalId, `$ Ejecutando: ${command.bin} ${command.args.join(' ')}\n\n`);
+        }
 
         const child = spawn(command.bin, command.args, {
-            detached: true,
-            windowsHide: false,
-            stdio: 'ignore'
+            detached: false,
+            windowsHide: true,
+            shell: false,
+            stdio: ['ignore', 'pipe', 'pipe']
+        });
+
+        child.stdout.on('data', (data) => {
+            if (global.appendTerminalLog) global.appendTerminalLog(terminalId, data.toString());
+        });
+
+        child.stderr.on('data', (data) => {
+            if (global.appendTerminalLog) global.appendTerminalLog(terminalId, `[ERROR] ${data.toString()}`);
+        });
+
+        child.on('close', (code) => {
+            if (global.appendTerminalLog) {
+                const estado = code === 0 ? 'Exito' : 'Error';
+                global.appendTerminalLog(terminalId, `\n--- [Proceso terminado con código ${code} (${estado})] ---\n`);
+            }
         });
 
         child.on('error', (error) => {
+            if (global.appendTerminalLog) global.appendTerminalLog(terminalId, `\n[FALLO FATAL]: ${error.message}\n`);
             logControllerError(`script:${scriptLabel}`, error);
         });
-
-        child.unref();
-        console.log(`[Script] ${scriptLabel} lanzado correctamente`);
     } catch (error) {
+        if (global.appendTerminalLog) global.appendTerminalLog(`\n[ERROR INESPERADO]: ${error.message}\n`);
         logControllerError(`script:${scriptLabel}`, error);
     }
 };

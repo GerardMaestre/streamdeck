@@ -129,47 +129,52 @@
     </div>
 
     <script>
-        const electronPrompt = window.electronPrompt;
+        window.addEventListener('DOMContentLoaded', () => {
+            const electronPrompt = window.electronPrompt;
+            const input = document.getElementById('prompt-input');
+            const btnSubmit = document.getElementById('btn-submit');
+            const btnCancel = document.getElementById('btn-cancel');
+            const titleEl = document.getElementById('title');
 
-        const input = document.getElementById('prompt-input');
-        const btnSubmit = document.getElementById('btn-submit');
-        const btnCancel = document.getElementById('btn-cancel');
-        const titleEl = document.getElementById('title');
+            const onSetupPrompt = (data) => {
+                if (data?.title) titleEl.innerText = data.title;
+                input.focus();
+            };
 
-        const onSetupPrompt = (data) => {
-            if (data?.title) titleEl.innerText = data.title;
-            input.focus();
-        };
-
-        if (electronPrompt && typeof electronPrompt.onSetupPrompt === 'function') {
-            electronPrompt.onSetupPrompt(onSetupPrompt);
-        } else {
-            console.warn('Electron prompt API no disponible');
-            input.focus();
-        }
-
-        const submit = () => {
-            if (electronPrompt && typeof electronPrompt.submit === 'function') {
-                electronPrompt.submit(input.value);
+            if (electronPrompt && typeof electronPrompt.onSetupPrompt === 'function') {
+                electronPrompt.onSetupPrompt(onSetupPrompt);
+            } else {
+                console.warn('Electron prompt API no disponible');
+                input.focus();
             }
-        };
 
-        const cancel = () => {
-            if (electronPrompt && typeof electronPrompt.cancel === 'function') {
-                electronPrompt.cancel();
-            }
-        };
+            const submit = () => {
+                if (electronPrompt && typeof electronPrompt.submit === 'function') {
+                    electronPrompt.submit(input.value);
+                } else {
+                    console.error('No se puede enviar el prompt: electronPrompt no está disponible');
+                }
+            };
 
-        btnSubmit.addEventListener('click', submit);
-        btnCancel.addEventListener('click', cancel);
+            const cancel = () => {
+                if (electronPrompt && typeof electronPrompt.cancel === 'function') {
+                    electronPrompt.cancel();
+                } else {
+                    console.error('No se puede cancelar el prompt: electronPrompt no está disponible');
+                }
+            };
 
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') submit();
-            if (e.key === 'Escape') cancel();
+            btnSubmit.addEventListener('click', submit);
+            btnCancel.addEventListener('click', cancel);
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') submit();
+                if (e.key === 'Escape') cancel();
+            });
+
+            // Auto-focus al cargar
+            setTimeout(() => input.focus(), 100);
         });
-
-        // Auto-focus al cargar
-        setTimeout(() => input.focus(), 100);
     </script>
 </body>
 </html>

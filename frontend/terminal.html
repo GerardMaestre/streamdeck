@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream Deck</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        :root {
+            --panel: rgba(7, 12, 22, 0.94);
+            --panel-strong: rgba(15, 26, 40, 0.96);
+            --border: rgba(255, 255, 255, 0.08);
+            --text: #ecf4ff;
+            --accent: #6ee2ff;
+            --accent-muted: rgba(110, 226, 255, 0.24);
+            --console: #9cefa0;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            height: 100vh;
+            width: 100vw;
+            font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: transparent;
+            color: var(--text);
+            box-sizing: border-box;
+        }
+
+        *, *::before, *::after {
+            box-sizing: inherit;
+        }
+
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: auto;
+            -webkit-app-region: no-drag;
+        }
+
+        .terminal-container {
+            width: min(98%, 920px);
+            max-width: 920px;
+            max-height: 96vh;
+            min-height: 80vh;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 28px;
+            border-top-left-radius: 28px;
+            border-top-right-radius: 28px;
+            background-clip: padding-box;
+            padding: 8px 20px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            box-shadow: none;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            animation: appear 0.35s ease-out;
+            overflow: hidden;
+        }
+
+        @keyframes appear {
+            from { opacity: 0; transform: translateY(12px) scale(0.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 8px 0 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            -webkit-app-region: drag;
+        }
+
+        .title-group {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .window-tab {
+            width: 72px;
+            height: 8px;
+            border-radius: 999px;
+            background: rgba(110, 226, 255, 0.16);
+            box-shadow: 0 0 0 1px rgba(110, 226, 255, 0.08);
+        }
+
+        .title-text {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        h2 {
+            margin: 0;
+            font-size: 1.1rem;
+            color: var(--accent);
+            letter-spacing: 0.01em;
+        }
+
+        .subtitle {
+            font-size: 0.78rem;
+            color: rgba(236, 244, 255, 0.72);
+            text-transform: uppercase;
+            letter-spacing: 0.18em;
+        }
+
+        .close-btn {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #ff6b5b, #e43e58);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            cursor: pointer;
+            transition: transform 0.2s ease, filter 0.2s ease;
+            -webkit-app-region: no-drag;
+        }
+
+        .close-btn:hover {
+            transform: scale(1.05);
+            filter: brightness(1.15);
+        }
+
+        .output-box {
+            flex: 1;
+            min-height: 340px;
+            max-height: calc(96vh - 145px);
+            background: rgba(4, 8, 18, 0.88);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            padding: 22px;
+            overflow-y: auto;
+            color: var(--console);
+            font-family: "Consolas", "Courier New", monospace;
+            font-size: 0.94rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            text-align: left;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+            -webkit-app-region: no-drag;
+        }
+
+        .output-box::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        .output-box::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 10px;
+        }
+
+        .output-box::-webkit-scrollbar-thumb {
+            background: rgba(110, 224, 255, 0.24);
+            border-radius: 10px;
+            border: 2px solid rgba(4, 8, 18, 0.85);
+        }
+    </style>
+</head>
+<body>
+    <div class="terminal-container">
+        <div class="header">
+            <div class="title-group">
+                <div class="title-text">
+                    <h2 id="title">⚡ Ejecutando Script</h2>
+                    <div class="subtitle">Salida premium</div>
+                </div>
+            </div>
+            <div class="close-btn" id="btn-close" title="Cerrar"></div>
+        </div>
+
+        <div class="output-box" id="output">Cargando entorno...</div>
+    </div>
+
+    <script>
+        const outputEl = document.getElementById('output');
+        const titleEl = document.getElementById('title');
+        let terminalId = null;
+
+        if (window.electronTerminal) {
+            window.electronTerminal.onSetup((data) => {
+                terminalId = data?.id || null;
+                if (data?.title) titleEl.innerText = '⚡ ' + data.title;
+            });
+
+            window.electronTerminal.onLog((text) => {
+                outputEl.textContent += text;
+                outputEl.scrollTop = outputEl.scrollHeight;
+            });
+
+            window.electronTerminal.onClear(() => {
+                outputEl.textContent = '';
+            });
+        }
+
+        document.getElementById('btn-close').addEventListener('click', () => {
+            if (window.electronTerminal) window.electronTerminal.close(terminalId);
+        });
+    </script>
+</body>
+</html>
