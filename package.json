@@ -21,8 +21,7 @@
     "native-sound-mixer": "^3.4.6-win",
     "open": "^8.4.2",
     "screenshot-desktop": "^1.15.3",
-    "socket.io": "^4.8.3",
-    "systeminformation": "^5.31.5"
+    "socket.io": "^4.8.3"
   },
   "devDependencies": {
     "electron": "^31.0.0",
@@ -47,11 +46,7 @@
       "icon.png"
     ],
     "asarUnpack": [
-      "**/node_modules/robotjs/**/*",
-      "**/node_modules/native-sound-mixer/**/*",
-      "**/node_modules/win-audio/**/*",
-      "**/node_modules/audio-mixer/**/*",
-      "**/node_modules/loudness/**/*"
+      "**/node_modules/native-sound-mixer/**/*"
     ],
     "win": {
       "target": [

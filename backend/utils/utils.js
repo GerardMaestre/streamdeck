@@ -160,6 +160,46 @@ const sanitizeShellArgs = (args) => {
     return args.replace(/[&|;<>`$()!]/g, '').trim();
 };
 
+const parseShellArgs = (args) => {
+    const raw = typeof args === 'string' ? args.trim() : '';
+    if (!raw) return [];
+
+    const result = [];
+    let current = '';
+    let quote = null;
+
+    for (let i = 0; i < raw.length; i++) {
+        const char = raw[i];
+
+        if (quote) {
+            if (char === quote) {
+                quote = null;
+                continue;
+            }
+            current += char;
+            continue;
+        }
+
+        if (char === '"' || char === "'") {
+            quote = char;
+            continue;
+        }
+
+        if (/\s/.test(char)) {
+            if (current) {
+                result.push(current);
+                current = '';
+            }
+            continue;
+        }
+
+        current += char;
+    }
+
+    if (current) result.push(current);
+    return result.map(arg => sanitizeShellArgs(arg)).filter(Boolean);
+};
+
 module.exports = {
     createSafeSocketHandler,
     emitErrorToFrontend,
@@ -170,5 +210,5 @@ module.exports = {
     runSpawnCommand,
     safeSocketEmit,
     getDataPath,
-    sanitizeShellArgs
+    parseShellArgs
 };

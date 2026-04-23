@@ -129,25 +129,35 @@
     </div>
 
     <script>
-        const { ipcRenderer } = require('electron');
+        const electronPrompt = window.electronPrompt;
 
         const input = document.getElementById('prompt-input');
         const btnSubmit = document.getElementById('btn-submit');
         const btnCancel = document.getElementById('btn-cancel');
         const titleEl = document.getElementById('title');
 
-        // Recibir configuración inicial
-        ipcRenderer.on('setup-prompt', (event, data) => {
-            if (data.title) titleEl.innerText = data.title;
+        const onSetupPrompt = (data) => {
+            if (data?.title) titleEl.innerText = data.title;
             input.focus();
-        });
+        };
+
+        if (electronPrompt && typeof electronPrompt.onSetupPrompt === 'function') {
+            electronPrompt.onSetupPrompt(onSetupPrompt);
+        } else {
+            console.warn('Electron prompt API no disponible');
+            input.focus();
+        }
 
         const submit = () => {
-            ipcRenderer.send('prompt-submit', input.value);
+            if (electronPrompt && typeof electronPrompt.submit === 'function') {
+                electronPrompt.submit(input.value);
+            }
         };
 
         const cancel = () => {
-            ipcRenderer.send('prompt-cancel');
+            if (electronPrompt && typeof electronPrompt.cancel === 'function') {
+                electronPrompt.cancel();
+            }
         };
 
         btnSubmit.addEventListener('click', submit);

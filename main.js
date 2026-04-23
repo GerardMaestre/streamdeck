@@ -17,8 +17,8 @@ if (!gotTheLock) {
 
 let tray = null;
 
-// Puerto en el que corre tu servidor Express/Socket.io (ajusta si es necesario)
-const PORT = 3000; 
+// Puerto por defecto (se actualizará con el real si cambia por colisión)
+let PORT = 3000; 
 
 // Función para obtener la IP local (para conectarse desde la tablet)
 function getLocalIP() {
@@ -47,6 +47,8 @@ app.whenReady().then(() => {
     try {
         console.log('[App Bandeja] Iniciando servidor Node.js...');
         require('./server.js'); 
+        // Leer el puerto real (server.js puede cambiarlo si hay colisión)
+        if (global.__streamdeck_port) PORT = global.__streamdeck_port;
     } catch (error) {
         console.error('[App Bandeja] Error al iniciar el servidor:', error);
         dialog.showErrorBox(
@@ -105,7 +107,6 @@ app.whenReady().then(() => {
             label: 'Cerrar por completo', 
             click: () => { 
                 app.quit(); 
-                process.exit(0); 
             } 
         }
     ]);
@@ -132,8 +133,10 @@ app.whenReady().then(() => {
                 center: true,
                 resizable: false,
                 webPreferences: {
-                    nodeIntegration: true,
-                    contextIsolation: false
+                    preload: path.join(__dirname, 'frontend', 'preload_prompt.js'),
+                    nodeIntegration: false,
+                    contextIsolation: true,
+                    enableRemoteModule: false
                 }
             });
 

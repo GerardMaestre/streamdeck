@@ -1,9 +1,13 @@
 const { exec } = require('child_process');
 const RPC = require('discord-rpc');
 
-const clientId = process.env.DISCORD_CLIENT_ID || '1152291774610546688';
-const clientSecret = process.env.DISCORD_CLIENT_SECRET || 'wGwfH1ZFUO395rKWn5b1DqIovAc35CO6';
+const clientId = process.env.DISCORD_CLIENT_ID || '';
+const clientSecret = process.env.DISCORD_CLIENT_SECRET || '';
 const redirectUri = process.env.DISCORD_REDIRECT_URI || 'http://localhost';
+
+if (!clientId || !clientSecret) {
+    console.warn('[Discord] DISCORD_CLIENT_ID o DISCORD_CLIENT_SECRET no definidos en .env. Control avanzado de voz deshabilitado.');
+}
 
 const LOGIN_SCOPES = ['rpc', 'rpc.voice.read', 'rpc.voice.write'];
 const DEFAULT_RECONNECT_MS = 10000;

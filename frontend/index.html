@@ -17,48 +17,6 @@
     <link rel="stylesheet" href="styles/domotica.css?v=3.0">
     <link rel="stylesheet" href="styles/mixer.css?v=3.0">
     <link rel="stylesheet" href="styles/discord.css?v=3.0">
-    <style>
-        /* INLINE CSS PARA EVITAR CACHE EN TABLETS */
-        .panel-back-btn-sketch-circle {
-            position: fixed !important;
-            top: 25px !important;
-            right: 30px !important;
-            width: 80px !important;
-            height: 80px !important;
-            flex: none !important;
-            aspect-ratio: 1 / 1 !important;
-            border-radius: 50% !important;
-            background: rgba(30, 41, 59, 0.92) !important;
-            border: 3px solid rgba(255, 255, 255, 0.3) !important;
-            color: white !important;
-            font-size: 3rem !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            cursor: pointer !important;
-            z-index: 10000 !important;
-            backdrop-filter: blur(14px) !important;
-            -webkit-backdrop-filter: blur(14px) !important;
-            transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
-            box-shadow: 0 12px 48px rgba(0,0,0,0.6) !important;
-            padding: 0 !important;
-            overflow: hidden !important;
-            -webkit-appearance: none;
-        }
-        .panel-back-btn-sketch-circle:active {
-            transform: scale(0.92) !important;
-            background: #1e293b !important;
-        }
-        .panel-back-btn-sketch-circle span {
-            line-height: 1 !important;
-            display: block !important;
-            pointer-events: none !important;
-            transform: translateY(-5px) !important; /* SUBIENDO UN POQUITO MÁS */
-            margin: 0 !important;
-            padding: 0 !important;
-            font-weight: bold !important;
-        }
-    </style>
 </head>
 <body>
     <!-- Pantalla Principal -->
@@ -83,28 +41,14 @@
             <p id="parameter-description">Introduce los argumentos para ejecutar este script.</p>
             <input type="text" id="parameter-input" class="parameter-input" placeholder="Ej: un_valor --flag" autocomplete="off" spellcheck="false" />
             <div class="parameter-actions">
-                <button id="parameter-cancel" class="parameter-btn btn-cancel">Cancelar</button>
-                <button id="parameter-submit" class="parameter-btn btn-submit">Aceptar</button>
+                <button id="parameter-cancel" type="button" class="parameter-btn btn-cancel">Cancelar</button>
+                <button id="parameter-submit" type="button" class="parameter-btn btn-submit">Aceptar</button>
             </div>
         </div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
-    <script>
-        // Interceptar todos los errores del cliente y enviarlos al servidor (si fetch funciona)
-        const oldConsoleError = console.error;
-        console.error = function(...args) {
-            oldConsoleError.apply(console, args);
-            try {
-                fetch('/debug-dom', { method: 'POST', headers: {'Content-Type':'text/plain'}, body: 'CONSOLE ERROR: ' + args.join(' ') });
-            } catch(e) {}
-        };
-        window.addEventListener('error', function(e) {
-            try {
-                fetch('/debug-dom', { method: 'POST', headers: {'Content-Type':'text/plain'}, body: 'UNCAUGHT ERROR: ' + e.message + ' at ' + e.filename + ':' + e.lineno });
-            } catch(ex) {}
-        });
-    </script>
-    <script src="app.js?v=3.2"></script>
+    <script src="app.js?v=4.0"></script>
+
 </body>
 </html>

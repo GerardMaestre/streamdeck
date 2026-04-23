@@ -31,23 +31,67 @@ let scriptsCache = null;
 let lastScriptsUpdate = 0;
 const SCRIPTS_CACHE_TTL = 30000; // 30 segundos
 
+// Watcher para config.json (Autoclean cache al editar en disco)
+const CONFIG_PATH = getDataPath('config.json');
+try {
+    fs.watch(CONFIG_PATH, (eventType) => {
+        if (eventType === 'change') {
+            Logger.info('Configuracion detectada en disco, invalidando cache...');
+            configCache = null;
+        }
+    });
+} catch (e) {
+    Logger.warn('No se pudo establecer watcher en config.json', e);
+}
+
 const app = express();
+app.disable('x-powered-by');
 const server = http.createServer(app);
 const io = new Server(server);
 
+process.on('unhandledRejection', (reason) => {
+    console.error('[Server] unhandledRejection:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('[Server] uncaughtException:', error);
+});
+
 // Init logger para Socket y Performance
 initSocketMonitoring(io);
-startPerformanceMonitor(io);
+startPerformanceMonitor();
 
 // --- SEGURIDAD: TOKEN DE ACCESO ---
-const SECURITY_TOKEN = process.env.SECURITY_TOKEN || 'streamdeck_secure_2026';
+const SECURITY_TOKEN = process.env.SECURITY_TOKEN;
+
+if (!SECURITY_TOKEN) {
+    console.warn('[Seguridad] SECURITY_TOKEN no definido. El servidor aceptará solo conexiones locales. Define SECURITY_TOKEN en .env o en el entorno para habilitar acceso remoto seguro.');
+}
+
+const normalizeAuthToken = (rawToken) => {
+    if (!rawToken) return '';
+    return rawToken.toString().replace(/^Bearer\s+/i, '').trim();
+};
+
+const isLocalAddress = (address) => {
+    return address === '::1' || address === '127.0.0.1' || address === '::ffff:127.0.0.1';
+};
+
+const getSocketToken = (socket) => normalizeAuthToken(socket.handshake.auth?.token);
+const getRequestToken = (req) => normalizeAuthToken(req.headers.authorization);
+
+const verifyAccess = (token, isLocal) => {
+    if (isLocal) return true;
+    if (!SECURITY_TOKEN) return false;
+    return token === SECURITY_TOKEN;
+};
 
 // Middleware de Socket.io para verificar el token
 io.use((socket, next) => {
-    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
-    const isLocal = socket.handshake.address === '::1' || socket.handshake.address === '127.0.0.1' || socket.handshake.address === '::ffff:127.0.0.1';
-    
-    if (token === SECURITY_TOKEN || isLocal) {
+    const token = getSocketToken(socket);
+    const isLocal = isLocalAddress(socket.handshake.address);
+
+    if (verifyAccess(token, isLocal)) {
         return next();
     }
     console.warn(`[!] Intento de conexion rechazada desde ${socket.handshake.address} (Token invalido)`);
@@ -55,29 +99,26 @@ io.use((socket, next) => {
 });
 
 app.use(express.static(getDataPath('frontend')));
-app.use(express.text());
 
 
 // Endpoint para entregar el JSON de configuracion de los botones
 app.get('/api/config', (req, res) => {
     // Verificacion de seguridad para la API
-    const token = req.headers['authorization'] || req.query.token;
-    const isLocal = req.ip === '::1' || req.ip === '127.0.0.1' || req.ip === '::ffff:127.0.0.1';
+    const token = getRequestToken(req);
+    const isLocal = isLocalAddress(req.ip);
 
-    if (token !== SECURITY_TOKEN && !isLocal) {
+    if (!verifyAccess(token, isLocal)) {
         return res.status(403).json({ error: 'Acceso denegado' });
     }
 
     try {
         if (configCache) return res.json(configCache);
-
-        const configPath = getDataPath('config.json');
-        const configData = fs.readFileSync(configPath, 'utf8');
-        configCache = JSON.parse(configData);
-        res.json(configCache);
-    } catch(err) {
-        console.error('Error leyendo config.json', err);
-        res.status(500).json({ error: 'No se pudo cargar la configuracion.' });
+        const data = fs.readFileSync(CONFIG_PATH, 'utf8');
+        configCache = JSON.parse(data);
+        return res.json(configCache);
+    } catch (error) {
+        Logger.error('Error leyendo config.json', error);
+        return res.status(500).json({ error: 'Error al cargar la configuracion' });
     }
 });
 
@@ -85,16 +126,21 @@ app.get('/api/config', (req, res) => {
 app.use(express.json({ limit: '1mb' }));
 app.post('/api/config', (req, res) => {
     // Verificacion de seguridad para la API
-    const token = req.headers['authorization'] || req.query.token;
-    if (token !== SECURITY_TOKEN && req.ip !== '::1' && req.ip !== '127.0.0.1') {
+    const token = getRequestToken(req);
+    const isLocal = isLocalAddress(req.ip);
+    if (!verifyAccess(token, isLocal)) {
         return res.status(403).json({ error: 'Acceso denegado' });
     }
 
     try {
         const newConfig = req.body;
-        if (!newConfig || !newConfig.pages) {
-            return res.status(400).json({ error: 'Payload invalido: falta "pages".' });
+        if (!newConfig || typeof newConfig !== 'object' || !Array.isArray(newConfig.pages)) {
+            return res.status(400).json({ error: 'Payload invalido: "pages" debe ser un array.' });
         }
+        if (newConfig.carouselPages !== undefined && !Array.isArray(newConfig.carouselPages)) {
+            return res.status(400).json({ error: 'Payload invalido: "carouselPages" debe ser un array.' });
+        }
+
         const configPath = getDataPath('config.json');
         fs.writeFileSync(configPath, JSON.stringify(newConfig, null, 4), 'utf8');
         configCache = newConfig; // Actualizar cache en memoria
@@ -130,6 +176,7 @@ const runSafely = async (socket, eventName, action, ack) => {
 
 io.on('connection', (socket) => {
     console.log('[Socket] Centro de mando conectado');
+    let aiRequestInFlight = false;
 
     // Routing de Eventos -> Controladores
     socket.on('mixer_initial_state', async (ack) => {
@@ -199,6 +246,7 @@ io.on('connection', (socket) => {
         if (typeof ack === 'function' && result !== null) ack(result);
     });
 
+
     socket.on('discord_toggle_deaf', async (ack) => {
         const result = await runSafely(socket, 'discord_toggle_deaf', () => discordToggleDeaf(), ack);
         if (typeof ack === 'function' && result !== null) ack(result);
@@ -263,8 +311,8 @@ io.on('connection', (socket) => {
     });
 
     socket.on('minimizar_todo', async (ack) => {
-        await runSafely(socket, 'minimizar_todo', () => minimizarTodo(), ack);
-        if (typeof ack === 'function') ack({ ok: true });
+        const result = await runSafely(socket, 'minimizar_todo', () => minimizarTodo(), ack);
+        if (typeof ack === 'function' && result !== null) ack({ ok: true });
     });
 
     socket.on('cambiar_resolucion', async (payload, ack) => {
@@ -274,18 +322,23 @@ io.on('connection', (socket) => {
     });
 
     socket.on('abrir_keep', async (ack) => {
-        await runSafely(socket, 'abrir_keep', () => abrirAplicacionOWeb('google-keep'), ack);
-        if (typeof ack === 'function') ack({ ok: true });
+        const result = await runSafely(socket, 'abrir_keep', () => abrirAplicacionOWeb('google-keep'), ack);
+        if (typeof ack === 'function' && result !== null) ack({ ok: true });
+    });
+
+    socket.on('abrir_calendario', async (ack) => {
+        const result = await runSafely(socket, 'abrir_calendario', () => abrirAplicacionOWeb('google-calendar'), ack);
+        if (typeof ack === 'function' && result !== null) ack({ ok: true });
     });
 
     socket.on('apagar_pc', async (ack) => {
-        await runSafely(socket, 'apagar_pc', () => apagarPC(), ack);
-        if (typeof ack === 'function') ack({ ok: true });
+        const result = await runSafely(socket, 'apagar_pc', () => apagarPC(), ack);
+        if (typeof ack === 'function' && result !== null) ack({ ok: true });
     });
 
     socket.on('reiniciar_pc', async (ack) => {
-        await runSafely(socket, 'reiniciar_pc', () => reiniciarPC(), ack);
-        if (typeof ack === 'function') ack({ ok: true });
+        const result = await runSafely(socket, 'reiniciar_pc', () => reiniciarPC(), ack);
+        if (typeof ack === 'function' && result !== null) ack({ ok: true });
     });
 
     socket.on('ping', (ack) => {
@@ -326,6 +379,9 @@ server.on('error', (err) => {
 });
 
 server.listen(PORT, () => {
+    // Exportar puerto real para que main.js (tray) lo lea
+    global.__streamdeck_port = PORT;
+
     console.log(`
     ---------------------------------------------------
     >>  STREAM DECK PRO -- BACKEND OPERATIVO
@@ -338,10 +394,10 @@ server.listen(PORT, () => {
 // Endpoint para listar scripts disponibles en el directorio `scripts`
 app.get('/api/scripts', async (req, res) => {
     // Verificacion de seguridad para la API
-    const token = req.headers['authorization'] || req.query.token;
-    const isLocal = req.ip === '::1' || req.ip === '127.0.0.1' || req.ip === '::ffff:127.0.0.1';
+    const token = getRequestToken(req);
+    const isLocal = isLocalAddress(req.ip);
 
-    if (token !== SECURITY_TOKEN && !isLocal) {
+    if (!verifyAccess(token, isLocal)) {
         return res.status(403).json({ error: 'Acceso denegado' });
     }
 

@@ -11,9 +11,9 @@ const activeSessions = new Map();
 const labelCache = new Map(); // Caché para nombres de aplicaciones
 
 // Constantes de configuración
-const POLL_INTERVAL_MS = 600;
-const DEBOUNCE_MS = 1500; 
-
+const POLL_INTERVAL_MS = 250;  // 300→250: Respuesta más instantánea
+const DEBOUNCE_MS = 350;       // 400→350: Ventana de protección optimizada
+const VOL_THRESHOLD = 0.5;     // Diferencia mínima para emitir cambio (evita ruido jitter)
 function getAppLabel(session) {
     let rawName = session.appName || session.name;
     if (!rawName) return null;
@@ -190,66 +190,78 @@ function pollSessions(io) {
     const currentSessions = defaultDevice.sessions;
     const grouped = new Map();
     
-    currentSessions.forEach((session) => {
-        // Filtrar sesiones inactivas (state !== 1: Active) para evitar saturación en la UI
-        // Solo mostramos apps que Windows marca como activamente emitiendo o preparadas para audio
-        if (session.state !== 1) return;
+    // 1. Agrupación eficiente
+    for (let i = 0; i < currentSessions.length; i++) {
+        const session = currentSessions[i];
+        if (session.state !== 1) continue;
 
         const label = getAppLabel(session);
-        if (!label) return; 
+        if (!label) continue; 
 
-        if (!grouped.has(label)) grouped.set(label, []);
-        grouped.get(label).push(session);
-    });
+        let group = grouped.get(label);
+        if (!group) {
+            group = [];
+            grouped.set(label, group);
+        }
+        group.push(session);
+    }
 
     const currentNames = new Set(grouped.keys());
 
+    // 2. Procesamiento de cambios
     for (const [label, sessions] of grouped.entries()) {
         let maxVol = 0;
         let isMuted = false;
 
-        for (const s of sessions) {
-            const v = Math.round(s.volume * 100);
+        for (let j = 0; j < sessions.length; j++) {
+            const s = sessions[j];
+            const v = s.volume * 100;
             if (v > maxVol) maxVol = v;
             if (s.mute) isMuted = true;
         }
-
+        
+        const roundedVol = Math.round(maxVol);
         let stored = activeSessions.get(label);
 
-        if (stored && stored.lastUserUpdate) {
-            const timeSinceDrag = Date.now() - stored.lastUserUpdate;
-            if (timeSinceDrag < DEBOUNCE_MS) {
-                maxVol = stored.lastVolume;
-                isMuted = stored.lastMute;
+        if (stored) {
+            // Debounce contra cambios manuales del usuario en la tablet
+            if (stored.lastUserUpdate && (Date.now() - stored.lastUserUpdate < DEBOUNCE_MS)) {
+                continue;
             }
-        }
 
-        if (!stored) {
-            activeSessions.set(label, {
-                sessions,
-                lastVolume: maxVol,
-                lastMute: isMuted,
-                lastUserUpdate: 0
-            });
-            io.emit('session_added', { name: label, volume: maxVol, mute: isMuted });
-        } else {
             stored.sessions = sessions;
 
-            if (stored.lastVolume !== maxVol) {
-                stored.lastVolume = maxVol;
-                io.emit('session_updated', { name: label, type: 'volume', value: maxVol });
+            // Solo emitir si hay cambio real (usando threshold para volumen)
+            const volChanged = Math.abs(stored.lastVolume - roundedVol) >= VOL_THRESHOLD;
+            const muteChanged = stored.lastMute !== isMuted;
+
+            if (volChanged) {
+                stored.lastVolume = roundedVol;
+                io.emit('session_updated', { name: label, type: 'volume', value: roundedVol });
             }
-            if (stored.lastMute !== isMuted) {
+            if (muteChanged) {
                 stored.lastMute = isMuted;
                 io.emit('session_updated', { name: label, type: 'mute', value: isMuted });
             }
+        } else {
+            // Nueva sesión
+            activeSessions.set(label, {
+                sessions,
+                lastVolume: roundedVol,
+                lastMute: isMuted,
+                lastUserUpdate: 0
+            });
+            io.emit('session_added', { name: label, volume: roundedVol, mute: isMuted });
         }
     }
 
-    for (const [name] of activeSessions.entries()) {
-        if (!currentNames.has(name)) {
-            activeSessions.delete(name);
-            io.emit('session_removed', { name });
+    // 3. Limpieza de sesiones huérfanas
+    if (activeSessions.size > currentNames.size) {
+        for (const [name] of activeSessions.entries()) {
+            if (!currentNames.has(name)) {
+                activeSessions.delete(name);
+                io.emit('session_removed', { name });
+            }
         }
     }
 }
@@ -277,7 +289,13 @@ function sendInitialState(socket) {
 
 function handleSocketCommands(socket) {
     socket.on('set_master_volume', (value) => {
-        try { if (defaultDevice) defaultDevice.volume = value / 100; } catch (e) {}
+        try { 
+            if (defaultDevice) {
+                defaultDevice.volume = value / 100; 
+                // Evitamos el ping-pong: Solo informamos a los demás clientes
+                socket.broadcast.emit('master_updated', { type: 'volume', value: Math.round(value) });
+            }
+        } catch (e) {}
     });
 
     socket.on('toggle_master_mute', () => {
@@ -298,9 +316,23 @@ function handleSocketCommands(socket) {
         try {
             const stored = activeSessions.get(app);
             if (!stored) return;
-            stored.sessions.forEach((s) => { s.volume = value / 100; });
-            stored.lastVolume = value;
+            const targetVolume = Math.max(0, Math.min(100, Number(value)));
+
+            if (stored.lastVolume === targetVolume) {
+                stored.lastUserUpdate = Date.now();
+                return;
+            }
+
+            stored.sessions.forEach((session) => {
+                try { session.volume = targetVolume / 100; } catch (error) {}
+            });
+
+            stored.lastVolume = targetVolume;
             stored.lastUserUpdate = Date.now();
+
+            const updatePayload = { name: app, type: 'volume', value: targetVolume };
+            // CRÍTICO: Usar solo broadcast para no saturar al cliente que está deslizando
+            socket.broadcast.emit('session_updated', updatePayload);
         } catch (e) {}
     });
 
