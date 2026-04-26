@@ -1,5 +1,5 @@
 const { exec } = require('child_process');
-const { getErrorMessage } = require('../utils/utils');
+const { getErrorMessage, getDataPath } = require('../utils/utils');
 const path = require('path');
 const fs = require('fs');
 
@@ -28,7 +28,7 @@ const minimizarTodo = () => {
 const cambiarResolucion = (width, height) => {
     return new Promise((resolve, reject) => {
         // Usamos el script de PowerShell nativo
-        const scriptPath = path.join(__dirname, 'Set-Resolution.ps1');
+        const scriptPath = getDataPath('scripts/system/Set-Resolution.ps1');
         const command = `powershell -ExecutionPolicy Bypass -File "${scriptPath}" -Width ${width} -Height ${height}`;
         
         console.log(`[System] Cambiando resolucion a ${width}x${height} via PowerShell...`);

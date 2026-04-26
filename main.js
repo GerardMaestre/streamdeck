@@ -12,7 +12,11 @@ const os = require('os');
 // Evitar que la app abra múltiples instancias
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
+    console.log('[App] Ya hay otra instancia ejecutándose. Cerrando esta instancia...');
     app.quit();
+    process.exit(0);
+} else {
+    console.log('[App] Bloqueo de instancia única obtenido.');
 }
 
 let tray = null;
@@ -222,6 +226,11 @@ app.whenReady().then(() => {
     ipcMain.on('terminal-close', (event, terminalId) => {
         const terminalState = terminalWindows.get(terminalId);
         if (terminalState) terminalState.window.close();
+    });
+
+    ipcMain.on('terminal-minimize', (event, terminalId) => {
+        const terminalState = terminalWindows.get(terminalId);
+        if (terminalState) terminalState.window.minimize();
     });
 
     ipcMain.on('prompt-submit', (event, value) => {

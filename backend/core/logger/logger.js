@@ -1,10 +1,18 @@
 const fs = require("fs");
 const path = require("path");
 
-const LOG_DIR = path.join(__dirname, "../../../logs");
+const { getDataPath } = require("../../utils/utils");
+
+const LOG_DIR = getDataPath("logs");
+console.log(`[Logger] Directorio de logs resuelto a: ${LOG_DIR}`);
 
 if (!fs.existsSync(LOG_DIR)) {
-    fs.mkdirSync(LOG_DIR, { recursive: true });
+    try {
+        console.log(`[Logger] Creando directorio de logs: ${LOG_DIR}`);
+        fs.mkdirSync(LOG_DIR, { recursive: true });
+    } catch (err) {
+        console.error("[Logger] No se pudo crear el directorio de logs:", err.message);
+    }
 }
 
 // --- BUFFERED ASYNC LOGGER ---

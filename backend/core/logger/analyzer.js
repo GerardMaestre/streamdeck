@@ -1,8 +1,10 @@
 const fs = require("fs");
 const path = require("path");
 
+const { getDataPath } = require("../../utils/utils");
+
 function analyzeLogs() {
-    const errorFile = path.join(__dirname, "../../../logs/errors.log");
+    const errorFile = getDataPath("logs/errors.log");
     
     if (!fs.existsSync(errorFile)) {
         console.log("📊 ERROR REPORT: No errors found. System is clean!");

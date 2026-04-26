@@ -7,31 +7,46 @@ const fs = require('fs');
  * como en la aplicación empaquetada (Portable/Instalador).
  * Prioriza archivos al lado del ejecutable para permitir edición del usuario.
  */
+/**
+ * Resuelve rutas de forma dinamica para que funcionen tanto en desarrollo
+ * como en la aplicación empaquetada (Portable/Instalador).
+ */
 const getDataPath = (relativePath) => {
-    const { app } = require('electron');
-    let resolvedPath;
+    let app;
+    try {
+        const electron = require('electron');
+        app = electron.app || (electron.remote ? electron.remote.app : null);
+    } catch (e) {
+        // Fallback si no estamos en entorno Electron
+    }
+    
+    // Si no hay app (caso desarrollo Node puro o error), fallback a relativo
+    if (!app) {
+        return path.resolve(__dirname, '../../', relativePath);
+    }
 
-    // Caso 1: Archivos externos (config.json, scripts) que el usuario puede editar
-    // Estos suelen estar en 'resources' al lado del EXE o en el root en dev.
-    if (app && app.isPackaged) {
-        // En producción, buscamos en la carpeta 'resources' del sistema
+    const isPackaged = app.isPackaged;
+
+    // 1. Prioridad: Carpeta 'resources' externa (para config.json, scripts, logs)
+    if (isPackaged) {
         const extraPath = path.join(process.resourcesPath, relativePath);
-        if (fs.existsSync(extraPath)) resolvedPath = extraPath;
+        
+        const isExternalData = relativePath.startsWith('config.json') || 
+                               relativePath.startsWith('scripts') || 
+                               relativePath.startsWith('logs');
+                               
+        if (isExternalData || fs.existsSync(extraPath)) {
+            return extraPath;
+        }
     }
 
-    // Caso 2: Archivos internos del núcleo (public, controllers)
-    // Estos SIEMPRE están dentro del paquete (ASAR)
-    if (!resolvedPath && app) {
-        const internalPath = path.join(app.getAppPath(), relativePath);
-        if (fs.existsSync(internalPath)) resolvedPath = internalPath;
+    // 2. Archivos internos (frontend, controllers, etc) dentro del ASAR en prod
+    if (isPackaged) {
+        return path.join(app.getAppPath(), relativePath);
     }
 
-    // Caso 3: Fallback para desarrollo o si lo anterior falla
-    if (!resolvedPath) {
-        resolvedPath = path.resolve(__dirname, '../../', relativePath);
-    }
-
-    return resolvedPath;
+    // 3. Desarrollo
+    return path.resolve(__dirname, '../../', relativePath);
 };
 
 
