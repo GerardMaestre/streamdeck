@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream Deck Pro Script</title>
+    <style>
+        :root {
+            --panel: rgba(13, 17, 23, 0.95);
+            --border: rgba(255, 255, 255, 0.1);
+            --text: #c9d1d9;
+            --accent: #58a6ff;
+            --console: #7ee787;
+            --danger: #f85149;
+            --warning: #d29922;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            width: 100vw;
+            font-family: Inter, system-ui, -apple-system, sans-serif;
+            background: transparent;
+            color: var(--text);
+            box-sizing: border-box;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            -webkit-app-region: no-drag;
+        }
+
+        .window-frame {
+            width: 100%;
+            height: 100%;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .title-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px;
+            background: rgba(255,255,255,0.02);
+            border-bottom: 1px solid var(--border);
+            -webkit-app-region: drag;
+            user-select: none;
+        }
+
+        .title-text {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #fff;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .title-text span {
+            color: var(--accent);
+        }
+
+        .window-controls {
+            display: flex;
+            gap: 12px;
+            -webkit-app-region: no-drag;
+        }
+
+        .control-btn {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 14px;
+            color: rgba(255,255,255,0.6);
+            transition: all 0.2s;
+            background: rgba(255,255,255,0.05);
+            line-height: 1;
+        }
+
+        .control-btn:hover {
+            color: #fff;
+        }
+
+        .btn-minimize:hover {
+            background: rgba(255,255,255,0.15);
+            border-color: rgba(255,255,255,0.3);
+        }
+
+        .btn-close:hover {
+            background: var(--danger);
+            border-color: #ff7b72;
+            color: #fff;
+        }
+
+        .content-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            gap: 16px;
+            overflow: hidden;
+        }
+
+        .logo-container {
+            text-align: center;
+            color: var(--accent);
+            font-family: monospace;
+            font-size: 0.8rem;
+            line-height: 1.2;
+            opacity: 0.9;
+            text-shadow: 0 0 10px rgba(88, 166, 255, 0.4);
+            margin-bottom: 10px;
+            white-space: pre;
+            flex-shrink: 0;
+            user-select: none;
+        }
+
+        .output-box {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 16px;
+            overflow-y: auto;
+            color: var(--console);
+            font-family: "Consolas", "Courier New", monospace;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            box-shadow: inset 0 2px 10px rgba(0,0,0,0.2);
+        }
+
+        .output-box::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .output-box::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .output-box::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+        }
+
+        .output-box::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        .progress-container {
+            height: 4px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 2px;
+            overflow: hidden;
+            flex-shrink: 0;
+            position: relative;
+        }
+
+        .progress-bar {
+            height: 100%;
+            width: 30%;
+            background: var(--accent);
+            border-radius: 2px;
+            animation: indeterminate 1.5s infinite ease-in-out;
+            box-shadow: 0 0 10px var(--accent);
+            transition: all 0.3s ease;
+        }
+
+        .progress-bar.finished {
+            animation: none;
+            width: 100%;
+            background: var(--console);
+            box-shadow: 0 0 10px var(--console);
+        }
+
+        @keyframes indeterminate {
+            0% { transform: translateX(-100%); width: 30%; }
+            50% { width: 50%; }
+            100% { transform: translateX(350%); width: 30%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="window-frame">
+        <div class="title-bar">
+            <div class="title-text">
+                <span>⚡</span> <span id="title" style="color: #fff;">Ejecutando Script</span>
+            </div>
+            <div class="window-controls">
+                <div class="control-btn btn-minimize" id="btn-minimize" title="Minimizar">−</div>
+                <div class="control-btn btn-close" id="btn-close" title="Cerrar">✕</div>
+            </div>
+        </div>
+
+        <div class="content-area">
+            <div class="logo-container">
+   _____ _______ _____  ______          __  __   _____  ______ _____ _  __
+  / ____|__   __|  __ \|  ____|   /\   |  \/  | |  __ \|  ____/ ____| |/ /
+ | (___    | |  | |__) | |__     /  \  | \  / | | |  | | |__ | |    | ' / 
+  \___ \   | |  |  _  /|  __|   / /\ \ | |\/| | | |  | |  __|| |    |  <  
+  ____) |  | |  | | \ \| |____ / ____ \| |  | | | |__| | |___| |____| . \ 
+ |_____/   |_|  |_|  \_\______/_/    \_\_|  |_| |_____/|______\_____|_|\_\
+            </div>
+
+            <div class="output-box" id="output">Cargando entorno...</div>
+
+            <div class="progress-container">
+                <div class="progress-bar" id="progress-bar"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const outputEl = document.getElementById('output');
+        const titleEl = document.getElementById('title');
+        const progressBarEl = document.getElementById('progress-bar');
+        let terminalId = null;
+
+        outputEl.innerHTML = '<div style="opacity: 0.7">Cargando entorno...</div>';
+        let logLines = [];
+        let currentBuffer = '';
+        const MAX_LINES = 40;
+
+        function renderLogs() {
+            outputEl.innerHTML = logLines.map(line => {
+                let html = `<span>${line.text}</span>`;
+                if (line.count > 1) {
+                    html += ` <span style="color: var(--warning); font-size: 0.85em; background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 12px; margin-left: 8px;">x${line.count}</span>`;
+                }
+                return `<div>${html}</div>`;
+            }).join('');
+            outputEl.scrollTop = outputEl.scrollHeight;
+        }
+
+        function cleanAnsi(str) {
+            return str.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
+                      .replace(/\[\d+m/g, '')
+                      .replace(/\[0m/g, '');
+        }
+
+        if (window.electronTerminal) {
+            window.electronTerminal.onSetup((data) => {
+                terminalId = data?.id || null;
+                if (data?.title) titleEl.innerText = data.title;
+            });
+
+            window.electronTerminal.onLog((text) => {
+                if (text.includes('[Proceso terminado con código')) {
+                    progressBarEl.classList.add('finished');
+                }
+
+                currentBuffer += text;
+                let lines = currentBuffer.split(/[\r\n]+/);
+                
+                // Keep the last part as buffer (incomplete line)
+                currentBuffer = lines.pop() || ''; 
+                
+                let updated = false;
+                for (let rawLine of lines) {
+                    let line = cleanAnsi(rawLine).trim();
+                    if (!line) continue;
+                    
+                    updated = true;
+                    if (logLines.length > 0 && logLines[logLines.length - 1].text === line) {
+                        logLines[logLines.length - 1].count++;
+                    } else {
+                        logLines.push({ text: line, count: 1 });
+                    }
+                }
+
+                if (logLines.length > MAX_LINES) {
+                    logLines = logLines.slice(-MAX_LINES);
+                }
+
+                if (updated || currentBuffer) {
+                    renderLogs();
+                    if (currentBuffer) {
+                        let tempLine = cleanAnsi(currentBuffer).trim();
+                        if (tempLine) {
+                            outputEl.innerHTML += `<div><span style="opacity: 0.7">${tempLine}</span></div>`;
+                            outputEl.scrollTop = outputEl.scrollHeight;
+                        }
+                    }
+                }
+            });
+
+            window.electronTerminal.onClear(() => {
+                logLines = [];
+                currentBuffer = '';
+                outputEl.innerHTML = '';
+                progressBarEl.classList.remove('finished');
+            });
+        }
+
+        document.getElementById('btn-close').addEventListener('click', () => {
+            if (window.electronTerminal) window.electronTerminal.close(terminalId);
+        });
+
+        document.getElementById('btn-minimize').addEventListener('click', () => {
+            if (window.electronTerminal) window.electronTerminal.minimize(terminalId);
+        });
+    </script>
+</body>
+</html>

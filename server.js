@@ -12,8 +12,10 @@ const startPerformanceMonitor = require("./backend/core/logger/performance");
 const initSocketMonitoring = require("./backend/core/logger/socket-monitor");
 
 // INIT SYSTEM
+console.log('[Server] Inicializando sistema de logs y seguimiento...');
 initErrorTracking();
 Logger.system("Server starting...");
+console.log('[Server] Sistema de logs listo.');
 
 // Importar controladores (Logica modularizada)
 const { initAudioMixer, sendInitialState, handleSocketCommands } = require('./backend/audio/audioMixerController');

@@ -21,7 +21,7 @@ function initGlobalErrorTracking() {
 
     // Electron crash safety
     process.on("exit", (code) => {
-        Logger.system(`Process exit: ${code}`);
+        console.log(`[System] Process exit with code: ${code}`);
     });
 
     Logger.system("Error tracking initialized");
