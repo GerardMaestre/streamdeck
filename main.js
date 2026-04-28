@@ -48,7 +48,15 @@ function getLocalIP() {
 // si no tienes un archivo icon.png preparado.
 const fallbackIconB64 = 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAABTSURBVDhPYxgFWAX+M/z/z0A8gGEwg7A2gGkYBoQagO6pUQNwGIQ1AIVBWAwYtYEBNgNgGEYPGBgNMMwGGGoDo2AwwOAAGNvEABsA0TAwGAAADK1rM1M2v+MAAAAASUVORK5CYII=';
 
-app.whenReady().then(() => {
+const waitForServerPort = async (timeout = 3000, interval = 50) => {
+    const start = Date.now();
+    while (!global.__streamdeck_port && Date.now() - start < timeout) {
+        await new Promise((resolve) => setTimeout(resolve, interval));
+    }
+    return global.__streamdeck_port;
+};
+
+app.whenReady().then(async () => {
     // 1. Ocultar el icono del dock en macOS (si alguna vez lo usas ahí)
     if (app.dock) app.dock.hide();
 
@@ -56,9 +64,10 @@ app.whenReady().then(() => {
     // Esto ejecuta tu código backend de Node.js en segundo plano
     try {
         console.log('[App Bandeja] Iniciando servidor Node.js...');
-        require('./server.js'); 
+        require('./server.js');
         // Leer el puerto real (server.js puede cambiarlo si hay colisión)
-        if (global.__streamdeck_port) PORT = global.__streamdeck_port;
+        const portFromServer = await waitForServerPort(3000);
+        if (portFromServer) PORT = portFromServer;
     } catch (error) {
         console.error('[App Bandeja] Error al iniciar el servidor:', error);
         dialog.showErrorBox(

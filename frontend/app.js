@@ -48,6 +48,7 @@ class PerfMonitor {
 class StreamDeckClient {
     constructor() {
         if (window.streamDeck) return window.streamDeck;
+        window.streamDeck = this;
         
         window.addEventListener('error', (e) => {
             console.error('GLOBAL FRONTEND ERROR:', e.message);
@@ -61,7 +62,8 @@ class StreamDeckClient {
         this.socket = io({
             auth: {
                 token: this.securityToken
-            }
+            },
+            transports: ['websocket']
         });
         this.pages = {};
         this.currentPage = 'main';
@@ -1574,6 +1576,20 @@ class StreamDeckClient {
         });
 
         this.socket.on('session_added', (sessionData) => {
+            if (this.lastMixerState) {
+                const existing = this.lastMixerState.sessions.find(s => s.name === sessionData.name);
+                if (!existing) {
+                    this.lastMixerState.sessions.push({
+                        name: sessionData.name,
+                        volume: sessionData.volume,
+                        mute: sessionData.mute
+                    });
+                } else {
+                    existing.volume = sessionData.volume;
+                    existing.mute = sessionData.mute;
+                }
+            }
+
             const appsContainer = document.getElementById('app-mixers');
             if (appsContainer) {
                 const existingRow = document.getElementById(`mixer-row-${sessionData.name}`);
@@ -1583,11 +1599,19 @@ class StreamDeckClient {
                     this.updateSliderUI(sessionData.name, { type: 'mute', value: sessionData.mute });
                 } else {
                     appsContainer.appendChild(this.createMixerRow(sessionData));
+                    // Forzar actualización visual inmediata después de añadir al DOM
+                    requestAnimationFrame(() => {
+                        this.updateSliderUI(sessionData.name, { type: 'volume', value: sessionData.volume });
+                        this.updateSliderUI(sessionData.name, { type: 'mute', value: sessionData.mute });
+                    });
                 }
             }
         });
 
         this.socket.on('session_removed', (sessionData) => {
+            if (this.lastMixerState) {
+                this.lastMixerState.sessions = this.lastMixerState.sessions.filter(s => s.name !== sessionData.name);
+            }
             const row = document.getElementById(`mixer-row-${sessionData.name}`);
             if (row && !row.classList.contains('fade-out')) {
                 row.classList.add('fade-out');
@@ -1619,11 +1643,17 @@ class StreamDeckClient {
                 if (!this.activeSliders.has(id)) {
                     const h = Number(data.value);
                     // Usar trackH cacheado; fallback a getBoundingClientRect solo si no está disponible
-                    const trackH = refs.trackH || (() => {
+                    let trackH = refs.trackH || (() => {
                         const r = refs.track.getBoundingClientRect();
                         refs.trackH = r.height;
                         return r.height;
                     })();
+
+                    if (trackH === 0) {
+                        const dvh = window.innerHeight * 0.4;
+                        trackH = Math.max(160, Math.min(300, dvh));
+                    }
+
                     refs.fill.style.transform = `scale3d(1, ${h / 100}, 1)`;
                     this.setThumbTransform(refs.thumb, h, trackH);
                     this[`last_mixer_${id}`] = h;
