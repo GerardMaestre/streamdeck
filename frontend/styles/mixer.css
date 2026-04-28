@@ -276,6 +276,14 @@ body.dragging-active .mixer-panel {
 }
 
 /* --- SLIDER (Compartido Mixer + Discord) --- */
+.slider-container,
+.discord-slider-tall,
+.fader-track-pro {
+    touch-action: none !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+}
+
 .slider-container {
     width: 60px !important;
     height: clamp(160px, 40dvh, 300px) !important;
@@ -299,6 +307,14 @@ body.dragging-active .mixer-panel {
     border-color: rgba(255, 255, 255, 0.1) !important;
 }
 
+
+.slider-fill,
+.fader-thumb-mixer,
+.fader-fill-pro,
+.fader-thumb-pro {
+    will-change: transform;
+    transition: none !important;
+}
 
 .slider-fill {
     position: absolute !important;

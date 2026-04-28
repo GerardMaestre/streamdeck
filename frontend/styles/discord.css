@@ -226,8 +226,23 @@
     background: linear-gradient(0deg, var(--accent-discord-a), var(--accent-discord-b)) !important;
 }
 
+.discord-slider-tall,
+.slider-container,
+.user-fader-row {
+    touch-action: none !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+}
+
 .discord-slider-tall {
     height: 45dvh !important;
+}
+
+.discord-fill-warm,
+.slider-fill,
+.fader-thumb-mixer {
+    will-change: transform;
+    transition: none !important;
 }
 
 .discord-fill-warm {

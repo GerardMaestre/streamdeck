@@ -8,6 +8,11 @@ let mixerInitialized = false;
 let currentDeviceListeners = null;
 let localMasterMute = false;
 const activeSessions = new Map();
+const pollGroupedData = new Map();
+const pollNames = new Set();
+const pollGroupArrayPool = [];
+const MAX_POLL_GROUPS = 256;
+for (let i = 0; i < MAX_POLL_GROUPS; i += 1) pollGroupArrayPool.push([]);
 const labelCache = new Map(); // Caché para nombres de aplicaciones
 
 // Constantes de configuración
@@ -187,29 +192,39 @@ function initAudioMixer(io) {
 function pollSessions(io) {
     if (!defaultDevice) return;
 
+    // Reusar las colecciones para evitar nuevas asignaciones cada 250ms
+    pollGroupedData.forEach((group) => {
+        group.length = 0;
+        pollGroupArrayPool.push(group);
+    });
+    pollGroupedData.clear();
+    pollNames.clear();
+
     const currentSessions = defaultDevice.sessions;
-    const grouped = new Map();
-    
+
     // 1. Agrupación eficiente
     for (let i = 0; i < currentSessions.length; i++) {
         const session = currentSessions[i];
-        if (session.state !== 1) continue;
+
+        // Mostrar sesiones inactivas si tienen volumen o mute configurado,
+        // para que apps como Navedaro aparezcan incluso antes de reproducir.
+        const isSilentInactive = session.state !== 1 && session.volume === 0 && !session.mute;
+        if (isSilentInactive) continue;
 
         const label = getAppLabel(session);
         if (!label) continue; 
 
-        let group = grouped.get(label);
+        let group = pollGroupedData.get(label);
         if (!group) {
-            group = [];
-            grouped.set(label, group);
+            group = pollGroupArrayPool.pop() || [];
+            pollGroupedData.set(label, group);
+            pollNames.add(label);
         }
         group.push(session);
     }
 
-    const currentNames = new Set(grouped.keys());
-
     // 2. Procesamiento de cambios
-    for (const [label, sessions] of grouped.entries()) {
+    for (const [label, sessions] of pollGroupedData.entries()) {
         let maxVol = 0;
         let isMuted = false;
 
