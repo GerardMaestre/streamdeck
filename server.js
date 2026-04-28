@@ -1,9 +1,17 @@
 const { emitErrorToFrontend, getErrorMessage, getDataPath } = require('./backend/utils/utils');
 require('dotenv').config({ path: getDataPath('.env'), quiet: true });
+// 1. IMPORTS
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const fs = require('fs');
+const compression = require('compression');
+
+const app = express();
+app.disable('x-powered-by');
+app.use(compression());
+app.use(express.json({ limit: '1mb' }));
+
 
 // --- SISTEMA COMPLETO DE LOGS Y DEBUG ---
 const Logger = require("./backend/core/logger/logger");
@@ -31,25 +39,32 @@ const { minimizarTodo, cambiarResolucion, apagarPC, reiniciarPC } = require('./b
 let configCache = null;
 let scriptsCache = null;
 let lastScriptsUpdate = 0;
-const SCRIPTS_CACHE_TTL = 30000; // 30 segundos
+const SCRIPTS_CACHE_TTL = 120000; // 120 segundos (2 minutos)
 
 // Watcher para config.json (Autoclean cache al editar en disco)
 const CONFIG_PATH = getDataPath('config.json');
 try {
-    fs.watch(CONFIG_PATH, (eventType) => {
-        if (eventType === 'change') {
-            Logger.info('Configuracion detectada en disco, invalidando cache...');
+    let configTimeout;
+
+    fs.watch(CONFIG_PATH, { persistent: false }, () => {
+        clearTimeout(configTimeout);
+        configTimeout = setTimeout(() => {
             configCache = null;
-        }
+        }, 300);
     });
 } catch (e) {
     Logger.warn('No se pudo establecer watcher en config.json', e);
 }
 
-const app = express();
-app.disable('x-powered-by');
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  transports: ['websocket'],
+  perMessageDeflate: false,
+  pingInterval: 25000,
+  pingTimeout: 60000,
+});
+
+io.engine.maxHttpBufferSize = 1e6;
 
 process.on('unhandledRejection', (reason) => {
     console.error('[Server] unhandledRejection:', reason);
@@ -60,8 +75,19 @@ process.on('uncaughtException', (error) => {
 });
 
 // Init logger para Socket y Performance
-initSocketMonitoring(io);
-startPerformanceMonitor();
+const IS_DEV = process.env.NODE_ENV !== 'production';
+const log = (...args) => {
+    if (IS_DEV) console.log(...args);
+};
+
+const errorLog = (...args) => {
+    console.error(...args);
+};
+
+if (IS_DEV) {
+  initSocketMonitoring(io);
+  startPerformanceMonitor();
+}
 
 // --- SEGURIDAD: TOKEN DE ACCESO ---
 const SECURITY_TOKEN = process.env.SECURITY_TOKEN;
@@ -100,12 +126,12 @@ io.use((socket, next) => {
     return next(new Error('Acceso denegado: Token de seguridad invalido'));
 });
 
-app.use(express.static(getDataPath('frontend')));
-
+app.use(express.static(getDataPath('frontend'), {
+  maxAge: 0,
+}));
 
 // Endpoint para entregar el JSON de configuracion de los botones
-app.get('/api/config', (req, res) => {
-    // Verificacion de seguridad para la API
+app.get('/api/config', async (req, res) => {
     const token = getRequestToken(req);
     const isLocal = isLocalAddress(req.ip);
 
@@ -114,9 +140,14 @@ app.get('/api/config', (req, res) => {
     }
 
     try {
-        if (configCache) return res.json(configCache);
-        const data = fs.readFileSync(CONFIG_PATH, 'utf8');
+        if (configCache) {
+            res.setHeader('Cache-Control', 'no-store');
+            return res.json(configCache);
+        }
+
+        const data = await fs.promises.readFile(CONFIG_PATH, 'utf8');
         configCache = JSON.parse(data);
+
         return res.json(configCache);
     } catch (error) {
         Logger.error('Error leyendo config.json', error);
@@ -125,32 +156,40 @@ app.get('/api/config', (req, res) => {
 });
 
 // Endpoint para guardar config reordenada (Modo Edicion Tablet)
-app.use(express.json({ limit: '1mb' }));
-app.post('/api/config', (req, res) => {
-    // Verificacion de seguridad para la API
+app.post('/api/config', async (req, res) => {
     const token = getRequestToken(req);
     const isLocal = isLocalAddress(req.ip);
+
     if (!verifyAccess(token, isLocal)) {
         return res.status(403).json({ error: 'Acceso denegado' });
     }
 
     try {
         const newConfig = req.body;
+
         if (!newConfig || typeof newConfig !== 'object' || !Array.isArray(newConfig.pages)) {
             return res.status(400).json({ error: 'Payload invalido: "pages" debe ser un array.' });
         }
+
         if (newConfig.carouselPages !== undefined && !Array.isArray(newConfig.carouselPages)) {
             return res.status(400).json({ error: 'Payload invalido: "carouselPages" debe ser un array.' });
         }
 
         const configPath = getDataPath('config.json');
-        fs.writeFileSync(configPath, JSON.stringify(newConfig, null, 4), 'utf8');
-        configCache = newConfig; // Actualizar cache en memoria
-        console.log('[Config] config.json actualizado desde la tablet');
-        res.json({ ok: true });
-    } catch(err) {
-        console.error('Error guardando config.json', err);
-        res.status(500).json({ error: 'No se pudo guardar la configuracion.' });
+
+        await fs.promises.writeFile(
+            configPath,
+            JSON.stringify(newConfig, null, 4),
+            'utf8'
+        );
+
+        configCache = newConfig;
+            log('[Config] config.json actualizado desde la tablet');
+
+        return res.json({ ok: true });
+    } catch (err) {
+        errorLog('Error guardando config.json', err);
+        return res.status(500).json({ error: 'No se pudo guardar la configuracion.' });
     }
 });
 
@@ -159,7 +198,7 @@ initAudioMixer(io);
 initDiscordRPC(io);
 
 const handleSocketError = (socket, eventName, error, ack) => {
-    console.error(`[Error] Error en evento socket [${eventName}]:`, error);
+    errorLog(`[Error] Error en evento socket [${eventName}]:`, error);
     emitErrorToFrontend(socket, eventName, error);
 
     if (typeof ack === 'function') {
@@ -177,8 +216,19 @@ const runSafely = async (socket, eventName, action, ack) => {
 };
 
 io.on('connection', (socket) => {
-    console.log('[Socket] Centro de mando conectado');
+    log('[Socket] Centro de mando conectado');
     let aiRequestInFlight = false;
+
+    const throttle = (fn, delay) => {
+  let last = 0;
+  return (...args) => {
+    const now = Date.now();
+    if (now - last > delay) {
+      last = now;
+      fn(...args);
+    }
+  };
+};
 
     // Routing de Eventos -> Controladores
     socket.on('mixer_initial_state', async (ack) => {
@@ -225,11 +275,11 @@ io.on('connection', (socket) => {
             
             // Llamamos a la función global de Electron si existe
             if (global.showPCPrompt) {
-                console.log(`[Server] Solicitando parametros en PC para: ${scriptLabel}`);
+                log(`[Server] Solicitando parametros en PC para: ${scriptLabel}`);
                 const pcArgs = await global.showPCPrompt(scriptLabel);
                 
                 if (pcArgs === null) {
-                    console.log('[Server] Prompt cancelado en PC');
+                    log('[Server] Prompt cancelado en PC');
                     if (typeof ack === 'function') ack({ ok: false, message: 'Cancelado' });
                     return;
                 }
@@ -254,7 +304,9 @@ io.on('connection', (socket) => {
         if (typeof ack === 'function' && result !== null) ack(result);
     });
 
-    socket.on('discord_set_user_volume', async ({ userId, volume }, ack) => {
+    socket.on(
+      'discord_set_user_volume',
+      throttle(async ({ userId, volume }, ack) => {
         const result = await runSafely(
             socket,
             'discord_set_user_volume',
@@ -263,7 +315,8 @@ io.on('connection', (socket) => {
         );
 
         if (typeof ack === 'function' && result !== null) ack(result);
-    });
+      }, 100)
+    );
 
     // --- TUYA LIGHT CONTROL ---
     socket.on('tuya_light_toggle', async (payload, ack) => {
@@ -348,11 +401,12 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        console.log('[Socket] Centro de mando desconectado');
+        log('[Socket] Centro de mando desconectado');
     });
 });
 
 let PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
+global.__streamdeck_port = PORT;
 const MAX_PORT_RETRIES = 5;
 let portRetries = 0;
 
@@ -365,6 +419,7 @@ server.on('error', (err) => {
             process.exit(1);
         } else {
             PORT = PORT + 1;
+            global.__streamdeck_port = PORT;
             setTimeout(() => {
                 try {
                     server.listen(PORT);
