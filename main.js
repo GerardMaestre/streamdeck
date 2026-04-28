@@ -1,13 +1,19 @@
-require('dotenv').config({ quiet: true });
-/**
- * Stream Deck Pro - Tray App Wrapper
- * Este archivo usa Electron para ejecutar tu servidor en segundo plano
- * y añade un icono en la bandeja del sistema de Windows.
- */
-
-const { app, Tray, Menu, shell, nativeImage, dialog, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const os = require('os');
+const { app, Tray, Menu, shell, nativeImage, dialog, BrowserWindow, ipcMain } = require('electron');
+
+// 1. Cargar variables de entorno según el entorno (Producción vs Desarrollo)
+const dotenv = require('dotenv');
+if (app.isPackaged) {
+    dotenv.config({ path: path.join(process.resourcesPath, '.env'), quiet: true });
+} else {
+    dotenv.config({ quiet: true });
+}
+
+/**
+ * Stream Deck Pro - Tray App Wrapper
+...
+ */
 
 // Evitar que la app abra múltiples instancias
 const gotTheLock = app.requestSingleInstanceLock();

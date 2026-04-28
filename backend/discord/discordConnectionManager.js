@@ -1,12 +1,14 @@
 const { exec } = require('child_process');
 const RPC = require('discord-rpc');
 
-const clientId = process.env.DISCORD_CLIENT_ID || '';
-const clientSecret = process.env.DISCORD_CLIENT_SECRET || '';
-const redirectUri = process.env.DISCORD_REDIRECT_URI || 'http://localhost';
+const clientId = (process.env.DISCORD_CLIENT_ID || '').trim();
+const clientSecret = (process.env.DISCORD_CLIENT_SECRET || '').trim();
+const redirectUri = (process.env.DISCORD_REDIRECT_URI || 'http://localhost').trim();
 
-if (!clientId || !clientSecret) {
-    console.warn('[Discord] DISCORD_CLIENT_ID o DISCORD_CLIENT_SECRET no definidos en .env. Control avanzado de voz deshabilitado.');
+if (!clientId) {
+    console.warn('[Discord] DISCORD_CLIENT_ID no definido en .env. Discord deshabilitado.');
+} else {
+    console.log(`[Discord] Cargado Client ID: ${clientId.substring(0, 5)}...`);
 }
 
 const LOGIN_SCOPES = ['rpc', 'rpc.voice.read', 'rpc.voice.write'];
@@ -74,6 +76,11 @@ class DiscordConnectionManager {
                 client.removeAllListeners();
             }
             
+            // Forzar cierre del socket subyacente si existe para evitar sockets colgando
+            if (client.transport && client.transport.socket && typeof client.transport.socket.destroy === 'function') {
+                client.transport.socket.destroy();
+            }
+
             // Intentar cerrar la conexión de forma segura
             if (typeof client.destroy === 'function') {
                 client.destroy().catch(() => {}); // Ignorar errores de destrucción
@@ -131,8 +138,8 @@ class DiscordConnectionManager {
                 label: `Avanzado (Silent)`,
                 id: `oauth-none-${candidate}`,
                 voiceCapable: true,
-                timeoutMs: 5000,
-                delayMs: 200,
+                timeoutMs: 15000,
+                delayMs: 1500, // Aumentado para evitar rate limit de IPC de Discord
                 options: { clientId, clientSecret, scopes: LOGIN_SCOPES, redirectUri: candidate, prompt: 'none' }
             });
         }
@@ -142,7 +149,8 @@ class DiscordConnectionManager {
             label: 'Básico',
             id: 'basic-ipc',
             voiceCapable: false,
-            timeoutMs: 3000,
+            timeoutMs: 15000,
+            delayMs: 1500, // Asegurar un respiro antes del fallback
             options: { clientId }
         });
 
@@ -153,7 +161,7 @@ class DiscordConnectionManager {
                 id: `oauth-ui-${candidate}`,
                 voiceCapable: true,
                 timeoutMs: 30000,
-                delayMs: 1000,
+                delayMs: 2000,
                 options: { clientId, clientSecret, scopes: LOGIN_SCOPES, redirectUri: candidate, prompt: 'consent' }
             });
         }
@@ -162,6 +170,7 @@ class DiscordConnectionManager {
 
     async loginWithAttempts() {
         const isRunning = await this.isDiscordRunning();
+        console.log(`[Discord] Comprobando ejecucion: ${isRunning ? 'Discord DETECTADO' : 'Discord NO DETECTADO'}`);
         if (!isRunning) {
             throw new Error('Discord no está ejecutándose en este PC');
         }
@@ -178,6 +187,7 @@ class DiscordConnectionManager {
             const attemptClient = new RPC.Client({ transport: 'ipc' });
             
             try {
+                console.log(`[Discord] Intentando conexion: ${attempt.label}...`);
                 const loginPromise = attemptClient.login(attempt.options);
                 const timeoutPromise = new Promise((_, reject) => 
                     setTimeout(() => reject(new Error('TIMEOUT_EXCEEDED')), attempt.timeoutMs)
@@ -189,12 +199,14 @@ class DiscordConnectionManager {
                     try {
                         await loggedClient.getVoiceSettings();
                     } catch (voiceError) {
+                        console.warn(`[Discord] El modo ${attempt.label} conecto pero no tiene permisos de voz.`);
                         this.destroyRpcClient(attemptClient);
                         continue;
                     }
                 }
                 return { client: loggedClient, attemptLabel: attempt.label, voiceCapable: !!attempt.voiceCapable };
             } catch (error) {
+                console.warn(`[Discord] Intento ${attempt.label} fallo: ${error.message}`);
                 this.destroyRpcClient(attemptClient);
                 if (this.isAuthLoginError(error?.message)) authFailureDetected = true;
                 lastError = error;
@@ -282,7 +294,11 @@ class DiscordConnectionManager {
         const authError = Boolean(error?.authFailureDetected) || this.isAuthLoginError(message);
 
         console.error('[Discord Connection] Fallo al conectar:', message);
-
+        if (error.code) console.error(`[Discord Connection] Codigo de error: ${error.code}`);
+        if (error.stack && !lowerMessage.includes('connection closed')) {
+             // Solo mostrar stack si no es el tipico cierre de conexion
+             console.debug(error.stack);
+        }
         if (this.rpc) {
             this.destroyRpcClient(this.rpc);
         }
