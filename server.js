@@ -1,9 +1,9 @@
-require('dotenv').config({ quiet: true });
+const { emitErrorToFrontend, getErrorMessage, getDataPath } = require('./backend/utils/utils');
+require('dotenv').config({ path: getDataPath('.env'), quiet: true });
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const fs = require('fs');
-const { emitErrorToFrontend, getErrorMessage, getDataPath } = require('./backend/utils/utils');
 
 // --- SISTEMA COMPLETO DE LOGS Y DEBUG ---
 const Logger = require("./backend/core/logger/logger");

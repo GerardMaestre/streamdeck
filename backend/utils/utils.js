@@ -33,7 +33,8 @@ const getDataPath = (relativePath) => {
         
         const isExternalData = relativePath.startsWith('config.json') || 
                                relativePath.startsWith('scripts') || 
-                               relativePath.startsWith('logs');
+                               relativePath.startsWith('logs') ||
+                               relativePath.startsWith('.env');
                                
         if (isExternalData || fs.existsSync(extraPath)) {
             return extraPath;

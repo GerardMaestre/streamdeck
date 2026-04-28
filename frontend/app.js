@@ -174,6 +174,7 @@ class StreamDeckClient {
             this.socket.emit('discord_initial_state');
 
             // Renderizar la interfaz solo si todo ha ido bien
+            this.loadAppSettings();
             this.initMainGrid();
             this.renderEditModeButton();
 
@@ -314,6 +315,85 @@ class StreamDeckClient {
         });
     }
 
+    loadAppSettings() {
+        this.appSettings = {
+            darkMode: localStorage.getItem('streamdeck_dark_mode') === 'true',
+            compactGrid: localStorage.getItem('streamdeck_compact_grid') === 'true',
+            showHelpTips: localStorage.getItem('streamdeck_show_help_tips') !== 'false'
+        };
+        document.body.classList.toggle('dark-mode', this.appSettings.darkMode);
+        document.body.classList.toggle('compact-grid', this.appSettings.compactGrid);
+    }
+
+    saveAppSetting(key, value) {
+        this.appSettings[key] = value;
+        localStorage.setItem(`streamdeck_${key}`, value.toString());
+        if (key === 'darkMode') {
+            document.body.classList.toggle('dark-mode', value);
+        }
+        if (key === 'compactGrid') {
+            document.body.classList.toggle('compact-grid', value);
+        }
+    }
+
+    openSettingsPanel() {
+        if (!this.overlay || !this.overlayContainer) return;
+
+        const settings = this.appSettings || {
+            darkMode: false,
+            compactGrid: false,
+            showHelpTips: true
+        };
+
+        this.overlayContainer.innerHTML = `
+            <div class="settings-panel glass">
+                <div class="settings-header">
+                    <div>
+                        <h2>Ajustes</h2>
+                        <p>Configura tu Stream Deck Pro desde esta pantalla.</p>
+                    </div>
+                    <button id="settings-close-btn" type="button" class="footer-btn">Cerrar</button>
+                </div>
+                <div class="settings-content">
+                    <label class="settings-row">
+                        <span>Modo oscuro</span>
+                        <input type="checkbox" id="setting-dark-mode" ${settings.darkMode ? 'checked' : ''} />
+                    </label>
+                    <label class="settings-row">
+                        <span>Grid compacto</span>
+                        <input type="checkbox" id="setting-compact-grid" ${settings.compactGrid ? 'checked' : ''} />
+                    </label>
+                    <label class="settings-row">
+                        <span>Mostrar consejos</span>
+                        <input type="checkbox" id="setting-show-help" ${settings.showHelpTips ? 'checked' : ''} />
+                    </label>
+                </div>
+            </div>
+        `;
+
+        const closeBtn = this.overlayContainer.querySelector('#settings-close-btn');
+        closeBtn?.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.closeFolder();
+        });
+
+        const darkModeToggle = this.overlayContainer.querySelector('#setting-dark-mode');
+        const compactGridToggle = this.overlayContainer.querySelector('#setting-compact-grid');
+        const helpToggle = this.overlayContainer.querySelector('#setting-show-help');
+
+        darkModeToggle?.addEventListener('change', (event) => {
+            this.saveAppSetting('darkMode', event.target.checked);
+        });
+        compactGridToggle?.addEventListener('change', (event) => {
+            this.saveAppSetting('compactGrid', event.target.checked);
+        });
+        helpToggle?.addEventListener('change', (event) => {
+            this.saveAppSetting('showHelpTips', event.target.checked);
+        });
+
+        this.overlay.classList.remove('hidden');
+    }
+
     _getButtonHelpText(btnData) {
         if (btnData.helpText) return btnData.helpText;
 
@@ -417,23 +497,81 @@ class StreamDeckClient {
     renderGrid(pageId = 'main') {
         this.currentPage = pageId;
         this.container.innerHTML = '';
-        this.container.className = 'grid-container'; // Limpiamos clases de vistas especiales
+        this.container.className = 'deck-view'; // Vista custom con grid + footer
 
         const pageData = this.getPageData(pageId);
         const shouldInjectBack = pageId !== 'main';
-        const fragment = document.createDocumentFragment();
+
+        // Grid principal (4x4)
+        const gridEl = document.createElement('div');
+        gridEl.className = 'deck-grid';
 
         if (shouldInjectBack) {
-            fragment.appendChild(this.createBackButton(0));
+            gridEl.appendChild(this.createBackButton(0));
         }
 
         pageData.forEach((btnData, index) => {
             const visualIndex = shouldInjectBack ? index + 1 : index;
-            fragment.appendChild(this.createButton(btnData, visualIndex));
+            gridEl.appendChild(this.createButton(btnData, visualIndex));
         });
 
-        this.container.appendChild(fragment);
+        this.container.appendChild(gridEl);
 
+        // Footer con cuatro controles (Editar / Anterior / Siguiente / Ajustes)
+        // Eliminar cualquier botón flotante existente para evitar duplicados
+        const existingFloating = document.getElementById('edit-mode-btn');
+        if (existingFloating && !existingFloating.closest('.deck-footer')) {
+            existingFloating.remove();
+        }
+        const footer = document.createElement('div');
+        footer.className = 'deck-footer';
+
+        const btnEditar = document.createElement('button');
+        btnEditar.id = 'edit-mode-btn';
+        btnEditar.className = 'footer-btn';
+        btnEditar.textContent = 'Editar';
+        btnEditar.addEventListener('pointerup', (e) => {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            if (this.editMode) {
+                this.exitEditMode();
+            } else {
+                this.enterEditMode();
+            }
+        });
+
+        const btnAnterior = document.createElement('button');
+        btnAnterior.className = 'footer-btn';
+        btnAnterior.textContent = 'Anterior';
+        btnAnterior.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (this.carouselIndex > 0) this.renderCarouselSlide(this.carouselIndex - 1, -1);
+        });
+
+        const btnSiguiente = document.createElement('button');
+        btnSiguiente.className = 'footer-btn';
+        btnSiguiente.textContent = 'Siguiente';
+        btnSiguiente.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (this.carouselIndex < this.carouselPages.length - 1) this.renderCarouselSlide(this.carouselIndex + 1, 1);
+        });
+
+        const btnAjustes = document.createElement('button');
+        btnAjustes.className = 'footer-btn';
+        btnAjustes.textContent = 'Ajustes';
+        btnAjustes.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.openSettingsPanel();
+        });
+
+        footer.appendChild(btnEditar);
+        footer.appendChild(btnAnterior);
+        footer.appendChild(btnSiguiente);
+        footer.appendChild(btnAjustes);
+
+        this.container.appendChild(footer);
+
+        this.renderEditModeButton();
         this._setEditButtonVisibility(true);
     }
 
@@ -1836,17 +1974,18 @@ class StreamDeckClient {
         const slideClass = direction > 0 ? 'slide-enter-right' : direction < 0 ? 'slide-enter-left' : '';
 
         this.container.innerHTML = '';
-        this.container.className = 'grid-container';
+        this.container.className = 'deck-view';
         const useSlideAnimation = !this.initialLoad && Boolean(slideClass);
         if (useSlideAnimation) this.container.classList.add(slideClass);
 
         const pageData = this.getPageData(pageId);
-        const fragment = document.createDocumentFragment();
 
+        const gridEl = document.createElement('div');
+        gridEl.className = 'deck-grid';
         pageData.forEach((btnData, i) => {
-            fragment.appendChild(this.createButton(btnData, i));
+            gridEl.appendChild(this.createButton(btnData, i));
         });
-        this.container.appendChild(fragment);
+        this.container.appendChild(gridEl);
 
         // Forzar reflow para que la animación funcione
         if (useSlideAnimation) {
@@ -1855,7 +1994,65 @@ class StreamDeckClient {
             this.container.classList.add('slide-active');
         }
 
-        this.renderCarouselNavigationButtons();
+        // Footer con controles como en renderGrid
+        // Eliminar cualquier botón flotante existente para evitar duplicados
+        const existingFloating = document.getElementById('edit-mode-btn');
+        if (existingFloating && !existingFloating.closest('.deck-footer')) {
+            existingFloating.remove();
+        }
+
+        const footer = document.createElement('div');
+        footer.className = 'deck-footer';
+
+        const btnEditar = document.createElement('button');
+        btnEditar.id = 'edit-mode-btn';
+        btnEditar.type = 'button';
+        btnEditar.className = 'footer-btn';
+        btnEditar.textContent = 'Editar';
+        btnEditar.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (this.editMode) {
+                this.exitEditMode();
+            } else {
+                this.enterEditMode();
+            }
+        });
+
+        const btnAnterior = document.createElement('button');
+        btnAnterior.type = 'button';
+        btnAnterior.className = 'footer-btn';
+        btnAnterior.textContent = 'Anterior';
+        btnAnterior.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (this.carouselIndex > 0) this.renderCarouselSlide(this.carouselIndex - 1, -1);
+        });
+
+        const btnSiguiente = document.createElement('button');
+        btnSiguiente.type = 'button';
+        btnSiguiente.className = 'footer-btn';
+        btnSiguiente.textContent = 'Siguiente';
+        btnSiguiente.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (this.carouselIndex < this.carouselPages.length - 1) this.renderCarouselSlide(this.carouselIndex + 1, 1);
+        });
+
+        const btnAjustes = document.createElement('button');
+        btnAjustes.type = 'button';
+        btnAjustes.className = 'footer-btn';
+        btnAjustes.textContent = 'Ajustes';
+        btnAjustes.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.openSettingsPanel();
+        });
+
+        footer.appendChild(btnEditar);
+        footer.appendChild(btnAnterior);
+        footer.appendChild(btnSiguiente);
+        footer.appendChild(btnAjustes);
+
+        this.container.appendChild(footer);
+        this.renderEditModeButton();
+
         this._setEditButtonVisibility(true);
 
         // Si estamos en modo edición, reactivar drag en los nuevos botones
@@ -1954,22 +2151,18 @@ class StreamDeckClient {
 
     /** Crea el botón flotante de edición y lo añade al body */
     renderEditModeButton() {
+        // Only update an existing `edit-mode-btn` (now provided by the footer).
+        // Do NOT create a floating fallback button to avoid duplicate controls.
         const existing = document.getElementById('edit-mode-btn');
-        if (existing) existing.remove();
+        if (!existing) return;
 
-        const btn = document.createElement('button');
-        btn.id = 'edit-mode-btn';
-        btn.innerHTML = '<span class="edit-btn-icon">✏️</span><span class="edit-btn-label">Editar</span>';
-        btn.addEventListener('pointerup', (e) => {
-            e.preventDefault();
-            e.stopImmediatePropagation();
-            if (this.editMode) {
-                this.exitEditMode();
-            } else {
-                this.enterEditMode();
-            }
-        });
-        document.body.appendChild(btn);
+        if (this.editMode) {
+            existing.classList.add('active');
+            existing.textContent = 'Listo';
+        } else {
+            existing.classList.remove('active');
+            existing.textContent = 'Editar';
+        }
     }
 
     /** Muestra u oculta el botón de edición y los dots del carrusel */
