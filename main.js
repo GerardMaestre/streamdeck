@@ -63,16 +63,29 @@ app.whenReady().then(async () => {
     // 2. IMPORTAR TU SERVIDOR ORIGINAL
     // Esto ejecuta tu código backend de Node.js en segundo plano
     try {
-        console.log('[App Bandeja] Iniciando servidor Node.js...');
+        console.log('[App Bandeja] Iniciando motor del servidor...');
+        
+        // Verificación de integridad de archivos críticos antes de arrancar
+        const serverScript = path.join(__dirname, 'server.js');
+        if (!require('fs').existsSync(serverScript)) {
+            throw new Error(`No se encontró el archivo del servidor en: ${serverScript}`);
+        }
+
         require('./server.js');
-        // Leer el puerto real (server.js puede cambiarlo si hay colisión)
-        const portFromServer = await waitForServerPort(3000);
-        if (portFromServer) PORT = portFromServer;
+        
+        // Esperar a que el servidor asigne el puerto (máximo 5 segundos)
+        const portFromServer = await waitForServerPort(5000);
+        if (portFromServer) {
+            PORT = portFromServer;
+            console.log(`[App Bandeja] Servidor detectado en puerto: ${PORT}`);
+        } else {
+            console.warn('[App Bandeja] El servidor no reportó puerto tras 5s. Usando puerto por defecto.');
+        }
     } catch (error) {
-        console.error('[App Bandeja] Error al iniciar el servidor:', error);
+        console.error('[App Bandeja] FALLO CRÍTICO AL INICIAR SERVIDOR:', error);
         dialog.showErrorBox(
             'Error al iniciar el Servidor',
-            `No se pudo arrancar el motor de Stream Deck Pro.\n\nDetalles: ${error.message}`
+            `No se pudo arrancar el motor de Stream Deck Pro.\n\nDetalles: ${error.message || error}`
         );
     }
 
