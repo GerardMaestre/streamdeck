@@ -86,6 +86,8 @@ class StreamDeckClient {
         this.listenersInitialized = false;
 
         this.discordMute = false;
+        this.buttonState = new WeakMap();
+        this.globalMixerTrackHeight = 0;
         this.discordDeaf = false;
         this.discordUsers = [];
         this.discordConnectionStatus = 'disconnected';
@@ -100,6 +102,13 @@ class StreamDeckClient {
 
         this.pendingScriptData = null;
         this.wakeLock = null;
+        this.appState = {
+            ui: {
+                lastPage: 'main'
+            },
+            persistedMixer: {}
+        };
+        this.offlineBanner = null;
         this.volumeEmitIntervalMs = 50; // Red local: 50ms suficiente para respuesta instantánea
         this.mixerRefs = {}; // Caché de referencias DOM para el mixer
 
@@ -139,6 +148,8 @@ class StreamDeckClient {
     async init() {
         this.setupSocketListeners();
         this.setupDOMListeners();
+        this.setupConnectivityListeners();
+        this.registerServiceWorker();
 
         try {
             const fetchOptions = {
@@ -176,7 +187,7 @@ class StreamDeckClient {
             this.socket.emit('discord_initial_state');
 
             // Renderizar la interfaz solo si todo ha ido bien
-            this.loadAppSettings();
+            await this.loadAppSettings();
             this.initMainGrid();
             this.renderEditModeButton();
 
@@ -317,7 +328,7 @@ class StreamDeckClient {
         });
     }
 
-    loadAppSettings() {
+    async loadAppSettings() {
         this.appSettings = {
             darkMode: localStorage.getItem('streamdeck_dark_mode') === 'true',
             compactGrid: localStorage.getItem('streamdeck_compact_grid') === 'true',
@@ -325,6 +336,27 @@ class StreamDeckClient {
         };
         document.body.classList.toggle('dark-mode', this.appSettings.darkMode);
         document.body.classList.toggle('compact-grid', this.appSettings.compactGrid);
+
+        try {
+            const fetchOptions = {
+                headers: {
+                    'Authorization': this.securityToken,
+                    'Content-Type': 'application/json'
+                }
+            };
+            const res = await fetch('/api/app-state', fetchOptions);
+            if (res.ok) {
+                const appState = await res.json();
+                if (appState && typeof appState === 'object') {
+                    this.appState = appState;
+                    if (appState.ui?.lastPage) {
+                        this.currentPage = appState.ui.lastPage;
+                    }
+                }
+            }
+        } catch (error) {
+            console.warn('No se pudo recuperar el estado persistido del servidor:', error);
+        }
     }
 
     saveAppSetting(key, value) {
@@ -336,6 +368,58 @@ class StreamDeckClient {
         if (key === 'compactGrid') {
             document.body.classList.toggle('compact-grid', value);
         }
+    }
+
+    async persistAppState(payload = {}) {
+        if (!payload || typeof payload !== 'object') return;
+        this.appState = {
+            ...this.appState,
+            ...payload,
+            updatedAt: Date.now()
+        };
+        try {
+            await fetch('/api/app-state', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': this.securityToken
+                },
+                body: JSON.stringify(this.appState)
+            });
+        } catch (error) {
+            console.warn('No se pudo persistir el estado de la app:', error);
+        }
+    }
+
+    createOfflineBanner() {
+        const banner = document.createElement('div');
+        banner.id = 'offline-banner';
+        banner.className = 'offline-banner hidden';
+        banner.textContent = 'Modo offline activado. Algunas funciones pueden no estar disponibles.';
+        document.body.appendChild(banner);
+        return banner;
+    }
+
+    setupConnectivityListeners() {
+        const updateBanner = () => {
+            if (!this.offlineBanner) this.offlineBanner = this.createOfflineBanner();
+            this.offlineBanner.classList.toggle('hidden', navigator.onLine);
+        };
+        window.addEventListener('online', updateBanner);
+        window.addEventListener('offline', updateBanner);
+        updateBanner();
+    }
+
+    registerServiceWorker() {
+        if (!('serviceWorker' in navigator)) return;
+        window.addEventListener('load', async () => {
+            try {
+                await navigator.serviceWorker.register('/sw.js');
+                console.log('[PWA] Service worker registrado con éxito.');
+            } catch (error) {
+                console.warn('[PWA] Error registrando service worker:', error);
+            }
+        });
     }
 
     openSettingsPanel() {
@@ -498,7 +582,8 @@ class StreamDeckClient {
 
     renderGrid(pageId = 'main') {
         this.currentPage = pageId;
-        this.container.innerHTML = '';
+        this.persistAppState({ ui: { lastPage: pageId } });
+        this.container.replaceChildren();
         this.container.className = 'deck-view'; // Vista custom con grid + footer
 
         const pageData = this.getPageData(pageId);
@@ -578,7 +663,7 @@ class StreamDeckClient {
     }
 
     renderDiscordPanel() {
-        this.container.innerHTML = '';
+        this.container.replaceChildren();
         this.container.className = 'grid-container';
 
         const fragment = document.createDocumentFragment();
@@ -896,59 +981,118 @@ class StreamDeckClient {
 
         btn.appendChild(iconEl);
         btn.appendChild(labelEl);
-        // === LÓGICA DE PULSACIÓN LARGA PARA MOSTRAR AYUDA ===
-        let longPressTimer = null;
-        let startPos = null;
-        let longPressHandled = false;
+        this.buttonState.set(btn, {
+            btnData,
+            longPressTimer: null,
+            startPos: null,
+            longPressHandled: false
+        });
 
-        const startTimer = (e) => {
-            if (this.editMode) return;
-            startPos = { x: e.clientX, y: e.clientY };
+        return btn;
+    }
+
+    openFolder(pageId) {
+        this.renderGrid(pageId);
+    }
+
+    closeFolder() {
+        this.overlay.classList.add('hidden');
+        setTimeout(() => {
+            if (this.overlay.classList.contains('hidden')) {
+                this.overlayContainer.replaceChildren();
+            }
+        }, 300);
+    }
+
+    setupDOMListeners() {
+        this.overlay.addEventListener('click', (e) => {
+            if (e.target === this.overlay) this.closeFolder();
+        });
+
+        document.body.addEventListener('click', () => {
+            if (!this.wakeLock) this.requestWakeLock();
+        }, { once: true });
+
+        document.addEventListener('visibilitychange', () => {
+            if (this.wakeLock !== null && document.visibilityState === 'visible') {
+                this.requestWakeLock();
+            }
+        });
+
+        this._setupButtonDelegation();
+        this._setupCarouselDelegation();
+        window.streamDeck = this;
+    }
+
+    // --- PANEL CACHE MANAGER ---
+    _setupButtonDelegation() {
+        const onPointerDown = (e) => {
+            const btn = e.target.closest('.boton');
+            if (!btn || !this.buttonState.has(btn) || this.editMode) return;
+
+            const state = this.buttonState.get(btn);
+            state.startPos = { x: e.clientX, y: e.clientY };
+            state.longPressHandled = false;
             btn.classList.add('pressing');
-            longPressTimer = setTimeout(async () => {
+
+            state.longPressTimer = setTimeout(async () => {
+                if (!this.buttonState.has(btn)) return;
+                state.longPressHandled = true;
                 if (navigator.vibrate) navigator.vibrate([40, 20, 40]);
-                longPressHandled = true;
-                const helpText = this._getButtonHelpText(btnData);
-                await this.showInfoModal(helpText, btnData.label || 'Información');
+                const helpText = this._getButtonHelpText(state.btnData);
+                await this.showInfoModal(helpText, state.btnData.label || 'Información');
             }, 600);
         };
 
-        const clearTimer = () => {
-            if (longPressTimer) {
-                clearTimeout(longPressTimer);
-                longPressTimer = null;
+        const clearTimer = (btn, state) => {
+            if (!state) return;
+            if (state.longPressTimer) {
+                clearTimeout(state.longPressTimer);
+                state.longPressTimer = null;
             }
             btn.classList.remove('pressing');
         };
 
-        const handlePointerUp = (e) => {
-            clearTimer();
-            if (longPressHandled) {
+        const onPointerMove = (e) => {
+            const btn = e.target.closest('.boton');
+            if (!btn || !this.buttonState.has(btn)) return;
+            const state = this.buttonState.get(btn);
+            if (!state.startPos) return;
+            const dist = Math.hypot(e.clientX - state.startPos.x, e.clientY - state.startPos.y);
+            if (dist > 15) {
+                clearTimer(btn, state);
+                state.startPos = null;
+            }
+        };
+
+        const onPointerUp = (e) => {
+            const btn = e.target.closest('.boton');
+            if (!btn || !this.buttonState.has(btn)) return;
+            const state = this.buttonState.get(btn);
+            const handled = state.longPressHandled;
+            clearTimer(btn, state);
+            state.startPos = null;
+            if (handled) {
                 e.preventDefault();
                 e.stopPropagation();
             }
         };
 
-        btn.addEventListener('pointerdown', startTimer);
-        btn.addEventListener('pointermove', (e) => {
-            if (!startPos) return;
-            const dist = Math.hypot(e.clientX - startPos.x, e.clientY - startPos.y);
-            if (dist > 15) clearTimer();
-        }, { passive: true });
-        btn.addEventListener('pointerup', handlePointerUp);
-        btn.addEventListener('pointercancel', handlePointerUp);
-        btn.addEventListener('pointerleave', clearTimer, { passive: true });
-
-        btn.addEventListener('click', async () => {
-            // En modo edición, el drag se encarga. No ejecutar acciones.
+        const onClick = async (e) => {
+            const btn = e.target.closest('.boton');
+            if (!btn || !this.buttonState.has(btn)) return;
+            const state = this.buttonState.get(btn);
             if (this.editMode) return;
-            if (longPressHandled) {
-                longPressHandled = false;
+            if (state.longPressHandled) {
+                state.longPressHandled = false;
+                e.preventDefault();
+                e.stopPropagation();
                 return;
             }
 
             if (navigator.vibrate) navigator.vibrate(50);
 
+            const btnData = state.btnData;
             const isFolderButton = btnData.type === 'folder' || Boolean(btnData.targetPage);
 
             if (isFolderButton) {
@@ -971,7 +1115,6 @@ class StreamDeckClient {
 
                 const isScript = btnData.channel === 'ejecutar_script' || btnData.action === 'ejecutar_script_dinamico';
                 if (isScript && btnData.payload && btnData.payload.requiresParams) {
-                    // Delegamos al servidor para que pida los parámetros en el PC
                     this.socket.emit(btnData.action, btnData.payload);
                 } else {
                     if (btnData.payload) {
@@ -981,43 +1124,46 @@ class StreamDeckClient {
                     }
                 }
             }
-        });
+        };
 
-        return btn;
+        if (this.container) {
+            this.container.addEventListener('pointerdown', onPointerDown);
+            this.container.addEventListener('pointermove', onPointerMove, { passive: true });
+            this.container.addEventListener('pointerup', onPointerUp);
+            this.container.addEventListener('pointercancel', onPointerUp);
+            this.container.addEventListener('pointerout', onPointerUp);
+            this.container.addEventListener('click', onClick);
+        }
     }
 
-    openFolder(pageId) {
-        this.renderGrid(pageId);
-    }
+    _setupCarouselDelegation() {
+        const onCarouselTarget = (e) => {
+            const target = e.target.closest('[data-carousel-index], [data-carousel-action]');
+            if (!target) return;
+            if (this.editMode) return;
+            e.preventDefault();
+            e.stopPropagation();
 
-    closeFolder() {
-        this.overlay.classList.add('hidden');
-        setTimeout(() => {
-            if (this.overlay.classList.contains('hidden')) {
-                this.overlayContainer.innerHTML = '';
+            const indexAttr = target.dataset.carouselIndex;
+            if (indexAttr !== undefined) {
+                const index = Number(indexAttr);
+                if (!Number.isFinite(index) || index === this.carouselIndex) return;
+                const dir = index > this.carouselIndex ? 1 : -1;
+                this.renderCarouselSlide(index, dir);
+                return;
             }
-        }, 300);
-    }
 
-    setupDOMListeners() {
-        this.overlay.addEventListener('click', (e) => {
-            if (e.target === this.overlay) this.closeFolder();
-        });
-
-        document.body.addEventListener('click', () => {
-            if (!this.wakeLock) this.requestWakeLock();
-        }, { once: true });
-
-        document.addEventListener('visibilitychange', () => {
-            if (this.wakeLock !== null && document.visibilityState === 'visible') {
-                this.requestWakeLock();
+            const action = target.dataset.carouselAction;
+            if (action === 'prev' && this.carouselIndex > 0) {
+                this.renderCarouselSlide(this.carouselIndex - 1, -1);
+            } else if (action === 'next' && this.carouselIndex < this.carouselPages.length - 1) {
+                this.renderCarouselSlide(this.carouselIndex + 1, 1);
             }
-        });
+        };
 
-        window.streamDeck = this;
+        document.body.addEventListener('click', onCarouselTarget, true);
     }
 
-    // --- PANEL CACHE MANAGER ---
     showPanel(panelId) {
         const start = performance.now();
         
@@ -1079,44 +1225,44 @@ class StreamDeckClient {
         // Escapamos las comillas dobles del SVG para que no cierren el atributo onerror="...".
         const svgForOnerror = fallbackSVG.replace(/"/g, '&quot;');
 
-        const iconMap = {
-            'spotify': 'spotify/1DB954',
-            'discord': 'discord/5865F2',
-            'chrome': 'googlechrome/4285F4',
-            'edge': 'microsoftedge/0078D7',
-            'microsoft edge': 'microsoftedge/0078D7',
-            'steam': 'steam/ffffff',
-            'obs': 'obsstudio/FFFFFF',
-            'vlc': 'vlcmediaplayer/FF8800',
-            'firefox': 'firefox/FF7139',
-            'brave': 'brave/FF2000',
-            'whatsapp': 'whatsapp/25D366',
-            'telegram': 'telegram/26A5E4',
-            'teams': 'microsoftteams/6264A7',
-            'zoom': 'zoom/2D8CFF',
-            'epic games': 'epicgames/FFFFFF',
-            'ea': 'electronicarts/FFFFFF',
-            'origin': 'origin/FFFFFF',
-            'ubisoft': 'ubisoft/FFFFFF',
-            'powertoys': 'microsoft/FFFFFF',
-            'sonidos del sistema': 'windows11/0078D4',
-            'system sounds': 'windows11/0078D4',
-            'league of legends': 'leagueoflegends/C89B3C',
-            'valorant': 'valorant/FF4655',
-            'minecraft': 'minecraft/118C4E',
-            'roblox': 'roblox/FFFFFF',
-            'itunes': 'itunes/FB5EC9',
-            'opera gx': 'operagx/FF0000',
-            'opera': 'opera/FF1B2D',
-            'slack': 'slack/4A154B',
-            'nvidia': 'nvidia/76B900',
-            'amd': 'amd/ED1C24',
-            'visual studio': 'visualstudiocode/007ACC',
-            'twitch': 'twitch/9146FF',
-            'youtube': 'youtube/FF0000',
-            'battle.net': 'battlenet/00AEFF',
-            'riot': 'riotgames/D32936',
-            'rockstar': 'rockstargames/FFFFFF'
+        const iconEmojiMap = {
+            'spotify': '🎵',
+            'discord': '💬',
+            'chrome': '🌐',
+            'edge': '🌐',
+            'microsoft edge': '🌐',
+            'steam': '🎮',
+            'obs': '🎥',
+            'vlc': '🎬',
+            'firefox': '🦊',
+            'brave': '🦁',
+            'whatsapp': '💬',
+            'telegram': '✈️',
+            'teams': '👥',
+            'zoom': '📹',
+            'epic games': '🎮',
+            'ea': '🎮',
+            'origin': '⬡',
+            'ubisoft': '🌀',
+            'powertoys': '⚙️',
+            'sonidos del sistema': '🔉',
+            'system sounds': '🔉',
+            'league of legends': '🛡️',
+            'valorant': '🔥',
+            'minecraft': '🟩',
+            'roblox': '🟥',
+            'itunes': '🎧',
+            'opera gx': '🟣',
+            'opera': '🟥',
+            'slack': '💬',
+            'nvidia': '🟩',
+            'amd': '🔺',
+            'visual studio': '🟦',
+            'twitch': '🟪',
+            'youtube': '▶️',
+            'battle.net': '☁️',
+            'riot': '🔥',
+            'rockstar': '⭐'
         };
 
         // Categorías por Emojis con tamaño máximo (3.2rem)
@@ -1128,10 +1274,9 @@ class StreamDeckClient {
         if (name.includes('web') || name.includes('browser') || name.includes('internet')) return `<span class="${shadowClass}" style="font-size:3.2rem;">🌐</span>`;
         if (name.includes('driver') || name.includes('system') || name.includes('host') || name.includes('update')) return `<span class="${shadowClass}" style="font-size:3.2rem;">⚙️</span>`;
 
-        for (const key in iconMap) {
+        for (const key in iconEmojiMap) {
             if (name.includes(key)) {
-                // El onerror ahora es seguro al usar &quot; para el SVG y comillas simples para el JS interno del atributo
-                return `<img src="https://cdn.simpleicons.org/${iconMap[key]}" class="${shadowClass}" style="width: 48px; height: 48px; filter: drop-shadow(0 4px 10px rgba(0,0,0,0.35));" onerror="this.onerror=null; this.parentElement.innerHTML='${svgForOnerror}';" />`;
+                return `<span class="${shadowClass}" style="font-size:3.2rem;">${iconEmojiMap[key]}</span>`;
             }
         }
 
@@ -1189,7 +1334,11 @@ class StreamDeckClient {
     }
 
     createMixerRow(appData, isMaster = false) {
-        const id = isMaster ? 'global' : appData.name;
+        const baseName = isMaster ? 'global' : String(appData.name).trim();
+        // ID sanitizado para usar en HTML (evita caracteres especiales en atributos)
+        const sanitizedId = baseName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+        // Nombre original para comunicación con servidor
+        const serverName = isMaster ? 'global' : baseName;
         const labelName = isMaster ? 'Master' : appData.name;
 
         const iconHTML = this.getIconForApp(labelName, isMaster);
@@ -1199,11 +1348,11 @@ class StreamDeckClient {
 
         const row = document.createElement('div');
         row.className = 'mixer-row';
-        row.id = `mixer-row-${id}`;
+        row.id = `mixer-row-${sanitizedId}`;
 
         row.innerHTML = `
             <div class="mixer-icon-btn${mutedClass}">
-                <div id="icon-wrapper-${id}" class="mixer-icon-wrapper${mutedWrapperClass}">
+                <div id="icon-wrapper-${sanitizedId}" class="mixer-icon-wrapper${mutedWrapperClass}">
                     ${iconHTML}
                 </div>
             </div>
@@ -1220,7 +1369,7 @@ class StreamDeckClient {
             iconBtn.addEventListener('pointerup', (event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                this.toggleMute(id, isMaster);
+                this.toggleMute(serverName, isMaster, sanitizedId);
             });
         }
 
@@ -1230,75 +1379,97 @@ class StreamDeckClient {
         const wrapper = row.querySelector('.mixer-icon-wrapper');
 
         // Guardamos las referencias para actualizaciones en tiempo real
-        this.mixerRefs[id] = { fill, thumb, wrapper, track: container, trackH: 0 };
+        this.mixerRefs[sanitizedId] = { fill, thumb, wrapper, track: container, trackH: 0, sessionName: baseName };
         let containerRect = null;
         let trackH = 0;
         let isRAFActive = false;
+        let latestClientY = 0; // Guardar última posición del dedo
+
+        const renderVisuals = () => {
+            isRAFActive = false; // Liberamos el lock del frame
+            if (!containerRect) return;
+
+            let y = latestClientY - containerRect.top;
+
+            // 1. CÁLCULO VISUAL (FLOTANTE, SIN REDONDEAR): Da fluidez perfecta
+            let percentSmooth = 100 - (y / trackH) * 100;
+            percentSmooth = Math.max(0, Math.min(100, percentSmooth));
+
+            // Actualización DOM inmediata por hardware
+            fill.style.transform = `scale3d(1, ${percentSmooth / 100}, 1)`;
+            this.setThumbTransform(thumb, percentSmooth, trackH);
+
+            // 2. CÁLCULO DE RED (REDONDEADO): Para enviar al servidor
+            let percentRounded = Math.round(percentSmooth);
+            if (percentRounded !== this[`last_mixer_${sanitizedId}`]) {
+                this[`last_mixer_${sanitizedId}`] = percentRounded;
+                this.updateVolumeServer(serverName, percentRounded, isMaster);
+            }
+        };
 
         const updateUI = (e) => {
             if (!containerRect) {
                 containerRect = container.getBoundingClientRect();
                 trackH = containerRect.height;
-                this.mixerRefs[id].trackH = trackH; // cachear para updateSliderUI
+                this.mixerRefs[sanitizedId].trackH = trackH; // cachear para updateSliderUI
             }
-            
-            const clientY = e.clientY;
-            let y = clientY - containerRect.top;
-            let percent = 100 - (y / trackH) * 100;
-            percent = Math.max(0, Math.min(100, Math.round(percent)));
 
-            if (percent === this[`last_mixer_${id}`]) return;
-            this[`last_mixer_${id}`] = percent;
+            // Solo actualizamos la posición y pedimos 1 frame
+            latestClientY = e.clientY;
 
-            // 1. Visual (Optimized RAF - solo compositor, cero layout reflow)
             if (!isRAFActive) {
                 isRAFActive = true;
-                requestAnimationFrame(() => {
-                    const p = this[`last_mixer_${id}`];
-                    fill.style.transform = `scale3d(1, ${p / 100}, 1)`;
-                    this.setThumbTransform(thumb, p, trackH);
-                    isRAFActive = false;
-                });
+                requestAnimationFrame(renderVisuals);
             }
-
-            // 2. Network (Throttled)
-            this.updateVolumeServer(id, percent, isMaster);
         };
 
         const onPointerDown = (e) => {
             e.preventDefault();
+            e.stopPropagation();
             const row = container.closest('.mixer-row');
             if (row) row.classList.add('dragging'); // Modo Zero Lag
 
-            this.activeSliders.add(id);
-            
+            this.activeSliders.add(sanitizedId);
+
             containerRect = container.getBoundingClientRect();
             trackH = containerRect.height;
-            thumb.setPointerCapture(e.pointerId);
             document.body.classList.add('dragging-active');
-            thumb.addEventListener('pointermove', updateUI);
+            
+            // Usar setPointerCapture para que SOLO este container reciba los eventos
+            container.setPointerCapture(e.pointerId);
+            
+            // Registrar listeners en el container, no en window
+            container.addEventListener('pointermove', updateUI);
+            container.addEventListener('pointerup', releaseSlider);
+            container.addEventListener('pointercancel', releaseSlider);
             updateUI(e);
         };
-
 
         container.addEventListener('pointerdown', onPointerDown);
 
         const releaseSlider = (e) => {
-            if (thumb.hasPointerCapture && thumb.hasPointerCapture(e.pointerId)) {
-                thumb.releasePointerCapture(e.pointerId);
-            }
             document.body.classList.remove('dragging-active');
-            thumb.removeEventListener('pointermove', updateUI);
+            
+            // Remover la captura de pointer
+            try {
+                container.releasePointerCapture(e.pointerId);
+            } catch (err) {
+                // Si ya fue liberado, ignorar error
+            }
+            
+            // Remover listeners del container
+            container.removeEventListener('pointermove', updateUI);
+            container.removeEventListener('pointerup', releaseSlider);
+            container.removeEventListener('pointercancel', releaseSlider);
 
-
-            const finalPercent = this[`last_mixer_${id}`];
+            const finalPercent = this[`last_mixer_${sanitizedId}`];
             if (Number.isFinite(finalPercent)) {
-                this.updateVolumeServer(id, finalPercent, isMaster, true);
+                this.updateVolumeServer(serverName, finalPercent, isMaster, true);
             }
 
             // Grace period: permite que el último update se procese
             setTimeout(() => {
-                this.activeSliders.delete(id); // DESBLOQUEA updates después
+                this.activeSliders.delete(sanitizedId); // DESBLOQUEA updates después
             }, 150);
             containerRect = null;
         };
@@ -1316,12 +1487,11 @@ class StreamDeckClient {
 
         // Comprobación de integridad para evitar re-renders innecesarios si nada ha cambiado
         const currentStateStr = JSON.stringify(this.lastMixerState);
-        if (this._renderedMixerState === currentStateStr) return;
         this._renderedMixerState = currentStateStr;
 
         this.mixerRefs = {};
-        masterContainer.innerHTML = '';
-        appsContainer.innerHTML = '';
+        masterContainer.replaceChildren();
+        appsContainer.replaceChildren();
 
         const masterFragment = document.createDocumentFragment();
         masterFragment.appendChild(this.createMixerRow(this.lastMixerState.master, true));
@@ -1362,7 +1532,8 @@ class StreamDeckClient {
                 if (id === 'global') {
                     vol = this.lastMixerState.master.volume;
                 } else {
-                    const sess = this.lastMixerState.sessions.find(s => s.name === id);
+                    const sess = this.lastMixerState.sessions.find(s => s.name === refs.sessionName) ||
+                        this.lastMixerState.sessions.find(s => String(s.name).toLowerCase().replace(/[^a-z0-9]/g, '_') === id);
                     if (sess) vol = sess.volume;
                 }
                 
@@ -1412,6 +1583,14 @@ class StreamDeckClient {
         if (!Number.isFinite(roundedValue)) return;
         this.pendingVolUpdates[queueKey] = roundedValue;
 
+        const emitVolume = (volume) => {
+            if (isMaster) {
+                this.socket.volatile.emit('set_master_volume', volume);
+            } else {
+                this.socket.volatile.emit('set_session_volume', { app, value: volume });
+            }
+        };
+
         if (immediate) {
             if (this.volUpdateTimers[queueKey]) {
                 clearTimeout(this.volUpdateTimers[queueKey]);
@@ -1422,11 +1601,7 @@ class StreamDeckClient {
             const currentVolume = this.pendingVolUpdates[queueKey];
             if (this.lastEmittedVol[queueKey] === currentVolume) return;
             this.lastEmittedVol[queueKey] = currentVolume;
-            if (isMaster) {
-                this.socket.emit('set_master_volume', currentVolume);
-            } else {
-                this.socket.emit('set_session_volume', { app, value: currentVolume });
-            }
+            emitVolume(currentVolume);
             return;
         }
 
@@ -1434,11 +1609,7 @@ class StreamDeckClient {
             const valToEmit = this.pendingVolUpdates[queueKey];
             if (this.lastEmittedVol[queueKey] === valToEmit) return;
             this.lastEmittedVol[queueKey] = valToEmit;
-            if (isMaster) {
-                this.socket.emit('set_master_volume', valToEmit);
-            } else {
-                this.socket.emit('set_session_volume', { app, value: valToEmit });
-            }
+            emitVolume(valToEmit);
         });
     }
 
@@ -1451,9 +1622,10 @@ class StreamDeckClient {
     }
 
     // 🔥 FIX DEFINITIVO PARA EL REBOTE DE MUTE (Optimistic UI)
-    toggleMute(app, isMaster) {
+    toggleMute(app, isMaster, domId = null) {
         const id = isMaster ? 'global' : app;
-        const wrapper = document.getElementById(id === 'global' ? 'icon-wrapper-global' : `icon-wrapper-${id}`) || document.getElementById(`icon-${id}`);
+        const domKey = isMaster ? 'global' : (domId || String(app).toLowerCase().replace(/[^a-z0-9]/g, '_'));
+        const wrapper = document.getElementById(domKey === 'global' ? 'icon-wrapper-global' : `icon-wrapper-${domKey}`) || document.getElementById(`icon-${domKey}`);
         if (!wrapper) return;
 
         const iconContainer = wrapper.closest('.mixer-icon-btn');
@@ -1476,13 +1648,13 @@ class StreamDeckClient {
 
         // 2. Aplicamos un "Escudo" o Bloqueo por 1.5 segundos
         // Esto ignora las respuestas tardías del servidor que intenten "deshacer" visualmente el click.
-        this.activeMutes.add(id);
+        this.activeMutes.add(domKey);
 
-        if (this.muteTimers[id]) {
-            clearTimeout(this.muteTimers[id]);
+        if (this.muteTimers[domKey]) {
+            clearTimeout(this.muteTimers[domKey]);
         }
-        this.muteTimers[id] = setTimeout(() => {
-            this.activeMutes.delete(id);
+        this.muteTimers[domKey] = setTimeout(() => {
+            this.activeMutes.delete(domKey);
         }, 1500);
 
         // 3. Enviamos la orden real al servidor por debajo
@@ -1572,7 +1744,8 @@ class StreamDeckClient {
                     if (data.type === 'mute') sess.mute = data.value;
                 }
             }
-            this.updateSliderUI(data.name, data);
+            const sanitizedId = String(data.name).toLowerCase().replace(/[^a-z0-9]/g, '_');
+            this.updateSliderUI(sanitizedId, data);
         });
 
         this.socket.on('session_added', (sessionData) => {
@@ -1592,17 +1765,19 @@ class StreamDeckClient {
 
             const appsContainer = document.getElementById('app-mixers');
             if (appsContainer) {
-                const existingRow = document.getElementById(`mixer-row-${sessionData.name}`);
+                const sanitizedId = String(sessionData.name).toLowerCase().replace(/[^a-z0-9]/g, '_');
+                const existingRow = document.getElementById(`mixer-row-${sanitizedId}`);
                 if (existingRow) {
                     existingRow.classList.remove('fade-out');
-                    this.updateSliderUI(sessionData.name, { type: 'volume', value: sessionData.volume });
-                    this.updateSliderUI(sessionData.name, { type: 'mute', value: sessionData.mute });
+                    this.updateSliderUI(sanitizedId, { type: 'volume', value: sessionData.volume });
+                    this.updateSliderUI(sanitizedId, { type: 'mute', value: sessionData.mute });
                 } else {
                     appsContainer.appendChild(this.createMixerRow(sessionData));
                     // Forzar actualización visual inmediata después de añadir al DOM
                     requestAnimationFrame(() => {
-                        this.updateSliderUI(sessionData.name, { type: 'volume', value: sessionData.volume });
-                        this.updateSliderUI(sessionData.name, { type: 'mute', value: sessionData.mute });
+                        const newSanitizedId = String(sessionData.name).toLowerCase().replace(/[^a-z0-9]/g, '_');
+                        this.updateSliderUI(newSanitizedId, { type: 'volume', value: sessionData.volume });
+                        this.updateSliderUI(newSanitizedId, { type: 'mute', value: sessionData.mute });
                     });
                 }
             }
@@ -1612,7 +1787,8 @@ class StreamDeckClient {
             if (this.lastMixerState) {
                 this.lastMixerState.sessions = this.lastMixerState.sessions.filter(s => s.name !== sessionData.name);
             }
-            const row = document.getElementById(`mixer-row-${sessionData.name}`);
+            const sanitizedId = String(sessionData.name).toLowerCase().replace(/[^a-z0-9]/g, '_');
+            const row = document.getElementById(`mixer-row-${sanitizedId}`);
             if (row && !row.classList.contains('fade-out')) {
                 row.classList.add('fade-out');
                 setTimeout(() => {
@@ -1791,33 +1967,47 @@ class StreamDeckClient {
         const mixerContainer = document.getElementById('discord-mixer-container');
         if (!mixerContainer) return;
 
+        mixerContainer.replaceChildren();
+
         if (this.discordConnectionStatus !== 'connected') {
             const connectMsg = this.discordConnectionStatus === 'fallback'
                 ? 'MODO BÁSICO ACTIVADO'
                 : 'ESPERANDO A DISCORD...';
             const connectIcon = this.discordConnectionStatus === 'fallback' ? '⚠️' : '📡';
 
-            mixerContainer.innerHTML = `
-                <div class="discord-empty-state">
-                    <div class="discord-empty-icon">${connectIcon}</div>
-                    <div class="discord-empty-text">${connectMsg}</div>
-                </div>`;
+            const emptyState = document.createElement('div');
+            emptyState.className = 'discord-empty-state';
+            const iconEl = document.createElement('div');
+            iconEl.className = 'discord-empty-icon';
+            iconEl.textContent = connectIcon;
+            const textEl = document.createElement('div');
+            textEl.className = 'discord-empty-text';
+            textEl.textContent = connectMsg;
+            emptyState.appendChild(iconEl);
+            emptyState.appendChild(textEl);
+            mixerContainer.replaceChildren(emptyState);
             return;
         }
 
         if (!Array.isArray(this.discordUsers) || this.discordUsers.length === 0) {
-            mixerContainer.innerHTML = `
-                <div class="discord-empty-state">
-                    <div class="discord-empty-icon discord-empty-icon--dim">🔇</div>
-                    <div class="discord-empty-text discord-empty-text--dim">CANAL VACÍO</div>
-                </div>`;
+            const emptyState = document.createElement('div');
+            emptyState.className = 'discord-empty-state';
+            const iconEl = document.createElement('div');
+            iconEl.className = 'discord-empty-icon discord-empty-icon--dim';
+            iconEl.textContent = '🔇';
+            const textEl = document.createElement('div');
+            textEl.className = 'discord-empty-text discord-empty-text--dim';
+            textEl.textContent = 'CANAL VACÍO';
+            emptyState.appendChild(iconEl);
+            emptyState.appendChild(textEl);
+            mixerContainer.replaceChildren(emptyState);
             return;
         }
 
         // 0. Limpiar estado vacío si hay usuarios
         const emptyState = mixerContainer.querySelector('.discord-empty-state');
         if (emptyState) {
-            mixerContainer.innerHTML = '';
+            mixerContainer.replaceChildren();
         }
 
         const existingUsers = Array.from(mixerContainer.querySelectorAll('.user-fader-row'));
@@ -1873,33 +2063,42 @@ class StreamDeckClient {
                 let trackRect = null;
                 let trackH = 0;
                 let isRAFActive = false;
+                let latestClientY = 0;
+
+                const renderDiscordVisuals = () => {
+                    isRAFActive = false;
+                    if (!trackRect) return;
+
+                    let y = latestClientY - trackRect.top;
+
+                    // Cálculo visual suave sin redondear
+                    let percentSmooth = 100 - (y / trackH) * 100;
+                    percentSmooth = Math.max(0, Math.min(100, percentSmooth));
+
+                    // Actualización visual directa
+                    fill.style.transform = `scale3d(1, ${percentSmooth / 100}, 1)`;
+                    this.setThumbTransform(thumb, percentSmooth, trackH);
+
+                    // Lógica de Red (Discord es 0-200)
+                    let percentRounded = Math.round(percentSmooth);
+                    if (percentRounded !== this[`last_discord_${id}`]) {
+                        this[`last_discord_${id}`] = percentRounded;
+                        const discordVol = Math.round(percentRounded * 2);
+                        this.updateVolumeServer(`discord_${id}`, discordVol, false);
+                    }
+                };
 
                 const updateDiscordVol = (e) => {
                     if (!trackRect) {
                         trackRect = track.getBoundingClientRect();
                         trackH = trackRect.height;
                     }
-                    const y = e.clientY - trackRect.top;
-                    let percentRaw = 100 - (y / trackH) * 100;
-                    percentRaw = Math.max(0, Math.min(100, Math.round(percentRaw)));
+                    latestClientY = e.clientY;
 
-                    if (percentRaw === this[`last_discord_${id}`]) return;
-                    this[`last_discord_${id}`] = percentRaw;
-
-                    // 1. Visual (Optimized RAF)
                     if (!isRAFActive) {
                         isRAFActive = true;
-                        requestAnimationFrame(() => {
-                            const p = this[`last_discord_${id}`];
-                            fill.style.transform = `scale3d(1, ${p / 100}, 1)`;
-                            this.setThumbTransform(thumb, p, trackH);
-                            isRAFActive = false;
-                        });
+                        requestAnimationFrame(renderDiscordVisuals);
                     }
-
-                    // 2. Logic (Discord is 0-200)
-                    const discordVol = Math.round(percentRaw * 2);
-                    this.updateVolumeServer(`discord_${id}`, discordVol, false);
                 };
 
                 track.addEventListener('pointerdown', (e) => {
@@ -1921,12 +2120,14 @@ class StreamDeckClient {
                         document.body.classList.remove('dragging-active');
                         thumb.removeEventListener('pointermove', moveH);
                         thumb.removeEventListener('pointerup', stopH);
+                        thumb.removeEventListener('pointercancel', stopH);
                         this.unmarkDiscordSliderActive(id);
 
                         trackRect = null;
                     };
                     thumb.addEventListener('pointermove', moveH);
                     thumb.addEventListener('pointerup', stopH);
+                    thumb.addEventListener('pointercancel', stopH);
                 });
 
                 mixerContainer.appendChild(row);
@@ -1977,7 +2178,7 @@ class StreamDeckClient {
 
         this.scheduleThrottledEmit(queueKey, () => {
             const currentVolume = Math.round(this.pendingVolUpdates[queueKey]);
-            this.socket.emit('discord_set_user_volume', { userId, volume: currentVolume }, (result) => {
+            this.socket.volatile.emit('discord_set_user_volume', { userId, volume: currentVolume }, (result) => {
                 if (result?.ok) return;
                 this.discordConnectionMessage = result?.message || 'No se pudo cambiar el volumen';
                 this.updateDiscordConnectionUI();
@@ -2003,7 +2204,7 @@ class StreamDeckClient {
         // Animación de entrada desde izquierda/derecha
         const slideClass = direction > 0 ? 'slide-enter-right' : direction < 0 ? 'slide-enter-left' : '';
 
-        this.container.innerHTML = '';
+        this.container.replaceChildren();
         this.container.className = 'deck-view';
         const useSlideAnimation = !this.initialLoad && Boolean(slideClass);
         if (useSlideAnimation) this.container.classList.add(slideClass);
@@ -2110,19 +2311,12 @@ class StreamDeckClient {
         }
 
         dots.style.display = 'flex';
-        dots.innerHTML = '';
+        dots.replaceChildren();
         const fragment = document.createDocumentFragment();
         this.carouselPages.forEach((_, i) => {
             const dot = document.createElement('div');
             dot.className = 'carousel-dot' + (i === this.carouselIndex ? ' active' : '');
-            const navigateTo = () => {
-                if (this.editMode) return;
-                if (i === this.carouselIndex) return;
-                const dir = i > this.carouselIndex ? 1 : -1;
-                this.renderCarouselSlide(i, dir);
-            };
-            dot.addEventListener('pointerup', navigateTo);
-            dot.addEventListener('click', navigateTo);
+            dot.dataset.carouselIndex = String(i);
             fragment.appendChild(dot);
         });
         dots.appendChild(fragment);
@@ -2142,34 +2336,21 @@ class StreamDeckClient {
         }
 
         nav.style.display = 'flex';
-        nav.innerHTML = '';
+        nav.replaceChildren();
 
-        const createNavButton = (label, disabled, handler) => {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'carousel-nav-btn';
-            btn.textContent = label;
-            btn.disabled = disabled;
-            btn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                if (disabled || this.editMode) return;
-                handler();
-            });
-            return btn;
-        };
+        const prevBtn = document.createElement('button');
+        prevBtn.type = 'button';
+        prevBtn.className = 'carousel-nav-btn';
+        prevBtn.textContent = '← Anterior';
+        prevBtn.disabled = this.carouselIndex <= 0;
+        prevBtn.dataset.carouselAction = 'prev';
 
-        const prevBtn = createNavButton('← Anterior', this.carouselIndex <= 0, () => {
-            if (this.carouselIndex > 0) {
-                this.renderCarouselSlide(this.carouselIndex - 1, -1);
-            }
-        });
-
-        const nextBtn = createNavButton('Siguiente →', this.carouselIndex >= this.carouselPages.length - 1, () => {
-            if (this.carouselIndex < this.carouselPages.length - 1) {
-                this.renderCarouselSlide(this.carouselIndex + 1, 1);
-            }
-        });
+        const nextBtn = document.createElement('button');
+        nextBtn.type = 'button';
+        nextBtn.className = 'carousel-nav-btn';
+        nextBtn.textContent = 'Siguiente →';
+        nextBtn.disabled = this.carouselIndex >= this.carouselPages.length - 1;
+        nextBtn.dataset.carouselAction = 'next';
 
         nav.appendChild(prevBtn);
         nav.appendChild(nextBtn);
@@ -2219,6 +2400,7 @@ class StreamDeckClient {
             btn.innerHTML = '<span class="edit-btn-icon">✅</span><span class="edit-btn-label">Listo</span>';
         }
 
+        this._editModeAbortController = new AbortController();
         this._applyEditModeToButtons();
     }
 
@@ -2228,8 +2410,11 @@ class StreamDeckClient {
         buttons.forEach((btn, i) => {
             btn.classList.add('wiggle');
             btn.dataset.editIndex = i;
-            // Usamos { capture: true } para que el modo edición intercepte eventos antes que la acción normal (click)
-            btn.addEventListener('pointerdown', this._onEditPointerDown, { capture: true });
+            // Usamos AbortController para poder limpiar los listeners de modo edición de forma segura
+            btn.addEventListener('pointerdown', this._onEditPointerDown, {
+                capture: true,
+                signal: this._editModeAbortController?.signal
+            });
         });
     }
 
@@ -2245,8 +2430,12 @@ class StreamDeckClient {
         const buttons = this.container.querySelectorAll('.boton');
         buttons.forEach(b => {
             b.classList.remove('wiggle', 'drag-source');
-            b.removeEventListener('pointerdown', this._onEditPointerDown, { capture: true });
         });
+
+        if (this._editModeAbortController) {
+            this._editModeAbortController.abort();
+            this._editModeAbortController = null;
+        }
 
         this._saveConfig();
     }
@@ -2354,9 +2543,12 @@ class StreamDeckClient {
             }
         };
 
-        window.addEventListener('pointermove', onMove);
-        window.addEventListener('pointerup', onUp);
-        window.addEventListener('pointercancel', onUp);
+        const dragController = new AbortController();
+        const { signal } = dragController;
+
+        window.addEventListener('pointermove', onMove, { signal });
+        window.addEventListener('pointerup', onUp, { signal });
+        window.addEventListener('pointercancel', onUp, { signal });
     }
 
     _startEdgeScroll(direction) {

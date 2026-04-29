@@ -758,6 +758,29 @@ body {
 }
 
 .deck-footer #edit-mode-btn .edit-btn-icon { font-size: 0.95rem; }
+
+#offline-banner {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 12px 18px;
+    background: rgba(255, 109, 0, 0.95);
+    color: #ffffff;
+    font-size: 0.92rem;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    z-index: 1200;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+#offline-banner.hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-50%) translateY(10px);
+}
+
 .deck-footer #edit-mode-btn .edit-btn-label { font-size: 0.88rem; }
 
 .settings-panel {

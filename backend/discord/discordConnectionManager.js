@@ -23,6 +23,8 @@ class DiscordConnectionManager {
         this.reconnectTimer = null;
         this.isConnecting = false;
         this.lastDiscordLaunchAttemptAt = 0;
+        this.lastDiscordRunCheckAt = 0;
+        this.discordRunningCache = true;
         this.fallbackMode = false;
         this.voiceControlAvailable = false;
 
@@ -104,10 +106,22 @@ class DiscordConnectionManager {
 
     async isDiscordRunning() {
         if (process.platform !== 'win32') return true;
+
+        const now = Date.now();
+        if (now - this.lastDiscordRunCheckAt < 30000) {
+            return this.discordRunningCache;
+        }
+
+        this.lastDiscordRunCheckAt = now;
         return new Promise((resolve) => {
             exec('tasklist /FI "IMAGENAME eq Discord.exe"', (err, stdout) => {
-                if (err) return resolve(true);
-                resolve(stdout.toLowerCase().includes('discord.exe'));
+                if (err) {
+                    this.discordRunningCache = true;
+                    return resolve(true);
+                }
+                const isRunning = stdout.toLowerCase().includes('discord.exe');
+                this.discordRunningCache = isRunning;
+                resolve(isRunning);
             });
         });
     }
@@ -172,7 +186,9 @@ class DiscordConnectionManager {
         const isRunning = await this.isDiscordRunning();
         console.log(`[Discord] Comprobando ejecucion: ${isRunning ? 'Discord DETECTADO' : 'Discord NO DETECTADO'}`);
         if (!isRunning) {
-            throw new Error('Discord no está ejecutándose en este PC');
+            const error = new Error('Discord no está ejecutándose en este PC');
+            error.code = 'DISCORD_NOT_RUNNING';
+            throw error;
         }
 
         const attempts = this.buildLoginAttempts();
@@ -292,6 +308,18 @@ class DiscordConnectionManager {
         const message = error?.message || 'Error desconocido';
         const lowerMessage = message.toLowerCase();
         const authError = Boolean(error?.authFailureDetected) || this.isAuthLoginError(message);
+
+        if (error.code === 'DISCORD_NOT_RUNNING' || lowerMessage.includes('discord no está ejecutándose')) {
+            console.log('[Discord Connection] Discord no está ejecutándose. Reintentando en 60 segundos.');
+            this.fallbackMode = true;
+            this.voiceControlAvailable = false;
+            this.updateConnectionState('error', 'Discord cerrado. Reintentando en 60 segundos...');
+            if (this.rpc) {
+                this.destroyRpcClient(this.rpc);
+            }
+            this.scheduleReconnect(60000, { allowInFallback: true, forceFreshAuth: true });
+            return;
+        }
 
         console.error('[Discord Connection] Fallo al conectar:', message);
         if (error.code) console.error(`[Discord Connection] Codigo de error: ${error.code}`);
