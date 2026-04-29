@@ -22,14 +22,14 @@
                 "mute": false
             },
             "Microsoft Edge": {
-                "volume": 44,
+                "volume": 0,
                 "mute": false
             },
             "WhatsApp": {
-                "volume": 100,
+                "volume": 0,
                 "mute": false
             }
         }
     },
-    "updatedAt": 1777495183098
+    "updatedAt": 1777495821085
 }
