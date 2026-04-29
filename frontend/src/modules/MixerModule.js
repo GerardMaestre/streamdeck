@@ -7,44 +7,98 @@ import { createFaderController, setThumbTransform } from '../ui/FaderFactory.js'
 import { createPanelBackButton } from '../ui/ButtonFactory.js';
 
 /**
- * Returns an emoji/SVG icon for a given app name.
+ * Returns a high-quality logo or emoji icon for a given app name.
+ * Usa iconos directos de CDN (SimpleIcons/cdn.jsdelivr) para apps conocidas,
+ * y Google Favicons como fallback para el resto.
  */
 function getIconForApp(appName, isMaster) {
     const shadowClass = 'mixer-icon-shadow';
-    if (isMaster) return `<span class="${shadowClass}" style="font-size:3.2rem; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));">🎧</span>`;
+    const iconStyle = 'width: 100px; height: 100px; object-fit: contain; filter: drop-shadow(0 8px 20px rgba(0,0,0,0.6));';
 
-    const name = appName.toLowerCase();
-    const fallbackSVG = `<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.7;"><rect x="2" y="3" width="20" height="14" rx="3" ry="3"></rect><line x1="2" y1="9" x2="22" y2="9"></line><circle cx="6" cy="6" r="1" fill="white" stroke="none"></circle><circle cx="10" cy="6" r="1" fill="white" stroke="none"></circle></svg>`;
+    if (isMaster) return `<span class="${shadowClass}" style="font-size:4rem; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));">🎧</span>`;
 
-    const iconEmojiMap = {
-        'spotify': '🎵', 'discord': '💬', 'chrome': '🌐', 'edge': '🌐',
-        'microsoft edge': '🌐', 'steam': '🎮', 'obs': '🎥', 'vlc': '🎬',
-        'firefox': '🦊', 'brave': '🦁', 'whatsapp': '💬', 'telegram': '✈️',
-        'teams': '👥', 'zoom': '📹', 'epic games': '🎮', 'ea': '🎮',
-        'origin': '⬡', 'ubisoft': '🌀', 'powertoys': '⚙️',
-        'sonidos del sistema': '🔉', 'system sounds': '🔉',
-        'league of legends': '🛡️', 'valorant': '🔥', 'minecraft': '🟩',
-        'roblox': '🟥', 'itunes': '🎧', 'opera gx': '🟣', 'opera': '🟥',
-        'slack': '💬', 'nvidia': '🟩', 'amd': '🔺', 'visual studio': '🟦',
-        'twitch': '🟪', 'youtube': '▶️', 'battle.net': '☁️', 'riot': '🔥',
-        'rockstar': '⭐'
-    };
+    const name = appName.toLowerCase().trim();
 
-    // Category matches
-    if (name.includes('qemu') || name.includes('game') || name.includes('juego') || name.includes('emulator')) return `<span class="${shadowClass}" style="font-size:3.2rem;">🎮</span>`;
-    if (name.includes('wallpaper')) return `<span class="${shadowClass}" style="font-size:3.2rem;">🖼️</span>`;
-    if (name.includes('sunshine') || name.includes('stream')) return `<span class="${shadowClass}" style="font-size:3.2rem;">☀️</span>`;
-    if (name.includes('music') || name.includes('audio') || name.includes('player')) return `<span class="${shadowClass}" style="font-size:3.2rem;">🎵</span>`;
-    if (name.includes('video') || name.includes('movie') || name.includes('media')) return `<span class="${shadowClass}" style="font-size:3.2rem;">🎬</span>`;
-    if (name.includes('web') || name.includes('browser') || name.includes('internet')) return `<span class="${shadowClass}" style="font-size:3.2rem;">🌐</span>`;
-    if (name.includes('driver') || name.includes('system') || name.includes('host') || name.includes('update')) return `<span class="${shadowClass}" style="font-size:3.2rem;">⚙️</span>`;
-
-    for (const key in iconEmojiMap) {
-        if (name.includes(key)) return `<span class="${shadowClass}" style="font-size:3.2rem;">${iconEmojiMap[key]}</span>`;
+    // Determinar emoji de fallback según categoría
+    let emoji = '✨';
+    if (name.includes('whatsapp') || name.includes('messenger') || name.includes('telegram') || name.includes('discord') || name.includes('chat')) {
+        emoji = '💬';
+    } else if (name.includes('browser') || name.includes('web') || name.includes('internet') || name.includes('chrome') || name.includes('edge') || name.includes('firefox')) {
+        emoji = '🌐';
+    } else if (name.includes('music') || name.includes('audio') || name.includes('reproductor') || name.includes('spotify') || name.includes('youtube')) {
+        emoji = '🎵';
+    } else if (name.includes('game') || name.includes('juego') || name.includes('league') || name.includes('valorant') || name.includes('steam')) {
+        emoji = '🎮';
+    } else if (name.includes('sistema') || name.includes('system')) {
+        emoji = '🔊';
     }
 
-    return `<div class="${shadowClass}" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));">${fallbackSVG}</div>`;
+    const fallbackSpan = `<span class="${shadowClass}" style="font-size:3.5rem; display:none;">${emoji}</span>`;
+    
+    // Iconos directos por CDN — Usamos SimpleIcons con colores de marca exactos
+    const cdnIconMap = [
+        { key: 'whatsapp',     url: 'https://cdn.simpleicons.org/whatsapp/25D366' },
+        { key: 'whatsapp.root', url: 'https://cdn.simpleicons.org/whatsapp/25D366' },
+        { key: 'spotify',      url: 'https://cdn.simpleicons.org/spotify/1DB954' },
+        { key: 'discord',      url: 'https://cdn.simpleicons.org/discord/5865F2' },
+        { key: 'youtube',      url: 'https://cdn.simpleicons.org/youtube/FF0000' },
+        { key: 'twitch',       url: 'https://cdn.simpleicons.org/twitch/9146FF' },
+        { key: 'google chrome', url: 'https://cdn.simpleicons.org/googlechrome' },
+        { key: 'chrome',       url: 'https://cdn.simpleicons.org/googlechrome' },
+        { key: 'microsoft edge', url: 'https://cdn.simpleicons.org/microsoftedge/0078D7' },
+        { key: 'edge',         url: 'https://cdn.simpleicons.org/microsoftedge/0078D7' },
+        { key: 'firefox',      url: 'https://cdn.simpleicons.org/firefoxbrowser/FF7139' },
+        { key: 'brave',        url: 'https://cdn.simpleicons.org/brave/FB542B' },
+        { key: 'steam',        url: 'https://cdn.simpleicons.org/steam/ffffff' },
+        { key: 'obs studio',   url: 'https://cdn.simpleicons.org/obsstudio/302E31' },
+        { key: 'vlc',          url: 'https://cdn.simpleicons.org/vlcmediaplayer/FF8800' },
+        { key: 'telegram',     url: 'https://cdn.simpleicons.org/telegram/26A5E4' },
+        { key: 'league of legends', url: 'https://cdn.simpleicons.org/riotgames/D32936' },
+        { key: 'valorant',     url: 'https://cdn.simpleicons.org/valorant/FA4454' },
+        { key: 'visual studio code', url: 'https://cdn.simpleicons.org/visualstudiocode/007ACC' },
+        { key: 'vs code',      url: 'https://cdn.simpleicons.org/visualstudiocode/007ACC' },
+        { key: 'code',         url: 'https://cdn.simpleicons.org/visualstudiocode/007ACC' },
+        { key: 'powertoys',    url: 'https://cdn.simpleicons.org/powertoys/ffffff' },
+        { key: 'sunshine',     url: 'https://cdn.simpleicons.org/sunshine/FFB300' },
+        { key: 'netflix',      url: 'https://cdn.simpleicons.org/netflix/E50914' },
+        { key: 'disney+',      url: 'https://cdn.simpleicons.org/disneyplus/ffffff' },
+        { key: 'explorador',   url: 'https://www.google.com/s2/favicons?domain=microsoft.com&sz=128' }
+    ];
+
+    // Buscar coincidencia exacta o parcial priorizando el orden del array
+    for (const item of cdnIconMap) {
+        if (name.includes(item.key)) {
+            return `<img src="${item.url}" class="${shadowClass}" style="${iconStyle}" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='block';">${fallbackSpan}`;
+        }
+    }
+
+    // Fallbacks por categorías con Estética Premium
+    if (name.includes('sonidos del sistema') || name.includes('system sounds')) {
+        return `<span class="${shadowClass}" style="font-size:3.5rem; filter: drop-shadow(0 4px 10px rgba(74, 144, 226, 0.5));">🔊</span>`;
+    }
+    if (name.includes('game') || name.includes('juego') || name.includes('play') || name.includes('roblox') || name.includes('minecraft')) {
+        return `<span class="${shadowClass}" style="font-size:3.5rem; filter: drop-shadow(0 4px 10px rgba(255, 71, 87, 0.5));">🎮</span>`;
+    }
+    if (name.includes('browser') || name.includes('web') || name.includes('internet') || name.includes('chrome') || name.includes('edge') || name.includes('firefox')) {
+        return `<span class="${shadowClass}" style="font-size:3.5rem; filter: drop-shadow(0 4px 10px rgba(46, 213, 115, 0.5));">🌐</span>`;
+    }
+    if (name.includes('music') || name.includes('audio') || name.includes('reproductor')) {
+        return `<span class="${shadowClass}" style="font-size:3.5rem; filter: drop-shadow(0 4px 10px rgba(255, 165, 2, 0.5));">🎵</span>`;
+    }
+    if (name.includes('video') || name.includes('media') || name.includes('movie')) {
+        return `<span class="${shadowClass}" style="font-size:3.5rem; filter: drop-shadow(0 4px 10px rgba(112, 161, 255, 0.5));">🎬</span>`;
+    }
+    if (name.includes('chat') || name.includes('message') || name.includes('social') || name.includes('whatsapp') || name.includes('telegram')) {
+        return `<span class="${shadowClass}" style="font-size:3.5rem; filter: drop-shadow(0 4px 10px rgba(255, 107, 129, 0.5));">💬</span>`;
+    }
+    if (name.includes('system') || name.includes('host') || name.includes('update') || name.includes('config')) {
+        return `<span class="${shadowClass}" style="font-size:3.5rem; filter: drop-shadow(0 4px 10px rgba(164, 176, 190, 0.5));">⚙️</span>`;
+    }
+
+    // Fallback genérico final (Icono de estrella vibrante)
+    return `<span class="${shadowClass}" style="font-size:3.5rem; filter: drop-shadow(0 6px 15px rgba(255, 255, 255, 0.4));">✨</span>`;
 }
+
 
 export class MixerModule {
     /**
@@ -58,20 +112,22 @@ export class MixerModule {
         this.socket = ctx.socket;
         this.events = ctx.events;
         this.panelManager = ctx.panelManager;
-        this.throttle = ctx.throttle;
         this.volumeEmitIntervalMs = 30;
 
         // State
         this.lastMixerState = null;
         this.mixerRefs = {};
         this._renderedMixerState = null;
+        this._volBuffer = {};
+        
+        // Actualización en tiempo real: usamos un mapa de tiempos para trocear los envíos
+        this._lastEmitTimes = {};
+        this._minEmitIntervalMs = 30; // ~33 fps para el audio, real-time suave
 
         // Anti-bounce systems
         this.activeSliders = ctx.activeSliders; // shared Set
         this.activeMutes = ctx.activeMutes;     // shared Set
         this.muteTimers = {};
-        this.pendingVolUpdates = {};
-        this.lastEmittedVol = {};
 
         this._faderControllers = [];
     }
@@ -214,11 +270,19 @@ export class MixerModule {
 
         let backBtn = document.getElementById('panel-back-button');
         if (backBtn) backBtn.remove();
-        backBtn = createPanelBackButton(() => { if (onBack) onBack(); });
+        backBtn = createPanelBackButton(() => { 
+            document.body.classList.remove('mixer-low-perf');
+            if (onBack) onBack(); 
+        });
         backBtn.id = 'panel-back-button';
         document.body.appendChild(backBtn);
 
         this.panelManager.showPanel('mixer');
+        // Enable aggressive low-perf mode while mixer is open on touch devices
+        try {
+            const isTouch = navigator.maxTouchPoints && navigator.maxTouchPoints > 0;
+            if (isTouch) document.body.classList.add('mixer-low-perf');
+        } catch (e) {}
         this.socket.emit('mixer_initial_state');
         this.socket.emit('mixer_bind_commands');
 
@@ -255,25 +319,39 @@ export class MixerModule {
 
             // 1. Master Fader (Obligatorio)
             const masterData = state.master || { name: 'Master', volume: 0, mute: false };
-            container.appendChild(this.createMixerRow(masterData, true));
+            const masterRow = this.createMixerRow(masterData, true);
+            container.appendChild(masterRow);
+            
+            const masterCtrl = this._faderControllers[this._faderControllers.length - 1];
+            if (masterCtrl) {
+                requestAnimationFrame(() => masterCtrl.setPercent(masterData.volume, true));
+            }
 
-            // 2. Separador visual
+            // 2. Separador visual (Altura dinámica máxima)
             const divider = document.createElement('div');
-            divider.style.cssText = 'width: 1px; height: 320px; background: rgba(255,255,255,0.15); margin: 0 10px; flex: 0 0 auto;';
+            divider.style.cssText = 'width: 2px; height: 80vh; background: rgba(255,255,255,0.2); margin: 0 40px; flex: 0 0 auto;';
             container.appendChild(divider);
 
-            // 3. Contenedor de Aplicaciones
+            // 3. Contenedor de Aplicaciones (Espacio adaptado y estirado)
             const appsContainer = document.createElement('div');
             appsContainer.id = 'app-mixers';
-            appsContainer.style.cssText = 'display: flex; flex-direction: row; align-items: center; gap: 26px;';
+            appsContainer.style.cssText = 'display: flex; flex-direction: row; align-items: stretch; gap: 40px; height: 100%;';
             container.appendChild(appsContainer);
 
             if (sessions.length > 0) {
                 const seen = new Set();
                 sessions.forEach(s => {
                     if (!seen.has(s.name)) {
-                        appsContainer.appendChild(this.createMixerRow(s));
+                        const row = this.createMixerRow(s);
+                        appsContainer.appendChild(row);
                         seen.add(s.name);
+                        
+                        // Posicionamiento inmediato una vez en el DOM
+                        const sid = sanitizeId(s.name);
+                        const controller = this._faderControllers[this._faderControllers.length - 1];
+                        if (controller) {
+                            requestAnimationFrame(() => controller.setPercent(s.volume, true));
+                        }
                     }
                 });
             } else {
@@ -283,19 +361,8 @@ export class MixerModule {
                 appsContainer.appendChild(empty);
             }
 
-            // Animación y ajuste de los Thumbs post-render
-            requestAnimationFrame(() => {
-                try {
-                    Object.keys(this.mixerRefs).forEach(id => {
-                        const refs = this.mixerRefs[id];
-                        if (!refs) return;
-                        const sess = (id === 'global') ? masterData : sessions.find(s => sanitizeId(s.name) === id);
-                        if (sess) {
-                            setThumbTransform(refs.fill, refs.thumb, sess.volume);
-                        }
-                    });
-                } catch(e) { console.error('[Mixer] Error posicionando thumbs:', e); }
-            });
+            // Los faders ya se posicionan solos mediante el initialPercent y setPercent(v, true)
+            // en createMixerRow, eliminamos el RAF redundante para evitar parpadeos.
 
         } catch (error) {
             console.error('[Mixer] Error crítico en renderInitialMixer:', error);
@@ -372,32 +439,24 @@ export class MixerModule {
             track,
             fill,
             thumb,
+            initialPercent: volume,
+            disableSmooth: true,
             onDragStart: () => {
                 this.activeSliders.add(id);
                 row.classList.add('dragging');
             },
             onValueChange: (_, rounded) => {
-                if (isMaster) {
-                    this.updateVolumeServer(null, rounded, true, false);
-                } else {
-                    this.updateVolumeServer(name, rounded, false, false);
-                }
+                this.updateVolumeServer(isMaster ? null : name, rounded, isMaster, false);
             },
             onDragEnd: (finalPercent) => {
                 this.activeSliders.delete(id);
                 row.classList.remove('dragging');
-                if (isMaster) {
-                    this.updateVolumeServer(null, finalPercent, true, true);
-                } else {
-                    this.updateVolumeServer(name, finalPercent, false, true);
-                }
+                this.updateVolumeServer(isMaster ? null : name, finalPercent, isMaster, true);
             }
         });
 
         this._faderControllers.push(faderController);
-        requestAnimationFrame(() => {
-            faderController.setPercent(volume);
-        });
+        // faderController.setPercent(volume, true); <-- Se llama desde fuera tras el append
 
         return row;
     }
@@ -406,25 +465,44 @@ export class MixerModule {
     updateSliderUI(id, data) {
         const refs = this.mixerRefs[id];
         if (!refs) return;
-
-        queueUpdate(`mixer_${id}_${data.type}`, () => {
-            if (data.type === 'volume') {
-                if (!this.activeSliders.has(id)) {
-                    const h = Number(data.value);
-                    let trackH = refs.trackH || (() => {
-                        const r = refs.track.getBoundingClientRect();
-                        refs.trackH = r.height;
-                        return r.height;
-                    })();
-                    if (trackH === 0) {
-                        const dvh = window.innerHeight * 0.4;
-                        trackH = Math.max(160, Math.min(300, dvh));
-                    }
-                    refs.fill.style.transform = `scale3d(1, ${h / 100}, 1)`;
-                    setThumbTransform(refs.thumb, h, trackH);
-                    this[`last_mixer_${id}`] = h;
+        // If the slider is currently being dragged, update DOM immediately
+        // to avoid queuing via RAF and improve perceived responsiveness.
+        if (data.type === 'volume') {
+            if (this.activeSliders.has(id)) {
+                const h = Number(data.value);
+                let trackH = refs.trackH || (() => {
+                    const r = refs.track.getBoundingClientRect();
+                    refs.trackH = r.height;
+                    return r.height;
+                })();
+                if (trackH === 0) {
+                    const dvh = window.innerHeight * 0.4;
+                    trackH = Math.max(160, Math.min(300, dvh));
                 }
-            } else if (data.type === 'mute') {
+                refs.fill.style.transform = `scale3d(1, ${h / 100}, 1)`;
+                setThumbTransform(refs.thumb, h, trackH);
+                this[`last_mixer_${id}`] = h;
+                return;
+            }
+
+            // Otherwise, batch updates via RAF for general updates.
+            queueUpdate(`mixer_${id}_${data.type}`, () => {
+                const h = Number(data.value);
+                let trackH = refs.trackH || (() => {
+                    const r = refs.track.getBoundingClientRect();
+                    refs.trackH = r.height;
+                    return r.height;
+                })();
+                if (trackH === 0) {
+                    const dvh = window.innerHeight * 0.4;
+                    trackH = Math.max(160, Math.min(300, dvh));
+                }
+                refs.fill.style.transform = `scale3d(1, ${h / 100}, 1)`;
+                setThumbTransform(refs.thumb, h, trackH);
+                this[`last_mixer_${id}`] = h;
+            });
+        } else if (data.type === 'mute') {
+            queueUpdate(`mixer_${id}_mute`, () => {
                 if (this.activeMutes.has(id)) return;
                 const iconContainer = refs.wrapper.closest('.mixer-icon-btn');
                 if (data.value) {
@@ -434,8 +512,8 @@ export class MixerModule {
                     if (iconContainer) iconContainer.classList.remove('muted-active');
                     refs.wrapper.classList.remove('mixer-icon-wrapper--muted');
                 }
-            }
-        });
+            });
+        }
     }
 
     /** Toggle mute with Optimistic UI */
@@ -471,36 +549,23 @@ export class MixerModule {
         }
     }
 
-    /** Send volume to server (throttled) */
+    /** Direct real-time emission with timestamp throttling */
     updateVolumeServer(app, value, isMaster, immediate = false) {
-        const queueKey = isMaster ? 'mix_master' : `mix_${app}`;
         const roundedValue = Math.round(Number(value));
         if (!Number.isFinite(roundedValue)) return;
-        this.pendingVolUpdates[queueKey] = roundedValue;
 
-        const emitVolume = (volume) => {
+        const queueKey = isMaster ? 'master' : app;
+        const now = Date.now();
+        const lastEmit = this._lastEmitTimes[queueKey] || 0;
+
+        if (immediate || (now - lastEmit >= this._minEmitIntervalMs)) {
+            this._lastEmitTimes[queueKey] = now;
             if (isMaster) {
-                this.socket.volatile.emit('set_master_volume', volume);
+                this.socket.emit('set_master_volume', roundedValue);
             } else {
-                this.socket.volatile.emit('set_session_volume', { app, value: volume });
+                this.socket.emit('set_session_volume', { app, value: roundedValue });
             }
-        };
-
-        if (immediate) {
-            this.throttle.cancel(queueKey);
-            const currentVolume = this.pendingVolUpdates[queueKey];
-            if (this.lastEmittedVol[queueKey] === currentVolume) return;
-            this.lastEmittedVol[queueKey] = currentVolume;
-            emitVolume(currentVolume);
-            return;
         }
-
-        this.throttle.schedule(queueKey, () => {
-            const valToEmit = this.pendingVolUpdates[queueKey];
-            if (this.lastEmittedVol[queueKey] === valToEmit) return;
-            this.lastEmittedVol[queueKey] = valToEmit;
-            emitVolume(valToEmit);
-        }, this.volumeEmitIntervalMs);
     }
 
     /** Destroy and clean up */

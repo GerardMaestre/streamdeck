@@ -54,6 +54,7 @@ export class StreamDeckApp {
         this.activeSliders = new Set();
         this.activeMutes = new Set();
         this.wakeLock = null;
+        this.serverVersion = null;
 
         // --- DOM refs ---
         this.container = document.getElementById('deck-container');
@@ -160,6 +161,15 @@ export class StreamDeckApp {
             if (!res.ok) {
                 console.warn(`Auth/network error (Status: ${res.status}). Showing login...`);
                 this.container.style.display = 'none';
+
+                // Evitar reintentos automáticos cuando el servidor responde 429.
+                // En ese caso, el problema suele ser un token viejo o una sesión
+                // del navegador que está generando demasiadas cargas seguidas.
+                if (res.status === 429) {
+                    this._showRateLimitMessage();
+                    return;
+                }
+
                 this._requestSecurityToken();
                 return;
             }
@@ -192,6 +202,21 @@ export class StreamDeckApp {
             this.container.style.display = 'none';
             this._requestSecurityToken();
         }
+    }
+
+    _showRateLimitMessage() {
+        if (document.querySelector('.rate-limit-overlay')) return;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'rate-limit-overlay';
+        overlay.innerHTML = `
+            <div class="auth-card">
+                <h2>Stream Deck Pro</h2>
+                <p>Se han hecho demasiadas peticiones seguidas. Cierra la pestaña, espera 1 minuto y vuelve a abrir la app.</p>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
     }
 
     // --- Page Data ---
@@ -272,6 +297,16 @@ export class StreamDeckApp {
         this.socket.on('notification', (payload) => {
             if (payload && payload.message) {
                 this.toast.show(payload.message, payload.type || 'info', payload.duration || 3000);
+            }
+        });
+
+        this.socket.on('server_version', (payload) => {
+            if (payload && payload.version) {
+                if (this.serverVersion && this.serverVersion !== payload.version) {
+                    console.log('[Version] Nueva versión detectada, recargando...');
+                    window.location.reload(true);
+                }
+                this.serverVersion = payload.version;
             }
         });
     }

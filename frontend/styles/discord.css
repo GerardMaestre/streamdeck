@@ -295,13 +295,13 @@
     background: linear-gradient(180deg, rgba(74, 222, 128, 0.2), rgba(34, 197, 94, 0.1));
     border: 2px solid rgba(74, 222, 128, 0.5);
     color: #4ade80;
-    padding: 15px 60px;
-    border-radius: 60px;
-    font-size: 1.5rem;
+    padding: 20px 80px;
+    border-radius: 80px;
+    font-size: 2rem;
     font-weight: 900;
     text-transform: uppercase;
-    letter-spacing: 5px;
-    box-shadow: 0 0 40px rgba(74, 222, 128, 0.15);
+    letter-spacing: 8px;
+    box-shadow: 0 0 60px rgba(74, 222, 128, 0.2);
     transition: all 0.3s ease;
 }
 
@@ -369,7 +369,7 @@ body.dragging-active .discord-card-mixer {
     gap: 15px;
     cursor: pointer;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
     will-change: transform, backdrop-filter;
 }
 
@@ -380,9 +380,9 @@ body.dragging-active .discord-card-mixer {
 
 .discord-tactical-btn .t-label {
     font-weight: 900;
-    font-size: 1.6rem;
+    font-size: 2rem;
     text-transform: uppercase;
-    letter-spacing: 2px;
+    letter-spacing: 3px;
     opacity: 0.9;
 }
 
@@ -403,8 +403,8 @@ body.dragging-active .discord-card-mixer {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 15px;
-    min-width: 140px;
+    gap: 20px;
+    min-width: 170px;
     height: 100%;
     justify-content: center;
     user-select: none;
@@ -413,12 +413,12 @@ body.dragging-active .discord-card-mixer {
 }
 
 .user-avatar-circle {
-    width: 85px;
-    height: 85px;
+    width: 110px;
+    height: 110px;
     flex: none !important;
     border-radius: 50%;
     background: #334155;
-    border: 4px solid #475569;
+    border: 5px solid #475569;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -445,10 +445,10 @@ body.dragging-active .discord-card-mixer {
 
 .discord-username-tag {
     color: white;
-    font-weight: 700;
-    font-size: 1.1rem;
+    font-weight: 900;
+    font-size: 1.4rem;
     text-align: center;
-    width: 140px;
+    width: 170px;
     flex: none !important;
     overflow: hidden;
     text-overflow: ellipsis;

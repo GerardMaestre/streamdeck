@@ -14,7 +14,7 @@
  */
 export function setThumbTransform(thumbEl, percent, trackH, isDomo = false) {
     if (!thumbEl) return;
-    const offset = isDomo ? 55 : 32;
+    const offset = isDomo ? 55 : 55;
     const ty = offset - (percent / 100) * trackH;
     thumbEl.style.transform = `translate3d(-50%, ${ty}px, 0)`;
 }
@@ -34,48 +34,94 @@ export function setThumbTransform(thumbEl, percent, trackH, isDomo = false) {
  * @returns {Object} Controller with { destroy(), setPercent(p) }
  */
 export function createFaderController(opts) {
-    const { track, fill, thumb, isDomo = false, onDragStart, onValueChange, onDragEnd } = opts;
+    const { track, fill, thumb, isDomo = false, onDragStart, onValueChange, onDragEnd, initialPercent = 0 } = opts;
     const captureTarget = opts.captureTarget || track;
+    const disableSmooth = !!opts.disableSmooth;
+    const lowPerf = document.body.classList.contains('low-perf') || document.body.classList.contains('mixer-low-perf');
+    const lerpFactor = disableSmooth || lowPerf ? 1 : 0.25;
 
     let trackRect = null;
     let trackH = 0;
-    let isRAFActive = false;
-    let latestClientY = 0;
+    let targetPercent = initialPercent;
+    let currentPercent = initialPercent;
+    let isRendering = false;
+    let isDragging = false;
     let isDestroyed = false;
     let currentPointerId = null;
+    let lastRounded = -1;
 
-    const renderVisuals = () => {
-        isRAFActive = false;
-        if (!trackRect || isDestroyed) return;
-
-        let y = latestClientY - trackRect.top;
-        let percentSmooth = 100 - (y / trackH) * 100;
-        percentSmooth = Math.max(0, Math.min(100, percentSmooth));
-
-        // Visual update
-        fill.style.transform = `scale3d(1, ${percentSmooth / 100}, 1)`;
-        setThumbTransform(thumb, percentSmooth, trackH, isDomo);
-
-        // Callback with both smooth and rounded
-        const percentRounded = Math.round(percentSmooth);
-        if (onValueChange) onValueChange(percentSmooth, percentRounded);
+    const updateVisuals = () => {
+        const percent = currentPercent;
+        fill.style.transform = `scale3d(1, ${percent / 100}, 1)`;
+        setThumbTransform(thumb, percent, trackH, isDomo);
     };
 
-    const updateUI = (e) => {
+    const renderLoop = () => {
+        if (isDestroyed || !trackRect) {
+            isRendering = false;
+            return;
+        }
+
+        if (lowPerf) {
+            currentPercent = targetPercent;
+        } else {
+            currentPercent += (targetPercent - currentPercent) * lerpFactor;
+        }
+
+        updateVisuals();
+
+        const rounded = Math.round(currentPercent);
+        if (onValueChange && rounded !== lastRounded) {
+            lastRounded = rounded;
+            onValueChange(currentPercent, rounded);
+        }
+
+        if (!isDragging && Math.abs(targetPercent - currentPercent) > 0.15 && !lowPerf) {
+            requestAnimationFrame(renderLoop);
+        } else {
+            currentPercent = targetPercent;
+            updateVisuals();
+            isRendering = false;
+        }
+    };
+
+    const scheduleRender = () => {
+        if (isRendering) return;
+        isRendering = true;
+        requestAnimationFrame(renderLoop);
+    };
+
+    const updateTargetFromEvent = (e) => {
         if (!trackRect) {
             trackRect = track.getBoundingClientRect();
             trackH = trackRect.height;
         }
-        latestClientY = e.clientY;
+        let y = e.clientY - trackRect.top;
+        let p = 100 - (y / trackH) * 100;
+        targetPercent = Math.max(0, Math.min(100, p));
+    };
 
-        if (!isRAFActive) {
-            isRAFActive = true;
-            requestAnimationFrame(renderVisuals);
+    const updateUI = (e) => {
+        updateTargetFromEvent(e);
+        if (isDragging) {
+            currentPercent = targetPercent;
+            updateVisuals();
+            const rounded = Math.round(currentPercent);
+            if (onValueChange && rounded !== lastRounded) {
+                lastRounded = rounded;
+                onValueChange(currentPercent, rounded);
+            }
         }
     };
 
     const addDocumentListeners = () => {
-        window.addEventListener('pointermove', updateUI);
+        // Use passive pointermove to let browser optimize touch handling.
+        try {
+            window.addEventListener('pointermove', updateUI, { passive: true });
+        } catch (e) {
+            // fallback for older browsers
+            window.addEventListener('pointermove', updateUI);
+        }
         window.addEventListener('pointerup', releaseSlider);
         window.addEventListener('pointercancel', releaseSlider);
     };
@@ -90,68 +136,76 @@ export function createFaderController(opts) {
         if (isDestroyed) return;
         e.preventDefault();
         e.stopPropagation();
-
         trackRect = track.getBoundingClientRect();
         trackH = trackRect.height;
         document.body.classList.add('dragging-active');
         currentPointerId = e.pointerId;
+        isDragging = true;
 
-        // Capture all pointer events on the track when dragging
+        // Aggressive compositor hints while dragging
+        try {
+            track.style.willChange = 'transform';
+            fill.style.willChange = 'transform';
+            thumb.style.willChange = 'transform';
+        } catch (_) {}
+
         try {
             captureTarget.setPointerCapture(e.pointerId);
         } catch (_) {}
 
+        updateTargetFromEvent(e);
+        currentPercent = targetPercent;
+        updateVisuals();
+
         if (onDragStart) {
-            const y = e.clientY - trackRect.top;
-            let p = 100 - (y / trackH) * 100;
-            p = Math.max(0, Math.min(100, p));
-            onDragStart(Math.round(p));
+            onDragStart(Math.round(targetPercent));
         }
 
-        updateUI(e);
         addDocumentListeners();
     };
 
     const releaseSlider = (e) => {
         document.body.classList.remove('dragging-active');
-
+        isDragging = false;
+        // Remove aggressive compositor hints
+        try {
+            track.style.willChange = '';
+            fill.style.willChange = '';
+            thumb.style.willChange = '';
+        } catch (_) {}
         try {
             if (currentPointerId !== null) captureTarget.releasePointerCapture(currentPointerId);
-        } catch (_) { /* already released */ }
+        } catch (_) { }
 
         removeDocumentListeners();
 
         if (onDragEnd) {
-            const y = latestClientY - (trackRect?.top || 0);
-            let p = 100 - (y / (trackRect?.height || 1)) * 100;
-            p = Math.max(0, Math.min(100, Math.round(p)));
-            onDragEnd(p);
+            onDragEnd(Math.round(targetPercent));
         }
 
+        scheduleRender();
         trackRect = null;
         currentPointerId = null;
     };
 
-    // Bind: pointerdown on track (so tapping anywhere on the track starts drag)
     track.addEventListener('pointerdown', onPointerDown);
 
-    /**
-     * Set fader position programmatically (no event emission).
-     */
-    const setPercent = (percent) => {
+    const setPercent = (percent, immediate = false) => {
         const p = Math.max(0, Math.min(100, percent));
-        fill.style.transform = `scale3d(1, ${p / 100}, 1)`;
-        // Need track height — use cached or measure
-        let h = trackH;
-        if (h === 0) {
+        targetPercent = p;
+        if (immediate) currentPercent = p;
+
+        if (trackH === 0) {
             const r = track.getBoundingClientRect();
-            h = r.height;
-            if (h === 0) {
-                const dvh = window.innerHeight * 0.4;
-                h = Math.max(160, Math.min(300, dvh));
-            }
+            trackH = r.height || Math.max(160, Math.min(300, window.innerHeight * 0.4));
+            trackRect = r;
         }
-        setThumbTransform(thumb, p, h, isDomo);
+
+        if (immediate) {
+            updateVisuals();
+        } else {
+            scheduleRender();
+        }
     };
 
     const getTrackHeight = () => {
@@ -159,8 +213,7 @@ export function createFaderController(opts) {
         const r = track.getBoundingClientRect();
         trackH = r.height;
         if (trackH === 0) {
-            const dvh = window.innerHeight * 0.4;
-            trackH = Math.max(160, Math.min(300, dvh));
+            trackH = Math.max(160, Math.min(300, window.innerHeight * 0.4));
         }
         return trackH;
     };
@@ -168,6 +221,7 @@ export function createFaderController(opts) {
     const destroy = () => {
         isDestroyed = true;
         track.removeEventListener('pointerdown', onPointerDown);
+        removeDocumentListeners();
     };
 
     return { destroy, setPercent, getTrackHeight };

@@ -90,6 +90,13 @@ const cleanupIpData = () => {
 setInterval(cleanupIpData, 60 * 1000);
 
 const rateLimiter = (req, res, next) => {
+    // Solo aplicamos el rate limit a rutas de API autenticadas.
+    // La carga normal de HTML/CSS/JS/imagenes no debe disparar bloqueos
+    // en tablet o en redes con más peticiones iniciales.
+    if (!req.path.startsWith('/api/')) {
+        return next();
+    }
+
     const ip = req.ip || req.connection.remoteAddress || 'unknown';
     if (blockedIps.has(ip)) {
         return res.status(429).json({ error: 'Demasiadas peticiones. Intenta más tarde.' });
@@ -223,6 +230,21 @@ io.use((socket, next) => {
 
 // Dynamic service worker route: inject build timestamp for cache busting
 const SERVER_START_TS = Date.now().toString(36);
+// Dynamic index.html route for cache busting
+app.get(['/', '/index.html'], (req, res) => {
+    const indexPath = getDataPath('frontend/index.html');
+    try {
+        let content = fs.readFileSync(indexPath, 'utf8');
+        content = content.replace(/dist\/app\.bundle\.js/g, `dist/app.bundle.js?v=${SERVER_START_TS}`);
+        content = content.replace(/\.css/g, `.css?v=${SERVER_START_TS}`);
+        res.setHeader('Content-Type', 'text/html');
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.send(content);
+    } catch (err) {
+        res.status(500).send('Error loading index.html');
+    }
+});
+
 app.get('/sw.js', (req, res) => {
     const swPath = getDataPath('frontend/sw.js');
     try {
@@ -397,6 +419,9 @@ io.on('connection', (socket) => {
     }
   };
 };
+
+    // Emitir versión actual para sincronización de clientes (cache bust)
+    socket.emit('server_version', { version: SERVER_START_TS });
 
     // Routing de Eventos -> Controladores
     socket.on('mixer_initial_state', async (ack) => {

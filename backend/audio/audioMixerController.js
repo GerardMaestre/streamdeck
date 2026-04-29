@@ -28,6 +28,7 @@ let visibleMixerClients = 0;
 const SLIDER_ACTIVITY_TIMEOUT = 2000; // Después de 2s sin actividad → modo idle
 const DEBOUNCE_MS = 350;       // 400→350: Ventana de protección optimizada
 const VOL_THRESHOLD = 0.5;     // Diferencia mínima para emitir cambio (evita ruido jitter)
+// Sesiones que siempre queremos ver si están abiertas (aunque no emitan sonido)
 const ALWAYS_SHOW_SILENT_SESSIONS = new Set(['Spotify', 'Google Chrome', 'Microsoft Edge', 'Brave Browser', 'Firefox', 'VLC Player', 'OBS Studio', 'Discord', 'Telegram', 'WhatsApp']);
 const KNOWN_VISIBLE_PROCESSES = new Map([
     ['spotify.exe', 'Spotify'],
@@ -38,9 +39,10 @@ const KNOWN_VISIBLE_PROCESSES = new Map([
     ['vlc.exe', 'VLC Player'],
     ['obs64.exe', 'OBS Studio'],
     ['obs32.exe', 'OBS Studio'],
-    ['discord.exe', 'Discord'],
-    ['telegram.exe', 'Telegram'],
-    ['whatsapp.exe', 'WhatsApp']
+    ['whatsapp.exe', 'WhatsApp'],
+    ['whatsapp.root.exe', 'WhatsApp'],
+    ['whatsappdesktop.exe', 'WhatsApp'],
+    ['telegram.exe', 'Telegram']
 ]);
 const visibleProcessLabels = new Set();
 let lastProcessScanAt = 0;
@@ -54,117 +56,161 @@ function refreshVisibleProcessLabels() {
     processScanInFlight = true;
     lastProcessScanAt = now;
 
-    execFile('tasklist', ['/FO', 'CSV', '/NH'], { windowsHide: true, timeout: 2000 }, (error, stdout) => {
+    // Usamos PowerShell para filtrar procesos que tienen una ventana activa (MainWindowTitle)
+    // Esto evita detectar procesos en segundo plano como el "Startup Boost" de Edge.
+    // Usamos PowerShell para obtener procesos.
+    // 1. Procesos con ventana (para la mayoría de apps)
+    // 2. Procesos críticos aunque no tengan ventana (WhatsApp, Spotify, etc.)
+    const psCommand = 'Get-Process | Select-Object -ExpandProperty Name';
+    
+    execFile('powershell', ['-NoProfile', '-Command', psCommand], { windowsHide: true, timeout: 3000 }, (error, stdout) => {
         processScanInFlight = false;
         if (error || !stdout) return;
 
         const nextLabels = new Set();
-        const lowerOutput = stdout.toLowerCase();
+        const activeExes = stdout.toLowerCase().split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+        
+        // Identificar apps por su ejecutable
         for (const [exeName, label] of KNOWN_VISIBLE_PROCESSES.entries()) {
-            if (lowerOutput.includes(`"${exeName}"`) || lowerOutput.includes(exeName)) {
+            const exeBase = exeName.toLowerCase().replace(/\.exe$/, '');
+            if (activeExes.includes(exeBase)) {
                 nextLabels.add(label);
             }
         }
-
+        
+        // Re-sincronizar visibleProcessLabels
         visibleProcessLabels.clear();
         nextLabels.forEach((label) => visibleProcessLabels.add(label));
     });
 }
 
 function getAppLabel(session) {
-    let rawName = session.appName || session.name || '';
-    if (!rawName) return null;
+    const rawName = session.appName || '';
+    const windowTitle = (session.name || '').trim();
+    
+    // Si ya lo tenemos en caché por el par (rawName, windowTitle)
+    const cacheKey = `${rawName}|${windowTitle}`;
+    if (labelCache.has(cacheKey)) return labelCache.get(cacheKey);
 
-    // Usar caché si ya hemos procesado esto
-    if (labelCache.has(rawName)) return labelCache.get(rawName);
+    const titleLower = windowTitle.toLowerCase();
+    const pathLower = rawName.toLowerCase();
 
-    rawName = rawName.replace(/[^\x20-\x7E]/g, '').trim();
-    if (!rawName) {
-        labelCache.set(session.appName || session.name, null);
-        return null;
+    // 1. Identificación por Título de Ventana o Ruta de App (Prioridad MÁXIMA)
+    // Buscamos WhatsApp en cualquier parte (título o ruta del ejecutable)
+    if (titleLower.includes('whatsapp') || pathLower.includes('whatsapp')) {
+        labelCache.set(cacheKey, 'WhatsApp');
+        return 'WhatsApp';
     }
 
-    if (rawName.toLowerCase().includes('audiosrv') || rawName.toLowerCase() === 'system sounds') {
-        labelCache.set(rawName, 'Sonidos del sistema');
+    const titleRules = [
+        { pattern: 'spotify', name: 'Spotify' },
+        { pattern: 'discord', name: 'Discord' },
+        { pattern: 'youtube', name: 'YouTube' },
+        { pattern: 'twitch', name: 'Twitch' },
+        { pattern: 'netflix', name: 'Netflix' },
+        { pattern: 'hbo', name: 'HBO Max' },
+        { pattern: 'disney+', name: 'Disney+' },
+        { pattern: 'telegram', name: 'Telegram' },
+        { pattern: 'messenger', name: 'Messenger' },
+        { pattern: 'gmail', name: 'Gmail' },
+        { pattern: 'outlook', name: 'Outlook' },
+        { pattern: 'visual studio code', name: 'VS Code' },
+        { pattern: 'postman', name: 'Postman' }
+    ];
+
+    for (const rule of titleRules) {
+        if (titleLower.includes(rule.pattern)) {
+            labelCache.set(cacheKey, rule.name);
+            return rule.name;
+        }
+    }
+
+    // 2. Identificación por Nombre de Proceso
+    const baseName = path.basename(rawName).toLowerCase().replace(/\.exe$/i, '').trim();
+    const isBrowser = ['msedge', 'chrome', 'brave', 'firefox'].includes(baseName);
+
+    if (baseName.includes('audiosrv') || baseName.includes('systemsounds') || titleLower === 'system sounds' || titleLower === 'sonidos del sistema') {
+        labelCache.set(cacheKey, 'Sonidos del sistema');
         return 'Sonidos del sistema';
     }
 
-    if (rawName.startsWith('@')) {
-        labelCache.set(rawName, null);
+    // Filtro de ruido hexadecimal o IDs raros
+    if (/^[0-9a-f]{1,4}$/i.test(baseName) || baseName.startsWith('@')) {
+        labelCache.set(cacheKey, null);
         return null;
     }
 
-    const baseName = path.basename(rawName);
-    const cleanLower = baseName.toLowerCase().replace(/\.exe$/i, '').trim();
-
-    // Filtro avanzado: Eliminar ruido hexadecimal (sesiones fantasma como '0d', '1a', 'ff')
-    if (/^[0-9a-f]{1,4}$/i.test(cleanLower)) {
-        labelCache.set(rawName, null);
-        return null;
-    }
-
-    // Array ordenado por especificidad (más específico primero para evitar conflictos de matching)
-    // Ej: "league of legends" debe matchear antes que solo "legends"
-    const matchingRules = [
-        { pattern: 'league of legends', name: 'League of Legends' },
-        { pattern: 'qemu-system', name: 'QEMU Emulator' },
+    const processRules = [
+        { pattern: 'whatsapp', name: 'WhatsApp' },
         { pattern: 'spotify', name: 'Spotify' },
-        { pattern: 'chrome', name: 'Google Chrome' },
-        { pattern: 'msedge', name: 'Microsoft Edge' },
         { pattern: 'discord', name: 'Discord' },
         { pattern: 'steam', name: 'Steam' },
         { pattern: 'obs64', name: 'OBS Studio' },
         { pattern: 'obs32', name: 'OBS Studio' },
-        { pattern: 'audiodg', name: 'Sonidos del sistema' },
-        { pattern: 'systemsounds', name: 'Sonidos del sistema' },
-        { pattern: 'firefox', name: 'Firefox' },
-        { pattern: 'brave', name: 'Brave' },
         { pattern: 'vlc', name: 'VLC Player' },
+        { pattern: 'league of legends', name: 'League of Legends' },
+        { pattern: 'valorant', name: 'Valorant' },
+        { pattern: 'qemu-system', name: 'QEMU' },
         { pattern: 'sunshine', name: 'Sunshine' },
         { pattern: 'powertoys', name: 'PowerToys' },
         { pattern: 'telegram', name: 'Telegram' },
-        { pattern: 'whatsapp', name: 'WhatsApp' },
-        { pattern: 'valorant', name: 'Valorant' },
-        { pattern: 'update', name: 'Update' }
+        { pattern: 'code', name: 'VS Code' },
+        { pattern: 'explorer', name: 'Explorador de archivos' },
+        // Navegadores al final
+        { pattern: 'chrome', name: 'Google Chrome' },
+        { pattern: 'msedge', name: 'Microsoft Edge' },
+        { pattern: 'brave', name: 'Brave Browser' },
+        { pattern: 'firefox', name: 'Firefox' }
     ];
 
-    let prettyName = null;
-    for (const rule of matchingRules) {
-        if (cleanLower.includes(rule.pattern)) {
-            prettyName = rule.name;
-            break;
+    for (const rule of processRules) {
+        if (baseName.includes(rule.pattern)) {
+            if (isBrowser && windowTitle && windowTitle.toLowerCase() !== baseName && windowTitle.length > 3) {
+                break; // Saltar al paso 4
+            }
+            labelCache.set(cacheKey, rule.name);
+            return rule.name;
         }
     }
 
-    if (!prettyName) {
-        // Lista negra quirúrgica (Oculta solo basura real del sistema)
-        const blacklist = [
-            'searchhost', 'shellexperiencehost', 'svchost', 'startmenuexperiencehost',
-            'widgets', 'applicationframehost', 'backgroundtaskhost', 'searchapp', 'explorer', 'taskhostw', 
-            'cmd', 'conhost', 'systemsettings', 'lockapp', 'textinputhost', 'idle', 
-            'system', 'registry', 'smss', 'csrss', 'lsass', 'services', 'spoolsv',
-            'audioclientrpc', 'esday', 'rundll32', 'dllhost', 'runtimebroker', 'sihost',
-            'fontdrvhost', 'dwm', 'ctfmon', 'nvcontainer', 'nvdisplay', 'amdow', 
-            'amdrsserv', 'wusa', 'wmiprvse', 'dashost', 'host32', 'host64', 'wsappx',
-            'mousoftwareworker', 'usocoreworker', 'compattelrunner', 'vmmem', 'userinit', 
-            'wininit', 'winlogon', 'crashpad_handler', 'wermgr', 'werfault', 
-            'backgroundtransferhost', 'smartscreen', 'igfxcuiservice', 'igfxem', 
-            'nvsphelper64', 'rtkngui64', 'nahimic', 'wavesyssvc', 'securityhealthsystray',
-            'msedgewebview2', 'devicedriver', 'dock_64', 'antigravity', 'wallpaper64', 'wallpaper32'
-        ];
+    // 3. Blacklist
+    const blacklist = [
+        'searchhost', 'shellexperiencehost', 'svchost', 'startmenuexperiencehost',
+        'widgets', 'applicationframehost', 'backgroundtaskhost', 'searchapp', 'taskhostw', 
+        'cmd', 'conhost', 'systemsettings', 'lockapp', 'textinputhost', 'idle', 
+        'system', 'registry', 'smss', 'csrss', 'lsass', 'services', 'spoolsv',
+        'audioclientrpc', 'esday', 'rundll32', 'dllhost', 'runtimebroker', 'sihost',
+        'fontdrvhost', 'dwm', 'ctfmon', 'nvcontainer', 'nvdisplay', 'amdow', 
+        'amdrsserv', 'wusa', 'wmiprvse', 'dashost', 'host32', 'host64', 'wsappx',
+        'mousoftwareworker', 'usocoreworker', 'compattelrunner', 'vmmem', 'userinit', 
+        'wininit', 'winlogon', 'crashpad_handler', 'wermgr', 'werfault', 
+        'backgroundtransferhost', 'smartscreen', 'igfxcuiservice', 'igfxem', 
+        'nvsphelper64', 'rtkngui64', 'nahimic', 'wavesyssvc', 'securityhealthsystray',
+        'msedgewebview2', 'devicedriver', 'dock_64', 'antigravity', 'wallpaper64', 'wallpaper32',
+        'experiencia de entrada', 'gamebar', 'remind_m', 'ascom', 'winwdr', 'winring0'
+    ];
 
-        if (cleanLower.length <= 1 || cleanLower.includes('{') || cleanLower.includes('}')) {
-            prettyName = null;
-        } else if (blacklist.some(bad => cleanLower.includes(bad))) {
-            prettyName = null;
-        } else {
-            prettyName = cleanLower.replace(/[-_]/g, ' ').trim();
-            prettyName = prettyName.replace(/\b\w/g, c => c.toUpperCase());
-        }
+    if (blacklist.some(bad => baseName.includes(bad) || titleLower.includes(bad))) {
+        labelCache.set(cacheKey, null);
+        return null;
     }
 
-    labelCache.set(session.appName || session.name, prettyName);
-    return prettyName;
+    // 4. Título útil
+    if (windowTitle && windowTitle.length > 2 && windowTitle.length < 50 && !windowTitle.includes('{')) {
+        labelCache.set(cacheKey, windowTitle);
+        return windowTitle;
+    }
+
+    // 5. Fallback
+    if (baseName && baseName.length > 1) {
+        let prettyName = baseName.replace(/[-_]/g, ' ').trim();
+        prettyName = prettyName.replace(/\b\w/g, c => c.toUpperCase());
+        labelCache.set(cacheKey, prettyName);
+        return prettyName;
+    }
+
+    labelCache.set(cacheKey, null);
+    return null;
 }
 
 function detachListenersFromDefaultDevice() {
@@ -203,6 +249,7 @@ function assignListenersToDefaultDevice(device, io) {
 function initAudioMixer(io) {
     if (mixerInitialized) return;
     globalIo = io;
+    labelCache.clear(); // Limpiar caché al iniciar para recalcular nombres con las nuevas reglas
 
     try {
         defaultDevice = AudioMixer.getDefaultDevice(DeviceType.RENDER);
@@ -324,7 +371,6 @@ function pollSessions(io) {
             if (needsUnification) {
                 if (isBeingDragged || stored.lastVolume !== undefined) {
                     // Forzamos la voluntad del usuario (o el último valor guardado) sobre las sesiones
-                    console.log(`[Mixer] Unificando sesiones de "${label}" al valor guardado: ${stored.lastVolume}%`);
                     sessionsSnapshot.forEach(s => {
                         try { s.volume = stored.lastVolume / 100; } catch (_) {}
                     });
@@ -343,13 +389,12 @@ function pollSessions(io) {
             stored.processOnly = false;
         }
 
-        if (label === 'Spotify' || sessionsSnapshot.length > 1) {
-            console.log(`[Mixer] Info "${label}": ${sessionsSnapshot.length} sesiones activas`);
-        }
+        // (Log removido para evitar saturación del terminal)
+        // if (label === 'Spotify' || sessionsSnapshot.length > 1) { ... }
 
         if (stored) {
-            // Debounce contra cambios manuales del usuario en la tablet (aumentado a 1000ms para pruebas)
-            if (stored.lastUserUpdate && (Date.now() - stored.lastUserUpdate < 1000)) {
+            // Debounce contra cambios manuales del usuario en la tablet (reducido a 600ms para mayor agilidad)
+            if (stored.lastUserUpdate && (Date.now() - stored.lastUserUpdate < 600)) {
                 continue;
             }
 
@@ -494,11 +539,11 @@ function handleSocketCommands(socket) {
     });
 
     socket.on('set_master_volume', (value) => {
-        lastSliderActivity = Date.now(); // Marca actividad para polling adaptativo
+        lastSliderActivity = Date.now();
         try { 
-            const currentDefault = AudioMixer.getDefaultDevice(DeviceType.RENDER);
-            if (currentDefault) {
-                currentDefault.volume = value / 100; 
+            const device = defaultDevice || AudioMixer.getDefaultDevice(DeviceType.RENDER);
+            if (device) {
+                device.volume = value / 100; 
                 socket.broadcast.emit('master_updated', { type: 'volume', value: Math.round(value) });
             }
         } catch (e) {
@@ -536,25 +581,29 @@ function handleSocketCommands(socket) {
                 stored.lastUserUpdate = Date.now();
             }
 
-            // Re-escaneamos el dispositivo para obtener sesiones frescas y aplicar a todas
-            const currentDevice = AudioMixer.getDefaultDevice(DeviceType.RENDER);
-            if (!currentDevice) return;
+            // Usar las sesiones ya cacheadas si están disponibles y no están vacías
+            let sessionsToUpdate = (stored && stored.sessions && stored.sessions.length > 0) ? stored.sessions : null;
 
-            const allSessions = currentDevice.sessions;
+            // Si no hay sesiones cacheadas, las buscamos en el dispositivo (lento, pero necesario una vez)
+            if (!sessionsToUpdate) {
+                const currentDevice = defaultDevice || AudioMixer.getDefaultDevice(DeviceType.RENDER);
+                if (currentDevice) {
+                    sessionsToUpdate = currentDevice.sessions.filter(s => getAppLabel(s) === app);
+                    if (stored) stored.sessions = sessionsToUpdate;
+                }
+            }
+
+            if (!sessionsToUpdate) return;
+
             let appliedCount = 0;
-
-            allSessions.forEach((s) => {
-                if (getAppLabel(s) === app) {
-                    try {
-                        s.volume = targetVolume / 100;
-                        appliedCount++;
-                    } catch (err) {
-                        console.error(`[Mixer] Error setting volume for ${app}:`, err);
-                    }
+            sessionsToUpdate.forEach((s) => {
+                try {
+                    s.volume = targetVolume / 100;
+                    appliedCount++;
+                } catch (err) {
+                    // Si falla, es posible que la sesión sea inválida, la limpiaremos en el próximo poll
                 }
             });
-
-            console.log(`[Mixer] ${app} Volume -> ${targetVolume}% (${appliedCount} sessions controlled)`);
 
             // Persistencia y broadcast
             persistMixerSessionState(app, targetVolume, stored ? stored.lastMute : false);
@@ -591,7 +640,7 @@ function handleSocketCommands(socket) {
                 stored.lastUserUpdate = Date.now();
             }
 
-            console.log(`[Mixer] ${app} Mute -> ${newState} (${appliedCount} sessions controlled)`);
+            // console.log(`[Mixer] ${app} Mute -> ${newState} (${appliedCount} sessions controlled)`);
 
             const updatePayload = { name: app, type: 'mute', value: newState };
             socket.emit('session_updated', updatePayload);
