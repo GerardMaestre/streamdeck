@@ -61,7 +61,7 @@ function refreshVisibleProcessLabels() {
     // Usamos PowerShell para obtener procesos.
     // 1. Procesos con ventana (para la mayoría de apps)
     // 2. Procesos críticos aunque no tengan ventana (WhatsApp, Spotify, etc.)
-    const psCommand = 'Get-Process | Select-Object -ExpandProperty Name';
+    const psCommand = "$known = @('spotify','chrome','msedge','brave','firefox','vlc','obs64','obs32','whatsapp','whatsapp.root','whatsappdesktop','telegram'); Get-Process | Where-Object { ($_.MainWindowTitle -and $_.MainWindowTitle.Trim().Length -gt 0) -or ($known -contains $_.Name.ToLower()) } | Select-Object -ExpandProperty Name";
     
     execFile('powershell', ['-NoProfile', '-Command', psCommand], { windowsHide: true, timeout: 3000 }, (error, stdout) => {
         processScanInFlight = false;
@@ -94,14 +94,18 @@ function getAppLabel(session) {
 
     const titleLower = windowTitle.toLowerCase();
     const pathLower = rawName.toLowerCase();
+    const baseName = path.basename(rawName).toLowerCase().replace(/\.exe$/i, '').trim();
+    const canonicalExe = `${baseName}.exe`;
+    const isBrowser = ['msedge', 'chrome', 'brave', 'firefox'].includes(baseName);
 
-    // 1. Identificación por Título de Ventana o Ruta de App (Prioridad MÁXIMA)
-    // Buscamos WhatsApp en cualquier parte (título o ruta del ejecutable)
-    if (titleLower.includes('whatsapp') || pathLower.includes('whatsapp')) {
-        labelCache.set(cacheKey, 'WhatsApp');
-        return 'WhatsApp';
+    // 1) Mapeo por ejecutable (más estable que títulos de ventana).
+    if (KNOWN_VISIBLE_PROCESSES.has(canonicalExe)) {
+        const stableLabel = KNOWN_VISIBLE_PROCESSES.get(canonicalExe);
+        labelCache.set(cacheKey, stableLabel);
+        return stableLabel;
     }
 
+    // 2) Reglas por título SOLO para procesos no navegador.
     const titleRules = [
         { pattern: 'spotify', name: 'Spotify' },
         { pattern: 'discord', name: 'Discord' },
@@ -118,16 +122,16 @@ function getAppLabel(session) {
         { pattern: 'postman', name: 'Postman' }
     ];
 
-    for (const rule of titleRules) {
-        if (titleLower.includes(rule.pattern)) {
-            labelCache.set(cacheKey, rule.name);
-            return rule.name;
+    if (!isBrowser) {
+        for (const rule of titleRules) {
+            if (titleLower.includes(rule.pattern)) {
+                labelCache.set(cacheKey, rule.name);
+                return rule.name;
+            }
         }
     }
 
-    // 2. Identificación por Nombre de Proceso
-    const baseName = path.basename(rawName).toLowerCase().replace(/\.exe$/i, '').trim();
-    const isBrowser = ['msedge', 'chrome', 'brave', 'firefox'].includes(baseName);
+    // 3. Identificación por Nombre de Proceso
 
     if (baseName.includes('audiosrv') || baseName.includes('systemsounds') || titleLower === 'system sounds' || titleLower === 'sonidos del sistema') {
         labelCache.set(cacheKey, 'Sonidos del sistema');
@@ -334,7 +338,8 @@ function pollSessions(io) {
         if (!label) continue;
 
         const isSilentInactive = session.state !== 1 && session.volume === 0 && !session.mute;
-        if (isSilentInactive && !ALWAYS_SHOW_SILENT_SESSIONS.has(label)) continue;
+        const shouldKeepByVisibility = visibleProcessLabels.has(label);
+        if (isSilentInactive && !ALWAYS_SHOW_SILENT_SESSIONS.has(label) && !shouldKeepByVisibility) continue;
 
         let group = pollGroupedData.get(label);
         if (!group) {
