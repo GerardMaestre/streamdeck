@@ -102,6 +102,13 @@ class StreamDeckClient {
 
         this.pendingScriptData = null;
         this.wakeLock = null;
+        this.appState = {
+            ui: {
+                lastPage: 'main'
+            },
+            persistedMixer: {}
+        };
+        this.offlineBanner = null;
         this.volumeEmitIntervalMs = 50; // Red local: 50ms suficiente para respuesta instantánea
         this.mixerRefs = {}; // Caché de referencias DOM para el mixer
 
@@ -141,6 +148,8 @@ class StreamDeckClient {
     async init() {
         this.setupSocketListeners();
         this.setupDOMListeners();
+        this.setupConnectivityListeners();
+        this.registerServiceWorker();
 
         try {
             const fetchOptions = {
@@ -178,7 +187,7 @@ class StreamDeckClient {
             this.socket.emit('discord_initial_state');
 
             // Renderizar la interfaz solo si todo ha ido bien
-            this.loadAppSettings();
+            await this.loadAppSettings();
             this.initMainGrid();
             this.renderEditModeButton();
 
@@ -319,7 +328,7 @@ class StreamDeckClient {
         });
     }
 
-    loadAppSettings() {
+    async loadAppSettings() {
         this.appSettings = {
             darkMode: localStorage.getItem('streamdeck_dark_mode') === 'true',
             compactGrid: localStorage.getItem('streamdeck_compact_grid') === 'true',
@@ -327,6 +336,27 @@ class StreamDeckClient {
         };
         document.body.classList.toggle('dark-mode', this.appSettings.darkMode);
         document.body.classList.toggle('compact-grid', this.appSettings.compactGrid);
+
+        try {
+            const fetchOptions = {
+                headers: {
+                    'Authorization': this.securityToken,
+                    'Content-Type': 'application/json'
+                }
+            };
+            const res = await fetch('/api/app-state', fetchOptions);
+            if (res.ok) {
+                const appState = await res.json();
+                if (appState && typeof appState === 'object') {
+                    this.appState = appState;
+                    if (appState.ui?.lastPage) {
+                        this.currentPage = appState.ui.lastPage;
+                    }
+                }
+            }
+        } catch (error) {
+            console.warn('No se pudo recuperar el estado persistido del servidor:', error);
+        }
     }
 
     saveAppSetting(key, value) {
@@ -338,6 +368,58 @@ class StreamDeckClient {
         if (key === 'compactGrid') {
             document.body.classList.toggle('compact-grid', value);
         }
+    }
+
+    async persistAppState(payload = {}) {
+        if (!payload || typeof payload !== 'object') return;
+        this.appState = {
+            ...this.appState,
+            ...payload,
+            updatedAt: Date.now()
+        };
+        try {
+            await fetch('/api/app-state', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': this.securityToken
+                },
+                body: JSON.stringify(this.appState)
+            });
+        } catch (error) {
+            console.warn('No se pudo persistir el estado de la app:', error);
+        }
+    }
+
+    createOfflineBanner() {
+        const banner = document.createElement('div');
+        banner.id = 'offline-banner';
+        banner.className = 'offline-banner hidden';
+        banner.textContent = 'Modo offline activado. Algunas funciones pueden no estar disponibles.';
+        document.body.appendChild(banner);
+        return banner;
+    }
+
+    setupConnectivityListeners() {
+        const updateBanner = () => {
+            if (!this.offlineBanner) this.offlineBanner = this.createOfflineBanner();
+            this.offlineBanner.classList.toggle('hidden', navigator.onLine);
+        };
+        window.addEventListener('online', updateBanner);
+        window.addEventListener('offline', updateBanner);
+        updateBanner();
+    }
+
+    registerServiceWorker() {
+        if (!('serviceWorker' in navigator)) return;
+        window.addEventListener('load', async () => {
+            try {
+                await navigator.serviceWorker.register('/sw.js');
+                console.log('[PWA] Service worker registrado con éxito.');
+            } catch (error) {
+                console.warn('[PWA] Error registrando service worker:', error);
+            }
+        });
     }
 
     openSettingsPanel() {
@@ -500,6 +582,7 @@ class StreamDeckClient {
 
     renderGrid(pageId = 'main') {
         this.currentPage = pageId;
+        this.persistAppState({ ui: { lastPage: pageId } });
         this.container.replaceChildren();
         this.container.className = 'deck-view'; // Vista custom con grid + footer
 
@@ -1251,7 +1334,11 @@ class StreamDeckClient {
     }
 
     createMixerRow(appData, isMaster = false) {
-        const id = isMaster ? 'global' : appData.name;
+        const baseName = isMaster ? 'global' : String(appData.name).trim();
+        // ID sanitizado para usar en HTML (evita caracteres especiales en atributos)
+        const sanitizedId = baseName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+        // Nombre original para comunicación con servidor
+        const serverName = isMaster ? 'global' : baseName;
         const labelName = isMaster ? 'Master' : appData.name;
 
         const iconHTML = this.getIconForApp(labelName, isMaster);
@@ -1261,11 +1348,11 @@ class StreamDeckClient {
 
         const row = document.createElement('div');
         row.className = 'mixer-row';
-        row.id = `mixer-row-${id}`;
+        row.id = `mixer-row-${sanitizedId}`;
 
         row.innerHTML = `
             <div class="mixer-icon-btn${mutedClass}">
-                <div id="icon-wrapper-${id}" class="mixer-icon-wrapper${mutedWrapperClass}">
+                <div id="icon-wrapper-${sanitizedId}" class="mixer-icon-wrapper${mutedWrapperClass}">
                     ${iconHTML}
                 </div>
             </div>
@@ -1282,7 +1369,7 @@ class StreamDeckClient {
             iconBtn.addEventListener('pointerup', (event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                this.toggleMute(id, isMaster);
+                this.toggleMute(serverName, isMaster, sanitizedId);
             });
         }
 
@@ -1292,7 +1379,7 @@ class StreamDeckClient {
         const wrapper = row.querySelector('.mixer-icon-wrapper');
 
         // Guardamos las referencias para actualizaciones en tiempo real
-        this.mixerRefs[id] = { fill, thumb, wrapper, track: container, trackH: 0 };
+        this.mixerRefs[sanitizedId] = { fill, thumb, wrapper, track: container, trackH: 0, sessionName: baseName };
         let containerRect = null;
         let trackH = 0;
         let isRAFActive = false;
@@ -1314,9 +1401,9 @@ class StreamDeckClient {
 
             // 2. CÁLCULO DE RED (REDONDEADO): Para enviar al servidor
             let percentRounded = Math.round(percentSmooth);
-            if (percentRounded !== this[`last_mixer_${id}`]) {
-                this[`last_mixer_${id}`] = percentRounded;
-                this.updateVolumeServer(id, percentRounded, isMaster);
+            if (percentRounded !== this[`last_mixer_${sanitizedId}`]) {
+                this[`last_mixer_${sanitizedId}`] = percentRounded;
+                this.updateVolumeServer(serverName, percentRounded, isMaster);
             }
         };
 
@@ -1324,7 +1411,7 @@ class StreamDeckClient {
             if (!containerRect) {
                 containerRect = container.getBoundingClientRect();
                 trackH = containerRect.height;
-                this.mixerRefs[id].trackH = trackH; // cachear para updateSliderUI
+                this.mixerRefs[sanitizedId].trackH = trackH; // cachear para updateSliderUI
             }
 
             // Solo actualizamos la posición y pedimos 1 frame
@@ -1338,38 +1425,51 @@ class StreamDeckClient {
 
         const onPointerDown = (e) => {
             e.preventDefault();
+            e.stopPropagation();
             const row = container.closest('.mixer-row');
             if (row) row.classList.add('dragging'); // Modo Zero Lag
 
-            this.activeSliders.add(id);
-            
+            this.activeSliders.add(sanitizedId);
+
             containerRect = container.getBoundingClientRect();
             trackH = containerRect.height;
-            thumb.setPointerCapture(e.pointerId);
             document.body.classList.add('dragging-active');
-            thumb.addEventListener('pointermove', updateUI);
+            
+            // Usar setPointerCapture para que SOLO este container reciba los eventos
+            container.setPointerCapture(e.pointerId);
+            
+            // Registrar listeners en el container, no en window
+            container.addEventListener('pointermove', updateUI);
+            container.addEventListener('pointerup', releaseSlider);
+            container.addEventListener('pointercancel', releaseSlider);
             updateUI(e);
         };
-
 
         container.addEventListener('pointerdown', onPointerDown);
 
         const releaseSlider = (e) => {
-            if (thumb.hasPointerCapture && thumb.hasPointerCapture(e.pointerId)) {
-                thumb.releasePointerCapture(e.pointerId);
-            }
             document.body.classList.remove('dragging-active');
-            thumb.removeEventListener('pointermove', updateUI);
+            
+            // Remover la captura de pointer
+            try {
+                container.releasePointerCapture(e.pointerId);
+            } catch (err) {
+                // Si ya fue liberado, ignorar error
+            }
+            
+            // Remover listeners del container
+            container.removeEventListener('pointermove', updateUI);
+            container.removeEventListener('pointerup', releaseSlider);
+            container.removeEventListener('pointercancel', releaseSlider);
 
-
-            const finalPercent = this[`last_mixer_${id}`];
+            const finalPercent = this[`last_mixer_${sanitizedId}`];
             if (Number.isFinite(finalPercent)) {
-                this.updateVolumeServer(id, finalPercent, isMaster, true);
+                this.updateVolumeServer(serverName, finalPercent, isMaster, true);
             }
 
             // Grace period: permite que el último update se procese
             setTimeout(() => {
-                this.activeSliders.delete(id); // DESBLOQUEA updates después
+                this.activeSliders.delete(sanitizedId); // DESBLOQUEA updates después
             }, 150);
             containerRect = null;
         };
@@ -1387,7 +1487,6 @@ class StreamDeckClient {
 
         // Comprobación de integridad para evitar re-renders innecesarios si nada ha cambiado
         const currentStateStr = JSON.stringify(this.lastMixerState);
-        if (this._renderedMixerState === currentStateStr) return;
         this._renderedMixerState = currentStateStr;
 
         this.mixerRefs = {};
@@ -1433,7 +1532,8 @@ class StreamDeckClient {
                 if (id === 'global') {
                     vol = this.lastMixerState.master.volume;
                 } else {
-                    const sess = this.lastMixerState.sessions.find(s => s.name === id);
+                    const sess = this.lastMixerState.sessions.find(s => s.name === refs.sessionName) ||
+                        this.lastMixerState.sessions.find(s => String(s.name).toLowerCase().replace(/[^a-z0-9]/g, '_') === id);
                     if (sess) vol = sess.volume;
                 }
                 
@@ -1522,9 +1622,10 @@ class StreamDeckClient {
     }
 
     // 🔥 FIX DEFINITIVO PARA EL REBOTE DE MUTE (Optimistic UI)
-    toggleMute(app, isMaster) {
+    toggleMute(app, isMaster, domId = null) {
         const id = isMaster ? 'global' : app;
-        const wrapper = document.getElementById(id === 'global' ? 'icon-wrapper-global' : `icon-wrapper-${id}`) || document.getElementById(`icon-${id}`);
+        const domKey = isMaster ? 'global' : (domId || String(app).toLowerCase().replace(/[^a-z0-9]/g, '_'));
+        const wrapper = document.getElementById(domKey === 'global' ? 'icon-wrapper-global' : `icon-wrapper-${domKey}`) || document.getElementById(`icon-${domKey}`);
         if (!wrapper) return;
 
         const iconContainer = wrapper.closest('.mixer-icon-btn');
@@ -1547,13 +1648,13 @@ class StreamDeckClient {
 
         // 2. Aplicamos un "Escudo" o Bloqueo por 1.5 segundos
         // Esto ignora las respuestas tardías del servidor que intenten "deshacer" visualmente el click.
-        this.activeMutes.add(id);
+        this.activeMutes.add(domKey);
 
-        if (this.muteTimers[id]) {
-            clearTimeout(this.muteTimers[id]);
+        if (this.muteTimers[domKey]) {
+            clearTimeout(this.muteTimers[domKey]);
         }
-        this.muteTimers[id] = setTimeout(() => {
-            this.activeMutes.delete(id);
+        this.muteTimers[domKey] = setTimeout(() => {
+            this.activeMutes.delete(domKey);
         }, 1500);
 
         // 3. Enviamos la orden real al servidor por debajo
@@ -1643,7 +1744,8 @@ class StreamDeckClient {
                     if (data.type === 'mute') sess.mute = data.value;
                 }
             }
-            this.updateSliderUI(data.name, data);
+            const sanitizedId = String(data.name).toLowerCase().replace(/[^a-z0-9]/g, '_');
+            this.updateSliderUI(sanitizedId, data);
         });
 
         this.socket.on('session_added', (sessionData) => {
@@ -1663,17 +1765,19 @@ class StreamDeckClient {
 
             const appsContainer = document.getElementById('app-mixers');
             if (appsContainer) {
-                const existingRow = document.getElementById(`mixer-row-${sessionData.name}`);
+                const sanitizedId = String(sessionData.name).toLowerCase().replace(/[^a-z0-9]/g, '_');
+                const existingRow = document.getElementById(`mixer-row-${sanitizedId}`);
                 if (existingRow) {
                     existingRow.classList.remove('fade-out');
-                    this.updateSliderUI(sessionData.name, { type: 'volume', value: sessionData.volume });
-                    this.updateSliderUI(sessionData.name, { type: 'mute', value: sessionData.mute });
+                    this.updateSliderUI(sanitizedId, { type: 'volume', value: sessionData.volume });
+                    this.updateSliderUI(sanitizedId, { type: 'mute', value: sessionData.mute });
                 } else {
                     appsContainer.appendChild(this.createMixerRow(sessionData));
                     // Forzar actualización visual inmediata después de añadir al DOM
                     requestAnimationFrame(() => {
-                        this.updateSliderUI(sessionData.name, { type: 'volume', value: sessionData.volume });
-                        this.updateSliderUI(sessionData.name, { type: 'mute', value: sessionData.mute });
+                        const newSanitizedId = String(sessionData.name).toLowerCase().replace(/[^a-z0-9]/g, '_');
+                        this.updateSliderUI(newSanitizedId, { type: 'volume', value: sessionData.volume });
+                        this.updateSliderUI(newSanitizedId, { type: 'mute', value: sessionData.mute });
                     });
                 }
             }
@@ -1683,7 +1787,8 @@ class StreamDeckClient {
             if (this.lastMixerState) {
                 this.lastMixerState.sessions = this.lastMixerState.sessions.filter(s => s.name !== sessionData.name);
             }
-            const row = document.getElementById(`mixer-row-${sessionData.name}`);
+            const sanitizedId = String(sessionData.name).toLowerCase().replace(/[^a-z0-9]/g, '_');
+            const row = document.getElementById(`mixer-row-${sanitizedId}`);
             if (row && !row.classList.contains('fade-out')) {
                 row.classList.add('fade-out');
                 setTimeout(() => {

@@ -1,0 +1,27 @@
+{
+    "ui": {
+        "lastPage": "main"
+    },
+    "persistedMixer": {
+        "masterMute": false,
+        "sessions": {
+            "Google Chrome": {
+                "volume": 55,
+                "mute": false
+            },
+            "Spotify": {
+                "volume": 1,
+                "mute": false
+            },
+            "Robloxplayerbeta": {
+                "volume": 25,
+                "mute": false
+            },
+            "Discord": {
+                "volume": 100,
+                "mute": false
+            }
+        }
+    },
+    "updatedAt": 1777404783082
+}

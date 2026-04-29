@@ -3,12 +3,23 @@ require('dotenv').config({ path: getDataPath('.env'), quiet: true });
 // 1. IMPORTS
 const express = require('express');
 const http = require('http');
-const { Server } = require('socket.io');
+const https = require('https');
+const path = require('path');
 const fs = require('fs');
+const { Server } = require('socket.io');
 const compression = require('compression');
+const { appStateStore } = require('./backend/data/state-store');
 
 const app = express();
 app.disable('x-powered-by');
+app.set('trust proxy', 1);
+app.use((req, res, next) => {
+    res.setHeader('Referrer-Policy', 'no-referrer-when-downgrade');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    next();
+});
 app.use(compression());
 app.use(express.json({ limit: '1mb' }));
 
@@ -56,7 +67,78 @@ try {
     Logger.warn('No se pudo establecer watcher en config.json', e);
 }
 
-const server = http.createServer(app);
+const badAuthAttempts = new Map();
+const blockedIps = new Map();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RATE_LIMIT_MAX_REQUESTS = 120;
+const AUTH_BLOCK_THRESHOLD = 5;
+const AUTH_BLOCK_DURATION_MS = 15 * 60 * 1000;
+
+const cleanupIpData = () => {
+    const now = Date.now();
+    for (const [ip, data] of blockedIps.entries()) {
+        if (now - data.blockedAt > AUTH_BLOCK_DURATION_MS) {
+            blockedIps.delete(ip);
+        }
+    }
+    for (const [ip, data] of badAuthAttempts.entries()) {
+        if (now - data.lastAttempt > RATE_LIMIT_WINDOW_MS) {
+            badAuthAttempts.delete(ip);
+        }
+    }
+};
+setInterval(cleanupIpData, 60 * 1000);
+
+const rateLimiter = (req, res, next) => {
+    const ip = req.ip || req.connection.remoteAddress || 'unknown';
+    if (blockedIps.has(ip)) {
+        return res.status(429).json({ error: 'Demasiadas peticiones. Intenta más tarde.' });
+    }
+
+    const now = Date.now();
+    const entry = badAuthAttempts.get(ip) || { count: 0, firstRequest: now, lastAttempt: now };
+
+    if (now - entry.firstRequest > RATE_LIMIT_WINDOW_MS) {
+        entry.count = 0;
+        entry.firstRequest = now;
+    }
+
+    entry.count += 1;
+    entry.lastAttempt = now;
+    badAuthAttempts.set(ip, entry);
+
+    if (entry.count > RATE_LIMIT_MAX_REQUESTS) {
+        blockedIps.set(ip, { blockedAt: now });
+        return res.status(429).json({ error: 'Demasiadas peticiones. Intenta más tarde.' });
+    }
+
+    next();
+};
+
+app.use(rateLimiter);
+
+let server;
+const sslKeyPath = process.env.SSL_KEY_PATH || 'ssl/key.pem';
+const sslCertPath = process.env.SSL_CERT_PATH || 'ssl/cert.pem';
+let secureProtocol = false;
+
+if (fs.existsSync(getDataPath(sslKeyPath)) && fs.existsSync(getDataPath(sslCertPath))) {
+    try {
+        const sslOptions = {
+            key: fs.readFileSync(getDataPath(sslKeyPath), 'utf8'),
+            cert: fs.readFileSync(getDataPath(sslCertPath), 'utf8')
+        };
+        server = https.createServer(sslOptions, app);
+        secureProtocol = true;
+        console.log('[Server] HTTPS/WSS habilitado usando certificados SSL.');
+    } catch (err) {
+        console.error('[Server] Error cargando certificados SSL:', err);
+        server = http.createServer(app);
+    }
+} else {
+    server = http.createServer(app);
+}
+
 const io = new Server(server, {
   transports: ['websocket'],
   perMessageDeflate: false,
@@ -105,6 +187,18 @@ const isLocalAddress = (address) => {
     return address === '::1' || address === '127.0.0.1' || address === '::ffff:127.0.0.1';
 };
 
+const registerBadAuthAttempt = (ip) => {
+    if (!ip) return;
+    const now = Date.now();
+    const entry = badAuthAttempts.get(ip) || { count: 0, firstRequest: now, lastAttempt: now };
+    entry.count += 1;
+    entry.lastAttempt = now;
+    badAuthAttempts.set(ip, entry);
+    if (entry.count >= AUTH_BLOCK_THRESHOLD) {
+        blockedIps.set(ip, { blockedAt: now });
+    }
+};
+
 const getSocketToken = (socket) => normalizeAuthToken(socket.handshake.auth?.token);
 const getRequestToken = (req) => normalizeAuthToken(req.headers.authorization);
 
@@ -122,6 +216,7 @@ io.use((socket, next) => {
     if (verifyAccess(token, isLocal)) {
         return next();
     }
+    registerBadAuthAttempt(socket.handshake.address);
     console.warn(`[!] Intento de conexion rechazada desde ${socket.handshake.address} (Token invalido)`);
     return next(new Error('Acceso denegado: Token de seguridad invalido'));
 });
@@ -161,6 +256,7 @@ app.post('/api/config', async (req, res) => {
     const isLocal = isLocalAddress(req.ip);
 
     if (!verifyAccess(token, isLocal)) {
+        registerBadAuthAttempt(req.ip);
         return res.status(403).json({ error: 'Acceso denegado' });
     }
 
@@ -190,6 +286,53 @@ app.post('/api/config', async (req, res) => {
     } catch (err) {
         errorLog('Error guardando config.json', err);
         return res.status(500).json({ error: 'No se pudo guardar la configuracion.' });
+    }
+});
+
+app.get('/api/app-state', async (req, res) => {
+    const token = getRequestToken(req);
+    const isLocal = isLocalAddress(req.ip);
+
+    if (!verifyAccess(token, isLocal)) {
+        registerBadAuthAttempt(req.ip);
+        return res.status(403).json({ error: 'Acceso denegado' });
+    }
+
+    try {
+        return res.json(appStateStore.get() || {});
+    } catch (err) {
+        Logger.error('Error leyendo el estado persistido', err);
+        return res.status(500).json({ error: 'No se pudo recuperar el estado' });
+    }
+});
+
+app.post('/api/app-state', async (req, res) => {
+    const token = getRequestToken(req);
+    const isLocal = isLocalAddress(req.ip);
+
+    if (!verifyAccess(token, isLocal)) {
+        registerBadAuthAttempt(req.ip);
+        return res.status(403).json({ error: 'Acceso denegado' });
+    }
+
+    try {
+        const payload = req.body;
+        if (!payload || typeof payload !== 'object') {
+            return res.status(400).json({ error: 'Payload invalido' });
+        }
+
+        if (payload.ui && typeof payload.ui === 'object') {
+            appStateStore.merge('ui', payload.ui);
+        }
+        if (payload.persistedMixer && typeof payload.persistedMixer === 'object') {
+            appStateStore.merge('persistedMixer', payload.persistedMixer);
+        }
+        appStateStore.set('updatedAt', Date.now());
+
+        return res.json({ ok: true });
+    } catch (err) {
+        Logger.error('Error guardando el estado persistido', err);
+        return res.status(500).json({ error: 'No se pudo guardar el estado' });
     }
 });
 
@@ -438,12 +581,13 @@ server.on('error', (err) => {
 server.listen(PORT, () => {
     // Exportar puerto real para que main.js (tray) lo lea
     global.__streamdeck_port = PORT;
+    const protocol = secureProtocol ? 'https' : 'http';
 
     console.log(`
     ---------------------------------------------------
     >>  STREAM DECK PRO -- BACKEND OPERATIVO
-    >>  Local:  http://localhost:${PORT}
-    >>  Red:    http://0.0.0.0:${PORT}
+    >>  Local:  ${protocol}://localhost:${PORT}
+    >>  Red:    ${protocol}://0.0.0.0:${PORT}
     ---------------------------------------------------
     `);
 });
