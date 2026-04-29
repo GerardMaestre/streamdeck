@@ -35,13 +35,14 @@ export function setThumbTransform(thumbEl, percent, trackH, isDomo = false) {
  */
 export function createFaderController(opts) {
     const { track, fill, thumb, isDomo = false, onDragStart, onValueChange, onDragEnd } = opts;
-    const captureTarget = opts.captureTarget || thumb;
+    const captureTarget = opts.captureTarget || track;
 
     let trackRect = null;
     let trackH = 0;
     let isRAFActive = false;
     let latestClientY = 0;
     let isDestroyed = false;
+    let currentPointerId = null;
 
     const renderVisuals = () => {
         isRAFActive = false;
@@ -73,6 +74,18 @@ export function createFaderController(opts) {
         }
     };
 
+    const addDocumentListeners = () => {
+        window.addEventListener('pointermove', updateUI);
+        window.addEventListener('pointerup', releaseSlider);
+        window.addEventListener('pointercancel', releaseSlider);
+    };
+
+    const removeDocumentListeners = () => {
+        window.removeEventListener('pointermove', updateUI);
+        window.removeEventListener('pointerup', releaseSlider);
+        window.removeEventListener('pointercancel', releaseSlider);
+    };
+
     const onPointerDown = (e) => {
         if (isDestroyed) return;
         e.preventDefault();
@@ -81,9 +94,12 @@ export function createFaderController(opts) {
         trackRect = track.getBoundingClientRect();
         trackH = trackRect.height;
         document.body.classList.add('dragging-active');
+        currentPointerId = e.pointerId;
 
-        // Capture all pointer events to this element
-        captureTarget.setPointerCapture(e.pointerId);
+        // Capture all pointer events on the track when dragging
+        try {
+            captureTarget.setPointerCapture(e.pointerId);
+        } catch (_) {}
 
         if (onDragStart) {
             const y = e.clientY - trackRect.top;
@@ -93,21 +109,17 @@ export function createFaderController(opts) {
         }
 
         updateUI(e);
-        captureTarget.addEventListener('pointermove', updateUI);
-        captureTarget.addEventListener('pointerup', releaseSlider);
-        captureTarget.addEventListener('pointercancel', releaseSlider);
+        addDocumentListeners();
     };
 
     const releaseSlider = (e) => {
         document.body.classList.remove('dragging-active');
 
         try {
-            captureTarget.releasePointerCapture(e.pointerId);
+            if (currentPointerId !== null) captureTarget.releasePointerCapture(currentPointerId);
         } catch (_) { /* already released */ }
 
-        captureTarget.removeEventListener('pointermove', updateUI);
-        captureTarget.removeEventListener('pointerup', releaseSlider);
-        captureTarget.removeEventListener('pointercancel', releaseSlider);
+        removeDocumentListeners();
 
         if (onDragEnd) {
             const y = latestClientY - (trackRect?.top || 0);
@@ -117,6 +129,7 @@ export function createFaderController(opts) {
         }
 
         trackRect = null;
+        currentPointerId = null;
     };
 
     // Bind: pointerdown on track (so tapping anywhere on the track starts drag)

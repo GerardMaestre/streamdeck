@@ -134,7 +134,11 @@ export function createBackButton(index, onBack) {
  * Creates a panel back button (circle style).
  */
 export function createPanelBackButton(onClick) {
+    const existing = document.getElementById('panel-back-button');
+    if (existing) existing.remove();
+
     const backBtn = document.createElement('button');
+    backBtn.id = 'panel-back-button';
     backBtn.className = 'panel-back-btn-sketch-circle';
     backBtn.innerHTML = '<span>←</span>';
     backBtn.addEventListener('pointerup', (e) => {
@@ -147,6 +151,7 @@ export function createPanelBackButton(onClick) {
         setTimeout(() => shield.remove(), 400);
 
         if (onClick) onClick();
+        backBtn.remove();
     });
     return backBtn;
 }

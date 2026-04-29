@@ -59,7 +59,7 @@ export class MixerModule {
         this.events = ctx.events;
         this.panelManager = ctx.panelManager;
         this.throttle = ctx.throttle;
-        this.volumeEmitIntervalMs = 50;
+        this.volumeEmitIntervalMs = 30;
 
         // State
         this.lastMixerState = null;
@@ -80,7 +80,9 @@ export class MixerModule {
     setupSocketListeners() {
         this.socket.on('mixer_initial_state', (state) => {
             this.lastMixerState = state;
-            this.renderInitialMixer();
+            if (this.panelManager.getActivePanel() === 'mixer') {
+                this.renderInitialMixer();
+            }
         });
 
         this.socket.on('master_updated', (data) => {
@@ -199,169 +201,205 @@ export class MixerModule {
 
     /** Open the mixer panel */
     open(mixerPanelEl, onBack) {
+        this.mainPanelEl = mixerPanelEl;
         mixerPanelEl.className = 'panel-cache-node mixer-fullscreen-view';
+        
+        // RECREAR SIEMPRE EL DOM BASE. Esto evita problemas de nodos huérfanos
+        // al salir y entrar del panel varias veces.
         mixerPanelEl.innerHTML = `
             <div class="mixer-panel mixer-panel-fullscreen" id="mixer-main-container" style="display: flex !important; flex-direction: row !important; align-items: center !important; justify-content: center !important; gap: 26px !important; width: auto !important; min-width: 0 !important; max-width: calc(100vw - 40px) !important; padding: 28px 34px !important; position: absolute !important; top: 50% !important; left: 50% !important; transform: translate(-50%, -50%) !important; border-radius: 40px !important; background: rgba(13, 20, 31, 0.88) !important; backdrop-filter: blur(24px) !important; border: 1px solid rgba(255,255,255,0.12) !important;">
-                <!-- Faders will be injected here directly -->
+                <div style="color: white; opacity: 0.5;">Cargando mezclador...</div>
             </div>
         `;
 
         let backBtn = document.getElementById('panel-back-button');
         if (backBtn) backBtn.remove();
-
-        backBtn = createPanelBackButton(() => {
-            backBtn.remove();
-            if (onBack) onBack();
-        });
+        backBtn = createPanelBackButton(() => { if (onBack) onBack(); });
         backBtn.id = 'panel-back-button';
         document.body.appendChild(backBtn);
-
-        if (this.lastMixerState) this.renderInitialMixer();
 
         this.panelManager.showPanel('mixer');
         this.socket.emit('mixer_initial_state');
         this.socket.emit('mixer_bind_commands');
+
+        if (this.lastMixerState) {
+            this.renderInitialMixer();
+        }
     }
 
-    /** Create a single mixer row DOM element */
-    createMixerRow(appData, isMaster = false) {
-        const baseName = isMaster ? 'global' : String(appData.name).trim();
-        const sid = sanitizeId(baseName);
-        const serverName = isMaster ? 'global' : baseName;
-        const labelName = isMaster ? 'Master' : appData.name;
+    /** Render the full mixer state */
+    renderInitialMixer() {
+        try {
+            const container = document.getElementById('mixer-main-container');
+            if (!container) {
+                console.warn('[Mixer] Contenedor principal no encontrado en renderInitialMixer.');
+                return;
+            }
+            if (!this.lastMixerState) {
+                container.innerHTML = '<div style="color: white; opacity: 0.5;">Esperando conexión con el servidor...</div>';
+                return;
+            }
 
-        const iconHTML = getIconForApp(labelName, isMaster);
-        const mutedWrapperClass = appData.mute ? ' mixer-icon-wrapper--muted' : '';
-        const vol = Number(appData.volume);
-        const mutedClass = appData.mute ? ' muted-active' : '';
+            const state = this.lastMixerState;
+            const sessions = Array.isArray(state.sessions) ? state.sessions : [];
+            
+            // Limpiar faders anteriores y eventos huérfanos
+            if (this._faderControllers) {
+                this._faderControllers.forEach(c => { try { c.destroy(); } catch(e) {} });
+            }
+            this._faderControllers = [];
+            this.mixerRefs = {};
+            
+            // Reconstrucción atómica del DOM interno
+            container.replaceChildren();
+
+            // 1. Master Fader (Obligatorio)
+            const masterData = state.master || { name: 'Master', volume: 0, mute: false };
+            container.appendChild(this.createMixerRow(masterData, true));
+
+            // 2. Separador visual
+            const divider = document.createElement('div');
+            divider.style.cssText = 'width: 1px; height: 320px; background: rgba(255,255,255,0.15); margin: 0 10px; flex: 0 0 auto;';
+            container.appendChild(divider);
+
+            // 3. Contenedor de Aplicaciones
+            const appsContainer = document.createElement('div');
+            appsContainer.id = 'app-mixers';
+            appsContainer.style.cssText = 'display: flex; flex-direction: row; align-items: center; gap: 26px;';
+            container.appendChild(appsContainer);
+
+            if (sessions.length > 0) {
+                const seen = new Set();
+                sessions.forEach(s => {
+                    if (!seen.has(s.name)) {
+                        appsContainer.appendChild(this.createMixerRow(s));
+                        seen.add(s.name);
+                    }
+                });
+            } else {
+                const empty = document.createElement('div');
+                empty.style.cssText = 'color: white; opacity: 0.3; font-size: 1.2rem; font-style: italic; margin-left: 20px;';
+                empty.innerText = 'No hay apps activas';
+                appsContainer.appendChild(empty);
+            }
+
+            // Animación y ajuste de los Thumbs post-render
+            requestAnimationFrame(() => {
+                try {
+                    Object.keys(this.mixerRefs).forEach(id => {
+                        const refs = this.mixerRefs[id];
+                        if (!refs) return;
+                        const sess = (id === 'global') ? masterData : sessions.find(s => sanitizeId(s.name) === id);
+                        if (sess) {
+                            setThumbTransform(refs.fill, refs.thumb, sess.volume);
+                        }
+                    });
+                } catch(e) { console.error('[Mixer] Error posicionando thumbs:', e); }
+            });
+
+        } catch (error) {
+            console.error('[Mixer] Error crítico en renderInitialMixer:', error);
+            const container = document.getElementById('mixer-main-container');
+            if (container) {
+                container.innerHTML = `<div style="color: red;">Error UI: ${error.message}</div>`;
+            }
+        }
+    }
+
+    /** Create a mixer channel row for master or a session */
+    createMixerRow(sessionData, isMaster = false) {
+        const name = String(sessionData.name || (isMaster ? 'Master' : 'App')).trim();
+        const id = isMaster ? 'global' : sanitizeId(name);
+        const volume = Number.isFinite(Number(sessionData.volume)) ? Number(sessionData.volume) : 0;
+        const isMuted = Boolean(sessionData.mute);
 
         const row = document.createElement('div');
         row.className = 'mixer-row';
-        row.id = `mixer-row-${sid}`;
+        row.id = `mixer-row-${id}`;
 
-        row.innerHTML = `
-            <div class="mixer-icon-btn${mutedClass}">
-                <div id="icon-wrapper-${sid}" class="mixer-icon-wrapper${mutedWrapperClass}">
-                    ${iconHTML}
-                </div>
-            </div>
-            <div class="slider-container" data-app="${appData.name}">
-                <div class="slider-fill" style="transform: scale3d(1, ${vol / 100}, 1); transform-origin: bottom;"></div>
-                <div class="fader-thumb-mixer"></div>
-            </div>
-            <div class="mixer-label">${labelName}</div>
-        `;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'mixer-icon-btn';
+        button.dataset.mixerApp = isMaster ? 'master' : name;
+        button.dataset.mixerId = id;
 
-        const iconBtn = row.querySelector('.mixer-icon-btn');
-        if (iconBtn) {
-            iconBtn.addEventListener('pointerup', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                this.toggleMute(serverName, isMaster, sid);
-            });
+        const wrapper = document.createElement('span');
+        wrapper.className = `mixer-icon-wrapper${isMuted ? ' mixer-icon-wrapper--muted' : ''}`;
+        wrapper.id = isMaster ? 'icon-wrapper-global' : `icon-wrapper-${id}`;
+        wrapper.innerHTML = getIconForApp(isMaster ? 'Master' : name, isMaster);
+        button.appendChild(wrapper);
+
+        const slider = document.createElement('div');
+        slider.className = 'slider-container';
+        slider.id = `slider-${id}`;
+
+        const fill = document.createElement('div');
+        fill.className = 'slider-fill';
+        fill.style.transform = `scale3d(1, ${volume / 100}, 1)`;
+        fill.id = `fill-${id}`;
+
+        const thumb = document.createElement('div');
+        thumb.className = 'fader-thumb-mixer';
+        thumb.id = `thumb-${id}`;
+
+        slider.appendChild(fill);
+        slider.appendChild(thumb);
+
+        const label = document.createElement('div');
+        label.className = 'mixer-label';
+        label.textContent = isMaster ? 'Master' : name;
+
+        row.appendChild(button);
+        row.appendChild(slider);
+        row.appendChild(label);
+
+        const track = slider;
+
+        if (!button || !wrapper || !track || !fill || !thumb) {
+            console.error('[Mixer] No se pudo crear la fila del mixer para', name);
+            return row;
         }
 
-        const container = row.querySelector('.slider-container');
-        const fill = container.querySelector('.slider-fill');
-        const thumb = container.querySelector('.fader-thumb-mixer');
-        const wrapper = row.querySelector('.mixer-icon-wrapper');
+        button.addEventListener('pointerdown', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            this.toggleMute(isMaster ? 'Master' : name, isMaster, id);
+        });
 
-        this.mixerRefs[sid] = { fill, thumb, wrapper, track: container, trackH: 0, sessionName: baseName };
+        this.mixerRefs[id] = { wrapper, track, fill, thumb, row };
 
-        // Create fader controller using FaderFactory
-        const faderCtrl = createFaderController({
-            track: container,
+        const faderController = createFaderController({
+            track,
             fill,
             thumb,
-            captureTarget: container,
             onDragStart: () => {
-                this.activeSliders.add(sid);
+                this.activeSliders.add(id);
                 row.classList.add('dragging');
             },
-            onValueChange: (_smooth, rounded) => {
-                if (rounded !== this[`last_mixer_${sid}`]) {
-                    this[`last_mixer_${sid}`] = rounded;
-                    this.updateVolumeServer(serverName, rounded, isMaster);
+            onValueChange: (_, rounded) => {
+                if (isMaster) {
+                    this.updateVolumeServer(null, rounded, true, false);
+                } else {
+                    this.updateVolumeServer(name, rounded, false, false);
                 }
             },
             onDragEnd: (finalPercent) => {
+                this.activeSliders.delete(id);
                 row.classList.remove('dragging');
-                if (Number.isFinite(finalPercent)) {
-                    this.updateVolumeServer(serverName, finalPercent, isMaster, true);
+                if (isMaster) {
+                    this.updateVolumeServer(null, finalPercent, true, true);
+                } else {
+                    this.updateVolumeServer(name, finalPercent, false, true);
                 }
-                setTimeout(() => this.activeSliders.delete(sid), 150);
             }
         });
-        this._faderControllers.push(faderCtrl);
+
+        this._faderControllers.push(faderController);
+        requestAnimationFrame(() => {
+            faderController.setPercent(volume);
+        });
 
         return row;
-    }
-
-    /** Render the full mixer state (initial or reconnect) */
-    renderInitialMixer() {
-        const container = document.getElementById('mixer-main-container');
-        if (!container || !this.lastMixerState) return;
-
-        const sessions = Array.isArray(this.lastMixerState.sessions) ? this.lastMixerState.sessions : [];
-        const currentStateSig = [
-            this.lastMixerState.master?.volume,
-            this.lastMixerState.master?.mute ? 1 : 0,
-            sessions.length,
-            sessions.map((s) => `${s.name}:${s.volume}:${s.mute ? 1 : 0}`).join('|')
-        ].join(';');
-        
-        if (this._renderedMixerState === currentStateSig && container.hasChildNodes()) return;
-        this._renderedMixerState = currentStateSig;
-
-        this.mixerRefs = {};
-        container.replaceChildren();
-
-        // 1. Master Fader
-        container.appendChild(this.createMixerRow(this.lastMixerState.master, true));
-
-        // 2. Divider
-        const divider = document.createElement('div');
-        divider.style.cssText = 'width: 1px; height: 320px; background: rgba(255,255,255,0.15); margin: 0 10px; flex: 0 0 auto;';
-        container.appendChild(divider);
-
-        // 3. App Faders
-        const renderizadas = new Set();
-        sessions.forEach(session => {
-            if (!renderizadas.has(session.name)) {
-                container.appendChild(this.createMixerRow(session));
-                renderizadas.add(session.name);
-            }
-        });
-
-        // Position thumbs after DOM paint
-        requestAnimationFrame(() => {
-            Object.keys(this.mixerRefs).forEach(id => {
-                const refs = this.mixerRefs[id];
-                if (!refs) return;
-
-                let trackRect = refs.track.getBoundingClientRect();
-                let trackH = trackRect.height;
-
-                if (trackH === 0) {
-                    const dvh = window.innerHeight * 0.4;
-                    trackH = Math.max(160, Math.min(300, dvh));
-                }
-                refs.trackH = trackH;
-
-                let vol = 0;
-                if (id === 'global') {
-                    vol = this.lastMixerState.master.volume;
-                } else {
-                    const sess = this.lastMixerState.sessions.find(s => s.name === refs.sessionName) ||
-                        this.lastMixerState.sessions.find(s => sanitizeId(s.name) === id);
-                    if (sess) vol = sess.volume;
-                }
-
-                refs.fill.style.transform = `scale3d(1, ${vol / 100}, 1)`;
-                setThumbTransform(refs.thumb, vol, trackH);
-                this[`last_mixer_${id}`] = vol;
-            });
-        });
     }
 
     /** Incremental update of a single slider */

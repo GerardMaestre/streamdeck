@@ -39,6 +39,9 @@ export class PanelManager {
         const previousPanel = this.activePanel;
         this.activePanel = null;
 
+        const backBtn = document.getElementById('panel-back-button');
+        if (backBtn) backBtn.remove();
+
         this.panelsContainer.classList.add('hidden');
         Object.values(this.panels).forEach(p => p.classList.add('hidden'));
         this.container.classList.remove('hidden');

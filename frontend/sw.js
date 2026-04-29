@@ -1,22 +1,23 @@
 // Auto-generated cache version based on build timestamp.
 // Bump this value on every deploy or use the build system to inject it.
 const BUILD_TIMESTAMP = '__BUILD_TS__';
-const CACHE_NAME = `streamdeck-pro-${BUILD_TIMESTAMP}`;
+const CACHE_NAME = BUILD_TIMESTAMP === '__BUILD_TS__'
+    ? `streamdeck-pro-dev-${Date.now()}`
+    : `streamdeck-pro-${BUILD_TIMESTAMP}`;
 
 const ASSETS_TO_CACHE = [
     '/',
     '/index.html',
     '/manifest.json',
-    '/styles.css?v=4.0',
-    '/styles/domotica.css?v=4.0',
-    '/styles/mixer.css?v=4.0',
-    '/styles/discord.css?v=4.0',
-    '/app.js?v=5.0',
+    '/styles.css?v=5.0',
+    '/styles/domotica.css?v=5.0',
+    '/styles/mixer.css?v=5.0',
+    '/styles/discord.css?v=5.0',
+    '/dist/app.bundle.js',
     '/styles.css',
     '/styles/domotica.css',
     '/styles/mixer.css',
     '/styles/discord.css',
-    '/app.js',
     '/socket.io/socket.io.js'
 ];
 
