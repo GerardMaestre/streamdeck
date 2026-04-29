@@ -1,13 +1,22 @@
-const CACHE_NAME = 'streamdeck-pro-v1';
+// Auto-generated cache version based on build timestamp.
+// Bump this value on every deploy or use the build system to inject it.
+const BUILD_TIMESTAMP = '__BUILD_TS__';
+const CACHE_NAME = `streamdeck-pro-${BUILD_TIMESTAMP}`;
+
 const ASSETS_TO_CACHE = [
     '/',
     '/index.html',
     '/manifest.json',
-    '/styles.css?v=3.1',
-    '/styles/domotica.css?v=3.0',
-    '/styles/mixer.css?v=3.0',
-    '/styles/discord.css?v=3.0',
-    '/app.js?v=4.1',
+    '/styles.css?v=4.0',
+    '/styles/domotica.css?v=4.0',
+    '/styles/mixer.css?v=4.0',
+    '/styles/discord.css?v=4.0',
+    '/app.js?v=5.0',
+    '/styles.css',
+    '/styles/domotica.css',
+    '/styles/mixer.css',
+    '/styles/discord.css',
+    '/app.js',
     '/socket.io/socket.io.js'
 ];
 
@@ -34,6 +43,34 @@ self.addEventListener('fetch', (event) => {
 
     const requestUrl = new URL(event.request.url);
 
+    // Network-first for critical assets (HTML, JS, CSS) to avoid stale tablets
+    const isCritical = requestUrl.pathname === '/' ||
+        requestUrl.pathname.endsWith('.html') ||
+        requestUrl.pathname.endsWith('.js') ||
+        requestUrl.pathname.endsWith('.css');
+
+    if (isCritical) {
+        event.respondWith(
+            fetch(event.request)
+                .then((networkResponse) => {
+                    if (networkResponse && networkResponse.status === 200) {
+                        const responseClone = networkResponse.clone();
+                        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
+                    }
+                    return networkResponse;
+                })
+                .catch(() => caches.match(event.request).then((cached) => {
+                    if (cached) return cached;
+                    if (event.request.mode === 'navigate') {
+                        return caches.match('/index.html');
+                    }
+                    return new Response('Offline', { status: 503, statusText: 'Offline' });
+                }))
+        );
+        return;
+    }
+
+    // Cache-first for non-critical assets (images, fonts, etc.)
     event.respondWith(
         caches.match(event.request).then((cachedResponse) => {
             if (cachedResponse) {
@@ -61,4 +98,11 @@ self.addEventListener('fetch', (event) => {
                 });
         })
     );
+});
+
+// Listen for messages from the app to force cache bust
+self.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'SKIP_WAITING') {
+        self.skipWaiting();
+    }
 });

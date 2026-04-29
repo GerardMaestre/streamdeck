@@ -3,20 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <!-- Meta etiquetas especiales PWA y Apple para mantenerlo a pantalla completa, inmersivo y sin barras de URL -->
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#121212">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Stream Deck">
-
-<meta name="mobile-web-app-capable" content="yes">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#121212">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Stream Deck">
+    <meta name="mobile-web-app-capable" content="yes">
     <title>Stream Deck Pro</title>
     <!-- Importamos el Manifiesto de PWA -->
     <link rel="manifest" href="manifest.json">
-    <link rel="stylesheet" href="styles.css?v=3.1">
-    <link rel="stylesheet" href="styles/domotica.css?v=3.0">
-    <link rel="stylesheet" href="styles/mixer.css?v=3.0">
-    <link rel="stylesheet" href="styles/discord.css?v=3.0">
+    <link rel="stylesheet" href="styles.css?v=5.0">
+    <link rel="stylesheet" href="styles/domotica.css?v=5.0">
+    <link rel="stylesheet" href="styles/mixer.css?v=5.0">
+    <link rel="stylesheet" href="styles/discord.css?v=5.0">
 </head>
 <body>
     <!-- Pantalla Principal -->
@@ -48,7 +47,6 @@
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
-    <script src="app.js?v=4.1"></script>
-
+    <script src="dist/app.bundle.js"></script>
 </body>
 </html>

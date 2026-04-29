@@ -1,5 +1,6 @@
 const { default: AudioMixer, DeviceType } = require('native-sound-mixer');
 const path = require('path');
+const { execFile } = require('child_process');
 const { appStateStore } = require('../data/state-store');
 
 // Instancia global del dispositivo de salida
@@ -15,11 +16,57 @@ const pollGroupArrayPool = [];
 const MAX_POLL_GROUPS = 256;
 for (let i = 0; i < MAX_POLL_GROUPS; i += 1) pollGroupArrayPool.push([]);
 const labelCache = new Map(); // Caché para nombres de aplicaciones
+const boundSockets = new Set(); // Guard para evitar listeners duplicados por socket
+let globalIo = null;
 
-// Constantes de configuración
-const POLL_INTERVAL_MS = 250;  // 300→250: Respuesta más instantánea
+// Constantes de configuración — Polling adaptativo
+const POLL_INTERVAL_ACTIVE_MS = 250;  // Cuando el mixer está visible o hay sliders activos
+const POLL_INTERVAL_IDLE_MS = 1000;   // Reposo: reduce CPU cuando la tablet está en la grid
+let currentPollIntervalMs = POLL_INTERVAL_IDLE_MS;
+let lastSliderActivity = 0;           // Timestamp de última interacción
+let visibleMixerClients = 0;
+const SLIDER_ACTIVITY_TIMEOUT = 2000; // Después de 2s sin actividad → modo idle
 const DEBOUNCE_MS = 350;       // 400→350: Ventana de protección optimizada
 const VOL_THRESHOLD = 0.5;     // Diferencia mínima para emitir cambio (evita ruido jitter)
+const ALWAYS_SHOW_SILENT_SESSIONS = new Set(['Spotify', 'Google Chrome', 'Firefox', 'VLC Player', 'OBS Studio', 'Discord']);
+const KNOWN_VISIBLE_PROCESSES = new Map([
+    ['spotify.exe', 'Spotify'],
+    ['chrome.exe', 'Google Chrome'],
+    ['firefox.exe', 'Firefox'],
+    ['vlc.exe', 'VLC Player'],
+    ['obs64.exe', 'OBS Studio'],
+    ['obs32.exe', 'OBS Studio'],
+    ['discord.exe', 'Discord']
+]);
+const visibleProcessLabels = new Set();
+let lastProcessScanAt = 0;
+let processScanInFlight = false;
+const PROCESS_SCAN_INTERVAL_MS = 5000;
+
+function refreshVisibleProcessLabels() {
+    if (process.platform !== 'win32') return;
+    const now = Date.now();
+    if (processScanInFlight || now - lastProcessScanAt < PROCESS_SCAN_INTERVAL_MS) return;
+    processScanInFlight = true;
+    lastProcessScanAt = now;
+
+    execFile('tasklist', ['/FO', 'CSV', '/NH'], { windowsHide: true, timeout: 2000 }, (error, stdout) => {
+        processScanInFlight = false;
+        if (error || !stdout) return;
+
+        const nextLabels = new Set();
+        const lowerOutput = stdout.toLowerCase();
+        for (const [exeName, label] of KNOWN_VISIBLE_PROCESSES.entries()) {
+            if (lowerOutput.includes(`"${exeName}"`) || lowerOutput.includes(exeName)) {
+                nextLabels.add(label);
+            }
+        }
+
+        visibleProcessLabels.clear();
+        nextLabels.forEach((label) => visibleProcessLabels.add(label));
+    });
+}
+
 function getAppLabel(session) {
     let rawName = session.appName || session.name;
     if (!rawName) return null;
@@ -151,6 +198,7 @@ function assignListenersToDefaultDevice(device, io) {
 
 function initAudioMixer(io) {
     if (mixerInitialized) return;
+    globalIo = io;
 
     try {
         defaultDevice = AudioMixer.getDefaultDevice(DeviceType.RENDER);
@@ -167,7 +215,8 @@ function initAudioMixer(io) {
             pollSessions(io); 
         }
 
-        mixerPollInterval = setInterval(() => {
+        // Polling adaptativo: ajusta el intervalo según actividad de sliders
+        const runPollCycle = () => {
             try {
                 const currentDefault = AudioMixer.getDefaultDevice(DeviceType.RENDER);
 
@@ -185,7 +234,22 @@ function initAudioMixer(io) {
 
                 pollSessions(io);
             } catch (err) {}
-        }, POLL_INTERVAL_MS);
+
+            // Ajustar intervalo: rápido si hay actividad reciente, lento si idle
+            const now = Date.now();
+            const isActive = visibleMixerClients > 0 || (now - lastSliderActivity) < SLIDER_ACTIVITY_TIMEOUT;
+            const desiredInterval = isActive ? POLL_INTERVAL_ACTIVE_MS : POLL_INTERVAL_IDLE_MS;
+
+            if (desiredInterval !== currentPollIntervalMs) {
+                currentPollIntervalMs = desiredInterval;
+                clearInterval(mixerPollInterval);
+                mixerPollInterval = setInterval(runPollCycle, currentPollIntervalMs);
+            }
+        };
+
+        mixerPollInterval = setInterval(runPollCycle, currentPollIntervalMs);
+
+
 
         mixerInitialized = true;
 
@@ -203,9 +267,10 @@ function pollSessions(io) {
     pollGroupedData.clear();
     pollNames.clear();
 
-    const currentSessions = defaultDevice.sessions;
+    const batchUpdates = { sessions: [], removed: [] };
 
-    const ALWAYS_SHOW_SILENT_SESSIONS = new Set(['Spotify', 'Google Chrome', 'Firefox', 'VLC Player', 'OBS Studio']);
+    const currentSessions = defaultDevice.sessions;
+    if (visibleMixerClients > 0) refreshVisibleProcessLabels();
 
     // 1. Agrupación eficiente
     for (let i = 0; i < currentSessions.length; i++) {
@@ -238,8 +303,16 @@ function pollSessions(io) {
             if (s.mute) isMuted = true;
         }
         
-        const roundedVol = Math.round(maxVol);
+        let roundedVol = Math.round(maxVol);
         let stored = activeSessions.get(label);
+
+        if (stored?.processOnly && sessionsSnapshot.length > 0) {
+            roundedVol = stored.lastVolume;
+            sessionsSnapshot.forEach((session) => {
+                try { session.volume = roundedVol / 100; } catch (_) {}
+            });
+            stored.processOnly = false;
+        }
 
         // LOG: Si hay múltiples sesiones bajo el mismo label
         if (sessionsSnapshot.length > 1) {
@@ -258,13 +331,17 @@ function pollSessions(io) {
             const volChanged = Math.abs(stored.lastVolume - roundedVol) >= VOL_THRESHOLD;
             const muteChanged = stored.lastMute !== isMuted;
 
-            if (volChanged) {
-                stored.lastVolume = roundedVol;
-                io.emit('session_updated', { name: label, type: 'volume', value: roundedVol });
-            }
-            if (muteChanged) {
-                stored.lastMute = isMuted;
-                io.emit('session_updated', { name: label, type: 'mute', value: isMuted });
+            if (volChanged || muteChanged) {
+                const sessionUpdate = { name: label };
+                if (volChanged) {
+                    stored.lastVolume = roundedVol;
+                    sessionUpdate.volume = roundedVol;
+                }
+                if (muteChanged) {
+                    stored.lastMute = isMuted;
+                    sessionUpdate.mute = isMuted;
+                }
+                batchUpdates.sessions.push(sessionUpdate);
             }
         } else {
             // Nueva sesión
@@ -274,8 +351,29 @@ function pollSessions(io) {
                 lastMute: isMuted,
                 lastUserUpdate: 0
             });
-            io.emit('session_added', { name: label, volume: roundedVol, mute: isMuted });
+            batchUpdates.sessions.push({ name: label, volume: roundedVol, mute: isMuted });
         }
+    }
+
+    const persistedMixer = appStateStore.get('persistedMixer') || {};
+    const persistedSessions = persistedMixer.sessions || {};
+    for (const label of visibleProcessLabels) {
+        if (pollNames.has(label)) continue;
+        pollNames.add(label);
+        if (activeSessions.has(label)) continue;
+
+        const persisted = persistedSessions[label] || {};
+        const volume = Number.isFinite(persisted.volume) ? persisted.volume : 100;
+        const mute = typeof persisted.mute === 'boolean' ? persisted.mute : false;
+        activeSessions.set(label, {
+            sessions: [],
+            lastVolume: volume,
+            lastMute: mute,
+            lastUserUpdate: 0,
+            lastUserUpdate: 0,
+            processOnly: true
+        });
+        batchUpdates.sessions.push({ name: label, volume, mute });
     }
 
     // 3. Limpieza de sesiones huérfanas
@@ -283,9 +381,13 @@ function pollSessions(io) {
         for (const [name] of activeSessions.entries()) {
             if (!pollNames.has(name)) {
                 activeSessions.delete(name);
-                io.emit('session_removed', { name });
+                batchUpdates.removed.push(name);
             }
         }
+    }
+
+    if (batchUpdates.sessions.length > 0 || batchUpdates.removed.length > 0) {
+        io.emit('mixer_batch', batchUpdates);
     }
 }
 
@@ -325,13 +427,40 @@ function persistMasterState(mute) {
     appStateStore.set('persistedMixer', persisted).catch(() => {});
 }
 
+
+
 function sendInitialState(socket) {
     const initialState = getInitialStateData();
     socket.emit('mixer_initial_state', initialState);
 }
 
 function handleSocketCommands(socket) {
+    // Guard: bind only once per socket to prevent duplicate listeners
+    if (boundSockets.has(socket.id)) return;
+    boundSockets.add(socket.id);
+
+    socket.on('disconnect', () => {
+        boundSockets.delete(socket.id);
+        visibleMixerClients = Math.max(0, visibleMixerClients - 1);
+    });
+
+    socket.on('mixer_panel_open', () => {
+        if (!socket.data.mixerPanelOpen) {
+            socket.data.mixerPanelOpen = true;
+            visibleMixerClients += 1;
+        }
+        lastSliderActivity = Date.now();
+    });
+
+    socket.on('mixer_panel_closed', () => {
+        if (socket.data.mixerPanelOpen) {
+            socket.data.mixerPanelOpen = false;
+            visibleMixerClients = Math.max(0, visibleMixerClients - 1);
+        }
+    });
+
     socket.on('set_master_volume', (value) => {
+        lastSliderActivity = Date.now(); // Marca actividad para polling adaptativo
         try { 
             if (defaultDevice) {
                 defaultDevice.volume = value / 100; 
@@ -356,6 +485,7 @@ function handleSocketCommands(socket) {
     });
 
     socket.on('set_session_volume', ({ app, value }) => {
+        lastSliderActivity = Date.now(); // Marca actividad para polling adaptativo
         try {
             const stored = activeSessions.get(app);
             if (!stored) return;
@@ -367,6 +497,15 @@ function handleSocketCommands(socket) {
             }
 
             // LOG: Mostrar cuántas sesiones se van a modificar
+            if (stored.sessions.length === 0) {
+                stored.lastVolume = targetVolume;
+                stored.lastUserUpdate = Date.now();
+                const updatePayload = { name: app, type: 'volume', value: targetVolume };
+                persistMixerSessionState(app, targetVolume, stored.lastMute);
+                socket.broadcast.emit('session_updated', updatePayload);
+                return;
+            }
+
             if (stored.sessions.length > 1) {
                 console.log(`⚠️  [Mixer] Setting volume for "${app}" affecting ${stored.sessions.length} sessions:`, stored.sessions.map(s => s.appName).join(', '));
             }
@@ -389,13 +528,15 @@ function handleSocketCommands(socket) {
 
         try {
             const stored = activeSessions.get(app);
-            if (!stored || stored.sessions.length === 0) return;
+            if (!stored) return;
 
             const newState = !stored.lastMute;
 
-            stored.sessions.forEach((s) => { 
-                try { s.mute = newState; } catch(e) {}
-            });
+            if (stored.sessions.length > 0) {
+                stored.sessions.forEach((s) => { 
+                    try { s.mute = newState; } catch(e) {}
+                });
+            }
             stored.lastMute = newState;
             stored.lastUserUpdate = Date.now();
 
