@@ -6,6 +6,11 @@ class StateStore {
     constructor(filePath, defaultState = {}) {
         this.filePath = filePath;
         this.state = defaultState;
+        this._saveTimer = null;
+        this._saving = false;
+        this._pendingSave = false;
+        this._saveResolvers = [];
+        this._SAVE_DEBOUNCE_MS = 500;
         this._ensureDirectory();
     }
 
@@ -19,7 +24,7 @@ class StateStore {
     async load() {
         try {
             if (!fs.existsSync(this.filePath)) {
-                await this.save();
+                await this._flushToDisk();
                 return this.state;
             }
             const raw = await fs.promises.readFile(this.filePath, 'utf8');
@@ -31,13 +36,49 @@ class StateStore {
         return this.state;
     }
 
-    async save() {
+    /** Internal: write to disk immediately (no debounce) */
+    async _flushToDisk() {
+        if (this._saving) {
+            this._pendingSave = true;
+            return this.state;
+        }
+        this._saving = true;
         try {
-            await fs.promises.writeFile(this.filePath, JSON.stringify(this.state, null, 4), 'utf8');
+            const data = JSON.stringify(this.state, null, 4);
+            const tempPath = `${this.filePath}.tmp`;
+            await fs.promises.writeFile(tempPath, data, 'utf8');
+            await fs.promises.rename(tempPath, this.filePath);
         } catch (error) {
             console.error('[StateStore] Error guardando el estado persistido:', error);
+        } finally {
+            this._saving = false;
+            if (this._pendingSave) {
+                this._pendingSave = false;
+                return this._flushToDisk();
+            }
         }
         return this.state;
+    }
+
+    /** Debounced save — coalesces rapid writes into a single disk I/O */
+    save() {
+        if (this._saveTimer) clearTimeout(this._saveTimer);
+        const savePromise = new Promise((resolve) => {
+            this._saveResolvers.push(resolve);
+        });
+
+        const resolvePending = () => {
+            const resolvers = this._saveResolvers.splice(0);
+            resolvers.forEach((resolve) => resolve(this.state));
+        };
+
+        this._saveTimer = setTimeout(async () => {
+            this._saveTimer = null;
+            await this._flushToDisk();
+            resolvePending();
+        }, this._SAVE_DEBOUNCE_MS);
+
+        return savePromise;
     }
 
     get(key) {

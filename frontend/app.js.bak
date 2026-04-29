@@ -122,6 +122,16 @@ class StreamDeckClient {
         this._dragState = null; // Estado del drag en progreso
         this._edgeScrollTimeout = null; // Temporizador para cambio de página en borde
 
+        // --- DEBOUNCE TIMERS ---
+        this._persistTimer = null;
+
+        // --- CAROUSEL PAGE CACHE ---
+        this._cachedGrids = new Map(); // pageId → { grid: Element, footer: Element }
+        this.scriptsByFolder = {};
+        this._scriptsLoadPromise = null;
+        this.activePanel = null;
+        this.discordRowRefs = new Map();
+
         // --- PERFORMANCE CACHE & BATCHING ---
         this.panels = {
             mixer: document.getElementById('panel-mixer'),
@@ -145,7 +155,21 @@ class StreamDeckClient {
         this.init();
     }
 
+    shouldUseLowPerformanceMode() {
+        const savedLowPerf = localStorage.getItem('streamdeck_lowPerf');
+        if (savedLowPerf !== null) return savedLowPerf === 'true';
+
+        const lowMemory = navigator.deviceMemory && navigator.deviceMemory <= 2;
+        const lowCpu = navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4;
+        const oldTouchDevice = navigator.maxTouchPoints > 0 && (lowMemory || lowCpu);
+        return Boolean(lowMemory || oldTouchDevice);
+    }
+
     async init() {
+        if (this.shouldUseLowPerformanceMode()) {
+            document.body.classList.add('low-perf');
+        }
+
         this.setupSocketListeners();
         this.setupDOMListeners();
         this.setupConnectivityListeners();
@@ -173,14 +197,6 @@ class StreamDeckClient {
                 ? data.carouselPages
                 : ['main'];
 
-            // Cargar scripts con token
-            const scriptsRes = await fetch(`/api/scripts`, fetchOptions);
-            if (scriptsRes.ok) {
-                this.scriptsByFolder = await scriptsRes.json();
-            } else {
-                this.scriptsByFolder = {};
-            }
-
             // Una vez autenticado, pedir estados iniciales
             this.socket.emit('mixer_initial_state');
             this.socket.emit('mixer_bind_commands');
@@ -190,12 +206,31 @@ class StreamDeckClient {
             await this.loadAppSettings();
             this.initMainGrid();
             this.renderEditModeButton();
+            this.loadScriptsInBackground(fetchOptions);
 
         } catch (e) {
             console.error('Error crítico durante la inicialización:', e);
             document.getElementById('deck-container').style.display = 'none';
             this.requestSecurityToken();
         }
+    }
+
+    loadScriptsInBackground(fetchOptions) {
+        if (this._scriptsLoadPromise) return this._scriptsLoadPromise;
+        this._scriptsLoadPromise = fetch(`/api/scripts`, fetchOptions)
+            .then((res) => res.ok ? res.json() : {})
+            .then((scripts) => {
+                this.scriptsByFolder = scripts || {};
+                this._cachedGrids.clear();
+                if (this.carouselPages.includes(this.currentPage)) {
+                    this.renderCarouselSlide(this.carouselIndex, 0);
+                }
+            })
+            .catch((error) => {
+                console.warn('No se pudieron cargar scripts en segundo plano:', error);
+                this.scriptsByFolder = {};
+            });
+        return this._scriptsLoadPromise;
     }
 
     requestSecurityToken() {
@@ -370,40 +405,50 @@ class StreamDeckClient {
         }
     }
 
-    async persistAppState(payload = {}) {
+    persistAppState(payload = {}) {
         if (!payload || typeof payload !== 'object') return;
         this.appState = {
             ...this.appState,
             ...payload,
             updatedAt: Date.now()
         };
-        try {
-            await fetch('/api/app-state', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': this.securityToken
-                },
-                body: JSON.stringify(this.appState)
-            });
-        } catch (error) {
-            console.warn('No se pudo persistir el estado de la app:', error);
-        }
+
+        // Debounce: coalesce rapid state saves into a single fetch (800ms)
+        if (this._persistTimer) clearTimeout(this._persistTimer);
+        this._persistTimer = setTimeout(async () => {
+            this._persistTimer = null;
+            try {
+                await fetch('/api/app-state', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': this.securityToken
+                    },
+                    body: JSON.stringify(this.appState)
+                });
+            } catch (error) {
+                console.warn('No se pudo persistir el estado de la app:', error);
+            }
+        }, 800);
     }
 
     createOfflineBanner() {
         const banner = document.createElement('div');
         banner.id = 'offline-banner';
         banner.className = 'offline-banner hidden';
-        banner.textContent = 'Modo offline activado. Algunas funciones pueden no estar disponibles.';
+        banner.textContent = '';
+        banner.title = 'Sin conexión con el servidor del Stream Deck';
+        banner.setAttribute('aria-label', 'Sin conexión con el servidor del Stream Deck');
         document.body.appendChild(banner);
         return banner;
     }
 
     setupConnectivityListeners() {
         const updateBanner = () => {
-            if (!this.offlineBanner) this.offlineBanner = this.createOfflineBanner();
-            this.offlineBanner.classList.toggle('hidden', navigator.onLine);
+            if (this.offlineBanner) {
+                this.offlineBanner.remove();
+                this.offlineBanner = null;
+            }
         };
         window.addEventListener('online', updateBanner);
         window.addEventListener('offline', updateBanner);
@@ -414,7 +459,10 @@ class StreamDeckClient {
         if (!('serviceWorker' in navigator)) return;
         window.addEventListener('load', async () => {
             try {
-                await navigator.serviceWorker.register('/sw.js');
+                const registration = await navigator.serviceWorker.register('/sw.js');
+                if (registration.waiting) {
+                    registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+                }
                 console.log('[PWA] Service worker registrado con éxito.');
             } catch (error) {
                 console.warn('[PWA] Error registrando service worker:', error);
@@ -430,6 +478,8 @@ class StreamDeckClient {
             compactGrid: false,
             showHelpTips: true
         };
+
+        const isLowPerf = document.body.classList.contains('low-perf');
 
         this.overlayContainer.innerHTML = `
             <div class="settings-panel glass">
@@ -453,6 +503,10 @@ class StreamDeckClient {
                         <span>Mostrar consejos</span>
                         <input type="checkbox" id="setting-show-help" ${settings.showHelpTips ? 'checked' : ''} />
                     </label>
+                    <label class="settings-row">
+                        <span>Modo rendimiento bajo</span>
+                        <input type="checkbox" id="setting-low-perf" ${isLowPerf ? 'checked' : ''} />
+                    </label>
                 </div>
             </div>
         `;
@@ -466,6 +520,7 @@ class StreamDeckClient {
         const darkModeToggle = this.overlayContainer.querySelector('#setting-dark-mode');
         const compactGridToggle = this.overlayContainer.querySelector('#setting-compact-grid');
         const helpToggle = this.overlayContainer.querySelector('#setting-show-help');
+        const lowPerfToggle = this.overlayContainer.querySelector('#setting-low-perf');
 
         darkModeToggle?.addEventListener('change', (event) => {
             this.saveAppSetting('darkMode', event.target.checked);
@@ -475,6 +530,11 @@ class StreamDeckClient {
         });
         helpToggle?.addEventListener('change', (event) => {
             this.saveAppSetting('showHelpTips', event.target.checked);
+        });
+        lowPerfToggle?.addEventListener('change', (event) => {
+            const enabled = event.target.checked;
+            document.body.classList.toggle('low-perf', enabled);
+            localStorage.setItem('streamdeck_lowPerf', enabled.toString());
         });
 
         this.overlay.classList.remove('hidden');
@@ -1166,6 +1226,13 @@ class StreamDeckClient {
 
     showPanel(panelId) {
         const start = performance.now();
+        if (this.activePanel === 'mixer' && panelId !== 'mixer') {
+            this.socket.emit('mixer_panel_closed');
+        }
+        if (panelId === 'mixer' && this.activePanel !== 'mixer') {
+            this.socket.emit('mixer_panel_open');
+        }
+        this.activePanel = panelId;
         
         // Ocultar todos los paneles
         Object.values(this.panels).forEach(p => p.classList.add('hidden'));
@@ -1181,6 +1248,10 @@ class StreamDeckClient {
     }
 
     hidePanels() {
+        if (this.activePanel === 'mixer') {
+            this.socket.emit('mixer_panel_closed');
+        }
+        this.activePanel = null;
         this.panelsContainer.classList.add('hidden');
         Object.values(this.panels).forEach(p => p.classList.add('hidden'));
         this.container.classList.remove('hidden');
@@ -1485,9 +1556,15 @@ class StreamDeckClient {
         const appsContainer = document.getElementById('app-mixers');
         if (!masterContainer || !appsContainer || !this.lastMixerState) return;
 
-        // Comprobación de integridad para evitar re-renders innecesarios si nada ha cambiado
-        const currentStateStr = JSON.stringify(this.lastMixerState);
-        this._renderedMixerState = currentStateStr;
+        const sessions = Array.isArray(this.lastMixerState.sessions) ? this.lastMixerState.sessions : [];
+        const currentStateSig = [
+            this.lastMixerState.master?.volume,
+            this.lastMixerState.master?.mute ? 1 : 0,
+            sessions.length,
+            sessions.map((session) => `${session.name}:${session.volume}:${session.mute ? 1 : 0}`).join('|')
+        ].join(';');
+        if (this._renderedMixerState === currentStateSig && masterContainer.hasChildNodes()) return;
+        this._renderedMixerState = currentStateSig;
 
         this.mixerRefs = {};
         masterContainer.replaceChildren();
@@ -1499,7 +1576,7 @@ class StreamDeckClient {
 
         const appsFragment = document.createDocumentFragment();
         const renderizadas = new Set();
-        this.lastMixerState.sessions.forEach(session => {
+        sessions.forEach(session => {
             if (!renderizadas.has(session.name)) {
                 appsFragment.appendChild(this.createMixerRow(session));
                 renderizadas.add(session.name);
@@ -1670,6 +1747,15 @@ class StreamDeckClient {
     setupSocketListeners() {
         if (this.listenersInitialized) return;
         this.listenersInitialized = true;
+
+        this.socket.on('connect', () => {
+            this.socket.emit('mixer_bind_commands');
+            this.socket.emit('mixer_initial_state');
+            this.socket.emit('discord_initial_state');
+            if (this.activePanel === 'mixer') {
+                this.socket.emit('mixer_panel_open');
+            }
+        });
 
         this.socket.on('discord_connection_state', (state) => {
             this.discordConnectionStatus = state?.status || 'disconnected';
@@ -1967,8 +2053,7 @@ class StreamDeckClient {
         const mixerContainer = document.getElementById('discord-mixer-container');
         if (!mixerContainer) return;
 
-        mixerContainer.replaceChildren();
-
+        // Only use replaceChildren for status/empty transitions, NOT when users exist
         if (this.discordConnectionStatus !== 'connected') {
             const connectMsg = this.discordConnectionStatus === 'fallback'
                 ? 'MODO BÁSICO ACTIVADO'
@@ -2004,13 +2089,14 @@ class StreamDeckClient {
             return;
         }
 
-        // 0. Limpiar estado vacío si hay usuarios
+        // Only clear if the container had an empty-state message (transition to users)
         const emptyState = mixerContainer.querySelector('.discord-empty-state');
         if (emptyState) {
-            mixerContainer.replaceChildren();
+            emptyState.remove();
         }
 
         const existingUsers = Array.from(mixerContainer.querySelectorAll('.user-fader-row'));
+        const existingById = new Map(existingUsers.map((el) => [el.dataset.userId, el]));
         const nextIds = new Set(this.discordUsers.map(u => u.id));
 
         // 1. Cleanup
@@ -2018,6 +2104,7 @@ class StreamDeckClient {
             if (!nextIds.has(el.dataset.userId)) {
                 el.style.opacity = '0';
                 el.style.transform = 'scale(0.8)';
+                this.discordRowRefs.delete(el.dataset.userId);
                 setTimeout(() => el.remove(), 400);
             }
         });
@@ -2025,7 +2112,7 @@ class StreamDeckClient {
         // 2. Render/Update
         this.discordUsers.forEach(user => {
             const id = user.id;
-            let row = mixerContainer.querySelector(`.user-fader-row[data-user-id="${id}"]`);
+            let row = existingById.get(id);
 
             if (!row) {
                 row = document.createElement('div');
@@ -2043,7 +2130,7 @@ class StreamDeckClient {
                 row.innerHTML = `
                     <div class="user-avatar-circle${isSpeaking}">${avatarHTML}</div>
                     <div class="slider-container discord-slider-tall">
-                        <div class="slider-fill discord-fill-warm" style="transform: scale3d(1, ${fillHeight / 100}, 1); transform-origin: bottom;"></div>
+                        <div id="discord-slider-fill-${id}" class="slider-fill discord-fill-warm" style="transform: scale3d(1, ${fillHeight / 100}, 1); transform-origin: bottom;"></div>
                         <div class="fader-thumb-mixer" style="bottom: 0"></div>
                     </div>
                     <div class="discord-username-tag">${user.username}</div>
@@ -2052,6 +2139,7 @@ class StreamDeckClient {
                 const track = row.querySelector('.slider-container');
                 const fill = row.querySelector('.slider-fill');
                 const thumb = row.querySelector('.fader-thumb-mixer');
+                this.discordRowRefs.set(id, { row, track, fill, thumb });
 
                 requestAnimationFrame(() => {
                     const rect = track.getBoundingClientRect();
@@ -2084,7 +2172,7 @@ class StreamDeckClient {
                     if (percentRounded !== this[`last_discord_${id}`]) {
                         this[`last_discord_${id}`] = percentRounded;
                         const discordVol = Math.round(percentRounded * 2);
-                        this.updateVolumeServer(`discord_${id}`, discordVol, false);
+                        this.updateDiscordVolumeServer(id, discordVol);
                     }
                 };
 
@@ -2133,11 +2221,12 @@ class StreamDeckClient {
                 mixerContainer.appendChild(row);
             } else {
                 if (!this.activeSliders.has('discord_' + id)) {
-                    const fill = row.querySelector('.slider-fill');
-                    const thumb = row.querySelector('.fader-thumb-mixer');
+                    const refs = this.discordRowRefs.get(id) || {};
+                    const fill = refs.fill || row.querySelector('.slider-fill');
+                    const thumb = refs.thumb || row.querySelector('.fader-thumb-mixer');
                     const h = (user.volume / 200) * 100;
                     this.queueUpdate(`discord_${id}_vol`, () => {
-                        const track = row.querySelector('.slider-container');
+                        const track = refs.track || row.querySelector('.slider-container');
                         const trackHeight = track.getBoundingClientRect().height;
                         fill.style.transform = `scale3d(1, ${h / 100}, 1)`;
                         this.setThumbTransform(thumb, h, trackHeight);
@@ -2204,19 +2293,80 @@ class StreamDeckClient {
         // Animación de entrada desde izquierda/derecha
         const slideClass = direction > 0 ? 'slide-enter-right' : direction < 0 ? 'slide-enter-left' : '';
 
+        const useSlideAnimation = !this.initialLoad && Boolean(slideClass);
+
+        // --- PAGE CACHE: reuse previously built grids ---
+        let cached = this._cachedGrids.get(pageId);
+        if (!cached) {
+            // Build grid for the first time
+            const pageData = this.getPageData(pageId);
+            const gridEl = document.createElement('div');
+            gridEl.className = 'deck-grid';
+            pageData.forEach((btnData, i) => {
+                gridEl.appendChild(this.createButton(btnData, i));
+            });
+
+            // Build footer (shared template, listeners bound per-page)
+            const footer = document.createElement('div');
+            footer.className = 'deck-footer';
+
+            const btnEditar = document.createElement('button');
+            btnEditar.id = 'edit-mode-btn';
+            btnEditar.type = 'button';
+            btnEditar.className = 'footer-btn';
+            btnEditar.textContent = 'Editar';
+            btnEditar.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (this.editMode) {
+                    this.exitEditMode();
+                } else {
+                    this.enterEditMode();
+                }
+            });
+
+            const btnAnterior = document.createElement('button');
+            btnAnterior.type = 'button';
+            btnAnterior.className = 'footer-btn';
+            btnAnterior.textContent = 'Anterior';
+            btnAnterior.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (this.carouselIndex > 0) this.renderCarouselSlide(this.carouselIndex - 1, -1);
+            });
+
+            const btnSiguiente = document.createElement('button');
+            btnSiguiente.type = 'button';
+            btnSiguiente.className = 'footer-btn';
+            btnSiguiente.textContent = 'Siguiente';
+            btnSiguiente.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (this.carouselIndex < this.carouselPages.length - 1) this.renderCarouselSlide(this.carouselIndex + 1, 1);
+            });
+
+            const btnAjustes = document.createElement('button');
+            btnAjustes.type = 'button';
+            btnAjustes.className = 'footer-btn';
+            btnAjustes.textContent = 'Ajustes';
+            btnAjustes.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.openSettingsPanel();
+            });
+
+            footer.appendChild(btnEditar);
+            footer.appendChild(btnAnterior);
+            footer.appendChild(btnSiguiente);
+            footer.appendChild(btnAjustes);
+
+            cached = { grid: gridEl, footer: footer };
+            this._cachedGrids.set(pageId, cached);
+        }
+
+        // Swap cached nodes into the container
         this.container.replaceChildren();
         this.container.className = 'deck-view';
-        const useSlideAnimation = !this.initialLoad && Boolean(slideClass);
         if (useSlideAnimation) this.container.classList.add(slideClass);
 
-        const pageData = this.getPageData(pageId);
-
-        const gridEl = document.createElement('div');
-        gridEl.className = 'deck-grid';
-        pageData.forEach((btnData, i) => {
-            gridEl.appendChild(this.createButton(btnData, i));
-        });
-        this.container.appendChild(gridEl);
+        this.container.appendChild(cached.grid);
+        this.container.appendChild(cached.footer);
 
         // Forzar reflow para que la animación funcione
         if (useSlideAnimation) {
@@ -2225,65 +2375,13 @@ class StreamDeckClient {
             this.container.classList.add('slide-active');
         }
 
-        // Footer con controles como en renderGrid
-        // Eliminar cualquier botón flotante existente para evitar duplicados
+        // Eliminar cualquier botón flotante duplicado
         const existingFloating = document.getElementById('edit-mode-btn');
         if (existingFloating && !existingFloating.closest('.deck-footer')) {
             existingFloating.remove();
         }
 
-        const footer = document.createElement('div');
-        footer.className = 'deck-footer';
-
-        const btnEditar = document.createElement('button');
-        btnEditar.id = 'edit-mode-btn';
-        btnEditar.type = 'button';
-        btnEditar.className = 'footer-btn';
-        btnEditar.textContent = 'Editar';
-        btnEditar.addEventListener('click', (e) => {
-            e.preventDefault();
-            if (this.editMode) {
-                this.exitEditMode();
-            } else {
-                this.enterEditMode();
-            }
-        });
-
-        const btnAnterior = document.createElement('button');
-        btnAnterior.type = 'button';
-        btnAnterior.className = 'footer-btn';
-        btnAnterior.textContent = 'Anterior';
-        btnAnterior.addEventListener('click', (e) => {
-            e.preventDefault();
-            if (this.carouselIndex > 0) this.renderCarouselSlide(this.carouselIndex - 1, -1);
-        });
-
-        const btnSiguiente = document.createElement('button');
-        btnSiguiente.type = 'button';
-        btnSiguiente.className = 'footer-btn';
-        btnSiguiente.textContent = 'Siguiente';
-        btnSiguiente.addEventListener('click', (e) => {
-            e.preventDefault();
-            if (this.carouselIndex < this.carouselPages.length - 1) this.renderCarouselSlide(this.carouselIndex + 1, 1);
-        });
-
-        const btnAjustes = document.createElement('button');
-        btnAjustes.type = 'button';
-        btnAjustes.className = 'footer-btn';
-        btnAjustes.textContent = 'Ajustes';
-        btnAjustes.addEventListener('click', (e) => {
-            e.preventDefault();
-            this.openSettingsPanel();
-        });
-
-        footer.appendChild(btnEditar);
-        footer.appendChild(btnAnterior);
-        footer.appendChild(btnSiguiente);
-        footer.appendChild(btnAjustes);
-
-        this.container.appendChild(footer);
         this.renderEditModeButton();
-
         this._setEditButtonVisibility(true);
 
         // Si estamos en modo edición, reactivar drag en los nuevos botones
@@ -2410,11 +2508,10 @@ class StreamDeckClient {
         buttons.forEach((btn, i) => {
             btn.classList.add('wiggle');
             btn.dataset.editIndex = i;
-            // Usamos AbortController para poder limpiar los listeners de modo edición de forma segura
-            btn.addEventListener('pointerdown', this._onEditPointerDown, {
-                capture: true,
-                signal: this._editModeAbortController?.signal
-            });
+        });
+        this.container.addEventListener('pointerdown', this._onEditPointerDown, {
+            capture: true,
+            signal: this._editModeAbortController?.signal
         });
     }
 
@@ -2438,6 +2535,9 @@ class StreamDeckClient {
         }
 
         this._saveConfig();
+
+        // Invalidate cached grid nodes since button order may have changed
+        this._cachedGrids.clear();
     }
 
     /** Handler de pointerdown durante el modo edición (debe ser arrow fn para poder desregistrarlo) */
@@ -2446,7 +2546,8 @@ class StreamDeckClient {
         e.preventDefault();
         e.stopImmediatePropagation();
 
-        const sourceBtn = e.currentTarget;
+        const sourceBtn = e.target.closest('.boton');
+        if (!sourceBtn || !this.container.contains(sourceBtn)) return;
         const sourceIndex = parseInt(sourceBtn.dataset.editIndex);
         const originPageId = this.currentPage;
         if (isNaN(sourceIndex)) return;
@@ -2586,6 +2687,8 @@ class StreamDeckClient {
 
         if (navigator.vibrate) navigator.vibrate([20, 10, 20]);
 
+        this._cachedGrids.delete(originPageId);
+        this._cachedGrids.delete(targetPageId);
         // Re-renderizar slide actual manteniendo editMode
         this.renderCarouselSlide(this.carouselIndex, 0);
     }

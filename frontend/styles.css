@@ -97,7 +97,6 @@ body {
     /* Ocupar toda la altura disponible */
     min-height: 100vh;
     box-sizing: border-box;
-    will-change: transform, opacity;
     transform: var(--gpu-accel);
 }
 
@@ -174,7 +173,6 @@ body {
     position: absolute;
     top: 0;
     left: 0;
-    will-change: transform, opacity;
     transform: var(--gpu-accel);
     background: var(--bg-base);
     transition: opacity 0.3s var(--ease-smooth), transform 0.3s var(--ease-smooth);
@@ -190,7 +188,6 @@ body {
 
 
 .boton {
-    will-change: transform, opacity;
     border: none;
     border-radius: var(--radius-md);
     font-size: clamp(0.75rem, 1.2vw, 1.15rem);
@@ -222,7 +219,6 @@ body {
 }
 
 .btn-streamdeck {
-    will-change: transform, opacity;
     transform: translateZ(0);
     backface-visibility: hidden;
 }
@@ -282,7 +278,6 @@ body {
     z-index: 1000;
     opacity: 1;
     transition: opacity var(--duration-normal) var(--ease-smooth);
-    will-change: opacity;
     box-sizing: border-box;
 }
 
@@ -292,14 +287,12 @@ body {
 }
 
 .overlay.hidden #overlay-container .boton {
-    will-change: transform;
     animation: macOsGenieOut 0.25s cubic-bezier(0.3, 0, 0.8, 0.15) forwards !important;
     animation-delay: 0s !important;
     transform-origin: center;
 }
 
 #overlay:not(.hidden) #overlay-container .boton {
-    will-change: transform;
     opacity: 0;
     transform-origin: center;
     animation: macOsGenieIn 0.6s var(--ease-smooth) forwards;
@@ -355,7 +348,6 @@ body {
     z-index: 2000;
     opacity: 1;
     transition: opacity var(--duration-fast) var(--ease-spring), transform var(--duration-fast) var(--ease-spring);
-    will-change: transform, opacity;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
@@ -760,25 +752,11 @@ body {
 .deck-footer #edit-mode-btn .edit-btn-icon { font-size: 0.95rem; }
 
 #offline-banner {
-    position: fixed;
-    bottom: 16px;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 12px 18px;
-    background: rgba(255, 109, 0, 0.95);
-    color: #ffffff;
-    font-size: 0.92rem;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    z-index: 1200;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
-    transition: opacity 0.2s ease, transform 0.2s ease;
+    display: none !important;
 }
 
 #offline-banner.hidden {
-    opacity: 0;
-    pointer-events: none;
-    transform: translateX(-50%) translateY(10px);
+    display: none !important;
 }
 
 .deck-footer #edit-mode-btn .edit-btn-label { font-size: 0.88rem; }
@@ -1021,5 +999,77 @@ body.edge-hover-right::after {
 @keyframes fadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
+}
+
+/* ============================================================ */
+/* 🚨 SCOPED will-change: only during active interaction        */
+/* ============================================================ */
+body.dragging-active .boton,
+.boton.dragging,
+.boton.wiggle,
+.boton.drag-source,
+.boton.drag-over {
+    will-change: transform;
+}
+
+.panel-cache-node:not(.hidden) {
+    will-change: transform, opacity;
+}
+
+/* ============================================================ */
+/* ⚡ LOW PERFORMANCE MODE (auto/configurable)                   */
+/* Disables expensive GPU effects for old tablets               */
+/* ============================================================ */
+body.low-perf,
+body.low-perf * {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+body.low-perf .auth-card,
+body.low-perf .parameter-modal,
+body.low-perf .panel-back-btn,
+body.low-perf .panel-back-btn-sketch-circle,
+body.low-perf #carousel-dots,
+body.low-perf #carousel-nav-buttons,
+body.low-perf #edit-mode-btn {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+body.low-perf .overlay {
+    background: rgba(20, 20, 20, 0.98);
+}
+
+body.low-perf .boton {
+    transition: transform 0.08s linear;
+}
+
+body.low-perf .boton,
+body.low-perf .footer-btn,
+body.low-perf .discord-tactical-btn,
+body.low-perf .mixer-icon-btn,
+body.low-perf .settings-panel,
+body.low-perf .glass {
+    box-shadow: none !important;
+    filter: none !important;
+}
+
+body.low-perf .grid-container.slide-enter-right,
+body.low-perf .grid-container.slide-enter-left,
+body.low-perf .boton.wiggle,
+body.low-perf #overlay:not(.hidden) #overlay-container .boton,
+body.low-perf .overlay.hidden #overlay-container .boton {
+    animation: none !important;
+}
+
+body.low-perf .panel-cache-node,
+body.low-perf .boton,
+body.low-perf .footer-btn {
+    transition-duration: 0.08s !important;
+}
+
+body.low-perf .drag-ghost {
+    box-shadow: none !important;
+    opacity: 0.72;
 }
 

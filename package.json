@@ -4,12 +4,15 @@
   "description": "",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "node esbuild.config.js && electron .",
+    "dev": "node esbuild.config.js --watch",
+    "bundle": "node esbuild.config.js",
     "rebuild": "electron-builder install-app-deps",
-    "build": "electron-builder --win",
+    "build": "node esbuild.config.js && electron-builder --win",
     "pm2-start": "pm2 start ecosystem.config.js",
     "pm2-stop": "pm2 stop streamdeck-pro",
     "pm2-restart": "pm2 restart streamdeck-pro",
+    "check": "node --check server.js && node --check main.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -30,6 +33,7 @@
   "devDependencies": {
     "electron": "^31.0.0",
     "electron-builder": "^26.8.1",
+    "esbuild": "^0.28.0",
     "pm2": "^5.3.0"
   },
   "build": {

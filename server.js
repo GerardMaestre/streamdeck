@@ -221,8 +221,33 @@ io.use((socket, next) => {
     return next(new Error('Acceso denegado: Token de seguridad invalido'));
 });
 
+// Dynamic service worker route: inject build timestamp for cache busting
+const SERVER_START_TS = Date.now().toString(36);
+app.get('/sw.js', (req, res) => {
+    const swPath = getDataPath('frontend/sw.js');
+    try {
+        const swContent = fs.readFileSync(swPath, 'utf8').replace('__BUILD_TS__', SERVER_START_TS);
+        res.setHeader('Content-Type', 'application/javascript');
+        res.setHeader('Cache-Control', 'no-cache, no-store');
+        res.send(swContent);
+    } catch (err) {
+        res.status(500).send('// SW load error');
+    }
+});
+
 app.use(express.static(getDataPath('frontend'), {
-  maxAge: 0,
+    etag: true,
+    lastModified: true,
+    maxAge: '1h',
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.html')) {
+            res.setHeader('Cache-Control', 'no-cache');
+            return;
+        }
+        if (/\.(?:js|css|png|svg|ico|webp|woff2?)$/i.test(filePath)) {
+            res.setHeader('Cache-Control', 'public, max-age=3600, must-revalidate');
+        }
+    }
 }));
 
 // Endpoint para entregar el JSON de configuracion de los botones

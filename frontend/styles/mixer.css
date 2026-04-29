@@ -153,11 +153,11 @@ body.dragging-active .mixer-panel {
     border: 1px solid var(--glass-border) !important;
     border-radius: var(--radius-xl) !important;
     width: auto !important;
-    min-width: clamp(300px, 50vw, 500px) !important;
-    max-width: 95vw !important;
+    min-width: clamp(300px, 40vw, 520px) !important;
+    max-width: min(95vw, 1200px) !important;
     height: auto !important;
     max-height: 90vh !important;
-    padding: clamp(20px, 4vw, 40px) !important;
+    padding: clamp(18px, 3vw, 32px) !important;
     box-sizing: border-box !important;
     overflow: hidden !important;
     display: flex !important;
