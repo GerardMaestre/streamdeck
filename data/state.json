@@ -6,7 +6,7 @@
         "masterMute": false,
         "sessions": {
             "Google Chrome": {
-                "volume": 18,
+                "volume": 21,
                 "mute": false
             },
             "Spotify": {
@@ -22,7 +22,7 @@
                 "mute": false
             },
             "Microsoft Edge": {
-                "volume": 0,
+                "volume": 18,
                 "mute": false
             },
             "WhatsApp": {
@@ -31,5 +31,5 @@
             }
         }
     },
-    "updatedAt": 1777495821085
+    "updatedAt": 1777496738685
 }

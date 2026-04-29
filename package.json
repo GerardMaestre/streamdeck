@@ -45,13 +45,14 @@
     "files": [
       "main.js",
       "server.js",
-      "frontend/**/*",
       "backend/**/*",
       "icon.png"
     ],
     "extraResources": [
       "config.json",
       "scripts/**/*",
+      "frontend/**/*",
+      "data/**/*",
       "icon.png"
     ],
     "asarUnpack": [
