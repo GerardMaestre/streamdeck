@@ -10,7 +10,7 @@
                 "mute": false
             },
             "Spotify": {
-                "volume": 23,
+                "volume": 70,
                 "mute": false
             },
             "Robloxplayerbeta": {
@@ -23,5 +23,5 @@
             }
         }
     },
-    "updatedAt": 1777455353475
+    "updatedAt": 1777471744126
 }

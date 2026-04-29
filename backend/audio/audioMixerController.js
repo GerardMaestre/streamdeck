@@ -28,15 +28,19 @@ let visibleMixerClients = 0;
 const SLIDER_ACTIVITY_TIMEOUT = 2000; // Después de 2s sin actividad → modo idle
 const DEBOUNCE_MS = 350;       // 400→350: Ventana de protección optimizada
 const VOL_THRESHOLD = 0.5;     // Diferencia mínima para emitir cambio (evita ruido jitter)
-const ALWAYS_SHOW_SILENT_SESSIONS = new Set(['Spotify', 'Google Chrome', 'Firefox', 'VLC Player', 'OBS Studio', 'Discord']);
+const ALWAYS_SHOW_SILENT_SESSIONS = new Set(['Spotify', 'Google Chrome', 'Microsoft Edge', 'Brave Browser', 'Firefox', 'VLC Player', 'OBS Studio', 'Discord', 'Telegram', 'WhatsApp']);
 const KNOWN_VISIBLE_PROCESSES = new Map([
     ['spotify.exe', 'Spotify'],
     ['chrome.exe', 'Google Chrome'],
+    ['msedge.exe', 'Microsoft Edge'],
+    ['brave.exe', 'Brave Browser'],
     ['firefox.exe', 'Firefox'],
     ['vlc.exe', 'VLC Player'],
     ['obs64.exe', 'OBS Studio'],
     ['obs32.exe', 'OBS Studio'],
-    ['discord.exe', 'Discord']
+    ['discord.exe', 'Discord'],
+    ['telegram.exe', 'Telegram'],
+    ['whatsapp.exe', 'WhatsApp']
 ]);
 const visibleProcessLabels = new Set();
 let lastProcessScanAt = 0;
@@ -68,7 +72,7 @@ function refreshVisibleProcessLabels() {
 }
 
 function getAppLabel(session) {
-    let rawName = session.appName || session.name;
+    let rawName = session.appName || session.name || '';
     if (!rawName) return null;
 
     // Usar caché si ya hemos procesado esto
@@ -212,6 +216,7 @@ function initAudioMixer(io) {
             } catch (e) {}
 
             assignListenersToDefaultDevice(defaultDevice, io);
+            refreshVisibleProcessLabels(); // Escaneo inicial
             pollSessions(io); 
         }
 
@@ -220,20 +225,25 @@ function initAudioMixer(io) {
             try {
                 const currentDefault = AudioMixer.getDefaultDevice(DeviceType.RENDER);
 
-                if (currentDefault && (!defaultDevice || currentDefault.name !== defaultDevice.name)) {
-                    detachListenersFromDefaultDevice();
-                    defaultDevice = currentDefault;
-                    try { localMasterMute = defaultDevice.mute; } catch (_) {}
+                if (currentDefault) {
+                    if (!defaultDevice || currentDefault.name !== defaultDevice.name) {
+                        detachListenersFromDefaultDevice();
+                        defaultDevice = currentDefault;
+                        try { localMasterMute = defaultDevice.mute; } catch (_) {}
 
-                    assignListenersToDefaultDevice(defaultDevice, io);
-                    activeSessions.clear();
-                    pollSessions(io);
-                    io.emit('mixer_initial_state', getInitialStateData());
-                    return;
+                        assignListenersToDefaultDevice(defaultDevice, io);
+                        activeSessions.clear();
+                        pollSessions(io);
+                        io.emit('mixer_initial_state', getInitialStateData());
+                    } else {
+                        // Refrescamos la referencia para asegurar sesiones actuales
+                        defaultDevice = currentDefault;
+                        pollSessions(io);
+                    }
                 }
-
-                pollSessions(io);
-            } catch (err) {}
+            } catch (err) {
+                console.error('[Audio] Error en ciclo de polling:', err);
+            }
 
             // Ajustar intervalo: rápido si hay actividad reciente, lento si idle
             const now = Date.now();
@@ -248,8 +258,6 @@ function initAudioMixer(io) {
         };
 
         mixerPollInterval = setInterval(runPollCycle, currentPollIntervalMs);
-
-
 
         mixerInitialized = true;
 
@@ -303,8 +311,29 @@ function pollSessions(io) {
             if (s.mute) isMuted = true;
         }
         
-        let roundedVol = Math.round(maxVol);
         let stored = activeSessions.get(label);
+
+        // Sincronización inteligente: 
+        // 1. Si el usuario movió el slider recientemente, forzamos a todas las sesiones a ese valor.
+        // 2. Si las sesiones son inconsistentes entre sí, unificamos al último valor conocido (lastVolume)
+        //    para evitar que una nueva sesión que aparece al 100% "gane" a la configuración del usuario.
+        if (sessionsSnapshot.length > 0 && stored) {
+            const isBeingDragged = (Date.now() - stored.lastUserUpdate < 1500);
+            const needsUnification = sessionsSnapshot.some(s => Math.abs(s.volume * 100 - stored.lastVolume) > 2);
+
+            if (needsUnification) {
+                if (isBeingDragged || stored.lastVolume !== undefined) {
+                    // Forzamos la voluntad del usuario (o el último valor guardado) sobre las sesiones
+                    console.log(`[Mixer] Unificando sesiones de "${label}" al valor guardado: ${stored.lastVolume}%`);
+                    sessionsSnapshot.forEach(s => {
+                        try { s.volume = stored.lastVolume / 100; } catch (_) {}
+                    });
+                    maxVol = stored.lastVolume;
+                }
+            }
+        }
+
+        let roundedVol = Math.round(maxVol);
 
         if (stored?.processOnly && sessionsSnapshot.length > 0) {
             roundedVol = stored.lastVolume;
@@ -314,14 +343,13 @@ function pollSessions(io) {
             stored.processOnly = false;
         }
 
-        // LOG: Si hay múltiples sesiones bajo el mismo label
-        if (sessionsSnapshot.length > 1) {
-            console.log(`ℹ️  [Mixer] Label "${label}" has ${sessionsSnapshot.length} sessions:`, sessionsSnapshot.map(s => s.appName).join(', '));
+        if (label === 'Spotify' || sessionsSnapshot.length > 1) {
+            console.log(`[Mixer] Info "${label}": ${sessionsSnapshot.length} sesiones activas`);
         }
 
         if (stored) {
-            // Debounce contra cambios manuales del usuario en la tablet
-            if (stored.lastUserUpdate && (Date.now() - stored.lastUserUpdate < DEBOUNCE_MS)) {
+            // Debounce contra cambios manuales del usuario en la tablet (aumentado a 1000ms para pruebas)
+            if (stored.lastUserUpdate && (Date.now() - stored.lastUserUpdate < 1000)) {
                 continue;
             }
 
@@ -365,24 +393,36 @@ function pollSessions(io) {
         const persisted = persistedSessions[label] || {};
         const volume = Number.isFinite(persisted.volume) ? persisted.volume : 100;
         const mute = typeof persisted.mute === 'boolean' ? persisted.mute : false;
-        activeSessions.set(label, {
-            sessions: [],
-            lastVolume: volume,
-            lastMute: mute,
-            lastUserUpdate: 0,
-            lastUserUpdate: 0,
-            processOnly: true
-        });
-        batchUpdates.sessions.push({ name: label, volume, mute });
+
+        let existing = activeSessions.get(label);
+        if (existing) {
+            existing.sessions = [];
+            existing.processOnly = true;
+            // No sobreescribimos lastVolume/lastUserUpdate si ya existen, 
+            // para no perder lo que el usuario acaba de mover.
+        } else {
+            activeSessions.set(label, {
+                sessions: [],
+                lastVolume: volume,
+                lastMute: mute,
+                lastUserUpdate: 0,
+                processOnly: true
+            });
+            existing = activeSessions.get(label);
+        }
+        
+        batchUpdates.sessions.push({ name: label, volume: existing.lastVolume, mute: existing.lastMute });
     }
 
     // 3. Limpieza de sesiones huérfanas
-    if (activeSessions.size > pollNames.size) {
-        for (const [name] of activeSessions.entries()) {
-            if (!pollNames.has(name)) {
-                activeSessions.delete(name);
-                batchUpdates.removed.push(name);
-            }
+    // Solo eliminamos si no está ni como sesión real ni como proceso visible conocido
+    for (const [name] of activeSessions.entries()) {
+        const isReal = pollNames.has(name);
+        const isVisibleProcess = visibleProcessLabels.has(name);
+        
+        if (!isReal && !isVisibleProcess) {
+            activeSessions.delete(name);
+            batchUpdates.removed.push(name);
         }
     }
 
@@ -394,20 +434,16 @@ function pollSessions(io) {
 function getInitialStateData() {
     if (!defaultDevice) return { master: { volume: 0, mute: false }, sessions: [] };
 
-    const persistedMixer = appStateStore.get('persistedMixer') || {};
-    const persistedSessions = persistedMixer.sessions || {};
-
     return {
         master: {
             volume: Math.round(defaultDevice.volume * 100),
-            mute: typeof persistedMixer.masterMute === 'boolean' ? persistedMixer.masterMute : defaultDevice.mute
+            mute: localMasterMute
         },
         sessions: Array.from(activeSessions.entries()).map(([name, s]) => {
-            const persisted = persistedSessions[name] || {};
             return {
                 name,
-                volume: Number.isFinite(persisted.volume) ? persisted.volume : s.lastVolume,
-                mute: typeof persisted.mute === 'boolean' ? persisted.mute : s.lastMute
+                volume: s.lastVolume,
+                mute: s.lastMute
             };
         })
     };
@@ -426,8 +462,6 @@ function persistMasterState(mute) {
     persisted.masterMute = mute;
     appStateStore.set('persistedMixer', persisted).catch(() => {});
 }
-
-
 
 function sendInitialState(socket) {
     const initialState = getInitialStateData();
@@ -462,11 +496,14 @@ function handleSocketCommands(socket) {
     socket.on('set_master_volume', (value) => {
         lastSliderActivity = Date.now(); // Marca actividad para polling adaptativo
         try { 
-            if (defaultDevice) {
-                defaultDevice.volume = value / 100; 
+            const currentDefault = AudioMixer.getDefaultDevice(DeviceType.RENDER);
+            if (currentDefault) {
+                currentDefault.volume = value / 100; 
                 socket.broadcast.emit('master_updated', { type: 'volume', value: Math.round(value) });
             }
-        } catch (e) {}
+        } catch (e) {
+            console.error('[Mixer] Error setting master volume:', e);
+        }
     });
 
     socket.on('toggle_master_mute', () => {
@@ -485,66 +522,84 @@ function handleSocketCommands(socket) {
     });
 
     socket.on('set_session_volume', ({ app, value }) => {
-        lastSliderActivity = Date.now(); // Marca actividad para polling adaptativo
+        lastSliderActivity = Date.now();
         try {
-            const stored = activeSessions.get(app);
-            if (!stored) return;
             const targetVolume = Math.max(0, Math.min(100, Number(value)));
-
-            if (stored.lastVolume === targetVolume) {
-                stored.lastUserUpdate = Date.now();
-                return;
-            }
-
-            // LOG: Mostrar cuántas sesiones se van a modificar
-            if (stored.sessions.length === 0) {
+            const stored = activeSessions.get(app);
+            
+            if (stored) {
+                if (stored.lastVolume === targetVolume) {
+                    stored.lastUserUpdate = Date.now();
+                    return;
+                }
                 stored.lastVolume = targetVolume;
                 stored.lastUserUpdate = Date.now();
-                const updatePayload = { name: app, type: 'volume', value: targetVolume };
-                persistMixerSessionState(app, targetVolume, stored.lastMute);
-                socket.broadcast.emit('session_updated', updatePayload);
-                return;
             }
 
-            if (stored.sessions.length > 1) {
-                console.log(`⚠️  [Mixer] Setting volume for "${app}" affecting ${stored.sessions.length} sessions:`, stored.sessions.map(s => s.appName).join(', '));
-            }
+            // Re-escaneamos el dispositivo para obtener sesiones frescas y aplicar a todas
+            const currentDevice = AudioMixer.getDefaultDevice(DeviceType.RENDER);
+            if (!currentDevice) return;
 
-            stored.sessions.forEach((session) => {
-                try { session.volume = targetVolume / 100; } catch (error) {}
+            const allSessions = currentDevice.sessions;
+            let appliedCount = 0;
+
+            allSessions.forEach((s) => {
+                if (getAppLabel(s) === app) {
+                    try {
+                        s.volume = targetVolume / 100;
+                        appliedCount++;
+                    } catch (err) {
+                        console.error(`[Mixer] Error setting volume for ${app}:`, err);
+                    }
+                }
             });
 
-            stored.lastVolume = targetVolume;
-            stored.lastUserUpdate = Date.now();
+            console.log(`[Mixer] ${app} Volume -> ${targetVolume}% (${appliedCount} sessions controlled)`);
 
-            const updatePayload = { name: app, type: 'volume', value: targetVolume };
-            persistMixerSessionState(app, targetVolume, stored.lastMute);
-            socket.broadcast.emit('session_updated', updatePayload);
-        } catch (e) {}
+            // Persistencia y broadcast
+            persistMixerSessionState(app, targetVolume, stored ? stored.lastMute : false);
+            socket.broadcast.emit('session_updated', { name: app, type: 'volume', value: targetVolume });
+
+        } catch (e) {
+            console.error(`[Mixer] Critical error in set_session_volume for ${app}:`, e);
+        }
     });
 
     socket.on('toggle_session_mute', (payload) => {
         const app = typeof payload === 'string' ? payload : payload?.app;
+        lastSliderActivity = Date.now();
 
         try {
             const stored = activeSessions.get(app);
-            if (!stored) return;
+            const newState = stored ? !stored.lastMute : true;
 
-            const newState = !stored.lastMute;
+            const currentDevice = AudioMixer.getDefaultDevice(DeviceType.RENDER);
+            if (!currentDevice) return;
 
-            if (stored.sessions.length > 0) {
-                stored.sessions.forEach((s) => { 
-                    try { s.mute = newState; } catch(e) {}
-                });
+            let appliedCount = 0;
+            currentDevice.sessions.forEach((s) => {
+                if (getAppLabel(s) === app) {
+                    try {
+                        s.mute = newState;
+                        appliedCount++;
+                    } catch (e) {}
+                }
+            });
+
+            if (stored) {
+                stored.lastMute = newState;
+                stored.lastUserUpdate = Date.now();
             }
-            stored.lastMute = newState;
-            stored.lastUserUpdate = Date.now();
+
+            console.log(`[Mixer] ${app} Mute -> ${newState} (${appliedCount} sessions controlled)`);
 
             const updatePayload = { name: app, type: 'mute', value: newState };
             socket.emit('session_updated', updatePayload);
             socket.broadcast.emit('session_updated', updatePayload);
-            persistMixerSessionState(app, stored.lastVolume, newState);
-        } catch (error) {}
+            persistMixerSessionState(app, stored ? stored.lastVolume : 100, newState);
+        } catch (error) {
+            console.error(`[Mixer] Error in toggle_session_mute for ${app}:`, error);
+        }
     });
 }
 
