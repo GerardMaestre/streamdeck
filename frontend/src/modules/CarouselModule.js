@@ -142,6 +142,9 @@ export class CarouselModule {
         if (this.initialLoad) {
             this.initialLoad = false;
         }
+
+        // Asegurar que el botón de edición vuelva a ser visible al retornar al carrusel
+        this.setEditButtonVisibility(true);
     }
 
     /** Build the footer with Editar/Anterior/Siguiente/Ajustes */

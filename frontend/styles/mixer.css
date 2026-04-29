@@ -153,16 +153,17 @@ body.dragging-active .mixer-panel {
     border: 1px solid var(--glass-border) !important;
     border-radius: var(--radius-xl) !important;
     width: auto !important;
-    min-width: clamp(300px, 40vw, 520px) !important;
-    max-width: min(95vw, 1200px) !important;
-    height: auto !important;
-    max-height: 90vh !important;
-    padding: clamp(18px, 3vw, 32px) !important;
+    min-width: 98vw !important;
+    max-width: 98vw !important;
+    width: 98vw !important;
+    height: 96vh !important;
+    max-height: 96vh !important;
+    padding: 10px 40px !important;
     box-sizing: border-box !important;
     overflow: hidden !important;
     display: flex !important;
     flex-direction: row !important;
-    align-items: center !important;
+    align-items: stretch !important;
     justify-content: center !important;
     
     /* Centrado Absoluto Premium (más estable que margin:auto en fit-content) */
@@ -182,8 +183,13 @@ body.dragging-active .mixer-panel {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 35px;
-    width: 140px;
+    gap: 15px;
+    width: 160px;
+    padding: 15px 10px;
+    background: rgba(255, 255, 255, 0.01);
+    border-radius: 20px;
+    height: 100% !important;
+    justify-content: space-between !important;
     position: relative;
     user-select: none;
     padding: 0;
@@ -203,8 +209,8 @@ body.dragging-active .mixer-panel {
     cursor: pointer;
     transition: transform 0.2s var(--ease-spring), background-color 0.3s var(--ease-smooth), box-shadow 0.3s var(--ease-smooth);
     user-select: none;
-    width: 68px;
-    height: 68px;
+    width: 100px;
+    height: 100px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -259,8 +265,8 @@ body.dragging-active .mixer-panel {
 /* --- LABEL --- */
 .mixer-label {
     color: var(--text-primary);
-    font-size: 0.9rem;
-    font-weight: 500;
+    font-size: 1.6rem;
+    font-weight: 950;
     opacity: 0.9;
     user-select: none;
     margin-top: 10px;
@@ -285,10 +291,12 @@ body.dragging-active .mixer-panel {
 }
 
 .slider-container {
-    width: 60px !important;
-    height: clamp(160px, 40dvh, 300px) !important;
+    width: 80px !important;
+    height: 100% !important;
+    flex: 1 !important;
     background: rgba(0, 0, 0, 0.6) !important;
     border-radius: 40px !important;
+    margin: 40px 0 !important;
     position: relative !important;
     cursor: pointer !important;
     border: 1px solid rgba(255, 255, 255, 0.06) !important;
@@ -305,6 +313,36 @@ body.dragging-active .mixer-panel {
 .mixer-row.dragging .slider-container {
     box-shadow: none !important;
     border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Durante arrastre, simplificar estilos pesados para evitar repaints costosos */
+.mixer-row.dragging .fader-thumb-mixer {
+    background: linear-gradient(180deg, #ffffff 0%, #e6e6e6 100%) !important;
+    box-shadow: none !important;
+    border-color: rgba(255,255,255,0.95) !important;
+    filter: none !important;
+}
+
+.mixer-row.dragging .slider-fill {
+    filter: none !important;
+    background: #66d4ff !important; /* usar color sólido para menos carga */
+}
+
+/* Aggressive low-perf mode while mixer open on touch devices */
+body.mixer-low-perf .fader-thumb-mixer {
+    background: #ffffff !important;
+    border-color: rgba(255,255,255,0.95) !important;
+    box-shadow: none !important;
+}
+
+body.mixer-low-perf .slider-fill {
+    background: #66d4ff !important;
+    filter: none !important;
+    transition: none !important;
+}
+
+body.mixer-low-perf .mixer-panel, body.mixer-low-perf .mixer-panel-fullscreen {
+    backdrop-filter: none !important;
 }
 
 
@@ -337,31 +375,16 @@ body.dragging-active .mixer-panel {
     left: 50% !important;
     bottom: 0;           /* ← Sin !important: permite que el inline style de JS funcione */
     top: auto !important;
-    width: 64px !important;
-    height: 64px !important;
+    width: 90px !important;
+    height: 90px !important;
     background: radial-gradient(circle at 35% 35%, #ffffff 0%, #f0f0f0 40%, #d0d0d0 100%) !important;
-    border: 2px solid rgba(255, 255, 255, 0.8) !important;
+    border: 5px solid rgba(255, 255, 255, 0.9) !important;
     border-radius: 50% !important;
     box-shadow: 
         0 10px 20px rgba(0, 0, 0, 0.4),
         inset 0 -4px 8px rgba(0, 0, 0, 0.2),
         inset 0 4px 8px rgba(255, 255, 255, 0.6) !important;
-    /* Solo transición en transform: compositor-only, sin layout reflow */
-    transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    will-change: transform !important;
-    z-index: 10;
-    /* Posición base: center horizontal, center en el borde inferior del container */
-    transform: translate3d(-50%, 50%, 0);
-}
-
-.mixer-row.dragging .fader-thumb-mixer,
-body.dragging-active .fader-thumb-mixer {
     transition: none !important;
-    background: radial-gradient(circle at 35% 35%, #ffffff 0%, #3498db 100%) !important;
-    box-shadow: 0 0 20px rgba(52, 152, 219, 0.5) !important;
-}
-
-body.dragging-active .fader-thumb-mixer {
     box-shadow: none !important;
     border-color: #fff !important;
 }

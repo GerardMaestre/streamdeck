@@ -73,10 +73,6 @@ export class DiscordModule {
                 </div>
             `;
 
-            discordPanelEl.appendChild(createPanelBackButton(() => {
-                if (onBack) onBack();
-            }));
-
             discordPanelEl.querySelector('#tactical-mute-btn').addEventListener('pointerdown', (e) => {
                 e.preventDefault();
                 this.toggleMute();
@@ -85,6 +81,13 @@ export class DiscordModule {
                 e.preventDefault();
                 this.toggleDeaf();
             });
+        }
+
+        // Asegurar que el botón de atrás siempre esté presente al abrir
+        if (!document.getElementById('panel-back-button')) {
+            discordPanelEl.appendChild(createPanelBackButton(() => {
+                if (onBack) onBack();
+            }));
         }
 
         this.updateButtons();
@@ -199,6 +202,12 @@ export class DiscordModule {
             if (!row) {
                 row = this._createUserRow(user, mixerContainer);
                 mixerContainer.appendChild(row);
+                
+                const ctrl = this._faderControllers[this._faderControllers.length - 1];
+                if (ctrl) {
+                    const fillHeight = (user.volume / 200) * 100;
+                    requestAnimationFrame(() => ctrl.setPercent(fillHeight, true));
+                }
             } else {
                 // Update existing row
                 if (!this.activeSliders.has('discord_' + id)) {
@@ -251,16 +260,12 @@ export class DiscordModule {
         const thumb = row.querySelector('.fader-thumb-mixer');
         this.discordRowRefs.set(id, { row, track, fill, thumb });
 
-        requestAnimationFrame(() => {
-            const rect = track.getBoundingClientRect();
-            if (rect.height > 0) setThumbTransform(thumb, fillHeight, rect.height);
-        });
-
         // Fader controller via FaderFactory
         const faderCtrl = createFaderController({
             track,
             fill,
             thumb,
+            initialPercent: fillHeight,
             captureTarget: thumb,
             onDragStart: () => {
                 this.activeSliders.add('discord_' + id);
@@ -278,6 +283,7 @@ export class DiscordModule {
                 setTimeout(() => this.activeSliders.delete('discord_' + id), 500);
             }
         });
+        // ctrl.setPercent(fillHeight, true); <-- Defer until after append in renderMixer
         this._faderControllers.push(faderCtrl);
 
         return row;

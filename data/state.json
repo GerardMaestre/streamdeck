@@ -6,22 +6,30 @@
         "masterMute": false,
         "sessions": {
             "Google Chrome": {
-                "volume": 25,
+                "volume": 18,
                 "mute": false
             },
             "Spotify": {
-                "volume": 70,
+                "volume": 45,
                 "mute": false
             },
             "Robloxplayerbeta": {
-                "volume": 25,
+                "volume": 0,
                 "mute": false
             },
             "Discord": {
-                "volume": 23,
+                "volume": 0,
+                "mute": false
+            },
+            "Microsoft Edge": {
+                "volume": 44,
+                "mute": false
+            },
+            "WhatsApp": {
+                "volume": 100,
                 "mute": false
             }
         }
     },
-    "updatedAt": 1777471744126
+    "updatedAt": 1777495183098
 }

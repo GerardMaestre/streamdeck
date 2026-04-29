@@ -77,6 +77,7 @@ export class DomoticaModule {
                 fill: faderFill,
                 thumb: faderThumb,
                 isDomo: true,
+                initialPercent: this.lastTuyaIntensity,
                 captureTarget: faderThumb,
                 onValueChange: (_smooth, rounded) => {
                     const percent = Math.max(1, Math.min(100, rounded));
@@ -90,21 +91,20 @@ export class DomoticaModule {
             });
         }
 
+        // Asegurar que el botón de atrás siempre esté presente
+        if (!document.getElementById('panel-back-button')) {
+            domoPanelEl.appendChild(createPanelBackButton(() => {
+                if (onBack) onBack();
+            }));
+        }
+
         this.panelManager.showPanel('domotica');
 
-        // Set initial fader position
-        requestAnimationFrame(() => {
-            const faderTrack = domoPanelEl.querySelector('.fader-track-pro');
-            const faderFill = domoPanelEl.querySelector('.fader-fill-pro');
-            const faderThumb = domoPanelEl.querySelector('.fader-thumb-pro');
-            if (faderTrack) {
-                const trackRect = faderTrack.getBoundingClientRect();
-                if (trackRect.height > 0) {
-                    faderFill.style.transform = `scale3d(1, ${this.lastTuyaIntensity / 100}, 1)`;
-                    setThumbTransform(faderThumb, this.lastTuyaIntensity, trackRect.height, true);
-                }
-            }
-        });
+        if (this._faderCtrl) {
+            requestAnimationFrame(() => {
+                this._faderCtrl.setPercent(this.lastTuyaIntensity, true);
+            });
+        }
     }
 
     _emitBrightness(percent) {
