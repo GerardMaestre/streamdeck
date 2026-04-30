@@ -277,63 +277,81 @@ app.whenReady().then(async () => {
         if (promptWindow) promptWindow.close();
     });
 
-    // --- POSITION PICKER (AutoClicker) ---
-    let pickerWindow = null;
+    // --- POSITION PICKER (AutoClicker MULTI-MONITOR) ---
+    let pickerWindows = [];
     let pickerResolve = null;
 
     global.showPositionPicker = () => {
         return new Promise((resolve) => {
-            if (pickerWindow) {
-                try { pickerWindow.close(); } catch (_) {}
-            }
+            // Limpiar ventanas previas si las hubiera
+            pickerWindows.forEach(w => { try { w.close(); } catch(_) {} });
+            pickerWindows = [];
 
             pickerResolve = resolve;
 
-            // Obtener el display primario para cubrir toda la pantalla
             const { screen: electronScreen } = require('electron');
-            const primaryDisplay = electronScreen.getPrimaryDisplay();
-            const { x, y, width, height } = primaryDisplay.bounds;
+            const displays = electronScreen.getAllDisplays();
 
-            pickerWindow = new BrowserWindow({
-                x, y, width, height,
-                frame: false,
-                transparent: true,
-                alwaysOnTop: true,
-                skipTaskbar: true,
-                resizable: false,
-                fullscreen: false,
-                hasShadow: false,
-                webPreferences: {
-                    preload: path.join(__dirname, 'frontend', 'preload_picker.js'),
-                    nodeIntegration: false,
-                    contextIsolation: true
-                }
+            displays.forEach((display) => {
+                const { x, y, width, height } = display.bounds;
+
+                const win = new BrowserWindow({
+                    x, y, width, height,
+                    frame: false,
+                    transparent: true,
+                    alwaysOnTop: true,
+                    skipTaskbar: true,
+                    resizable: false,
+                    fullscreen: false,
+                    hasShadow: false,
+                    webPreferences: {
+                        preload: path.join(__dirname, 'frontend', 'preload_picker.js'),
+                        nodeIntegration: false,
+                        contextIsolation: true
+                    }
+                });
+
+                win.setAlwaysOnTop(true, 'screen-saver');
+                win.loadFile(path.join(__dirname, 'frontend', 'picker.html'));
+
+                win.once('ready-to-show', () => {
+                    win.show();
+                    // Solo enfocamos la primera para que acepte eventos de teclado (Esc)
+                    if (pickerWindows.length === 1) win.focus();
+                });
+
+                win.on('closed', () => {
+                    // Si una se cierra manualmente (poco probable), intentamos limpiar el resto
+                    if (pickerWindows.length > 0 && pickerResolve) {
+                        const idx = pickerWindows.indexOf(win);
+                        if (idx > -1) pickerWindows.splice(idx, 1);
+                        if (pickerWindows.length === 0) {
+                            if (pickerResolve) pickerResolve(null);
+                            pickerResolve = null;
+                        }
+                    }
+                });
+
+                pickerWindows.push(win);
             });
+        });
+    };
 
-            pickerWindow.setAlwaysOnTop(true, 'screen-saver');
-            pickerWindow.loadFile(path.join(__dirname, 'frontend', 'picker.html'));
-
-            pickerWindow.once('ready-to-show', () => {
-                pickerWindow.show();
-                pickerWindow.focus();
-            });
-
-            pickerWindow.on('closed', () => {
-                pickerWindow = null;
-                if (pickerResolve) {
-                    pickerResolve(null);
-                    pickerResolve = null;
-                }
-            });
+    const closeAllPickers = () => {
+        const windowsToClose = [...pickerWindows];
+        pickerWindows = [];
+        windowsToClose.forEach(w => {
+            try { w.removeAllListeners('closed'); w.close(); } catch(_) {}
         });
     };
 
     ipcMain.on('picker-select', (event, pos) => {
         if (pickerResolve) {
-            // Determinar en qué monitor cayó el click
             const { screen: electronScreen } = require('electron');
             const displays = electronScreen.getAllDisplays();
             let monitorIndex = 0;
+            
+            // Buscar en qué monitor está el punto absoluto
             for (let i = 0; i < displays.length; i++) {
                 const b = displays[i].bounds;
                 if (pos.x >= b.x && pos.x < b.x + b.width &&
@@ -342,10 +360,11 @@ app.whenReady().then(async () => {
                     break;
                 }
             }
+            
             pickerResolve({ x: pos.x, y: pos.y, monitorIndex });
             pickerResolve = null;
         }
-        if (pickerWindow) pickerWindow.close();
+        closeAllPickers();
     });
 
     ipcMain.on('picker-cancel', () => {
@@ -353,7 +372,7 @@ app.whenReady().then(async () => {
             pickerResolve(null);
             pickerResolve = null;
         }
-        if (pickerWindow) pickerWindow.close();
+        closeAllPickers();
     });
 
     console.log(`[App Bandeja] Todo listo. IP para la tablet: http://${localIP}:${PORT}`);

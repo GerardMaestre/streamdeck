@@ -293,11 +293,15 @@ export class StreamDeckApp {
 
         this.socket.on('connect_error', (err) => {
             console.error('Socket Connection Error:', err.message);
-            this.toast.show(`Error de conexión: ${err.message}`, 'error');
+            
             if (err.message.includes('Acceso denegado')) {
+                this.socket.disconnect(); // Detenemos reintentos automáticos para evitar bloqueos de IP
                 localStorage.removeItem('streamdeck_token');
                 this._requestSecurityToken();
+                return;
             }
+
+            this.toast.show(`Error de conexión: ${err.message}`, 'error');
         });
 
         this.socket.on('notification', (payload) => {

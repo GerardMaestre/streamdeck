@@ -22,9 +22,8 @@ let clickCountInterval = null;
 
 // ── PS1 template that runs the click loop inside a single PowerShell process ──
 function buildPSScript(x, y, interval, clickType, monitorBounds) {
-    // mouse_event flags
-    const downFlag = clickType === 'right' ? '0x0008' : '0x0002';
-    const upFlag   = clickType === 'right' ? '0x0010' : '0x0004';
+    const downFlag = clickType === 'right' ? 0x0008 : 0x0002; // RIGHTDOWN : LEFTDOWN
+    const upFlag   = clickType === 'right' ? 0x0010 : 0x0004; // RIGHTUP : LEFTUP
 
     return `
 Add-Type @"
@@ -33,34 +32,35 @@ using System.Runtime.InteropServices;
 public class AC {
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
     [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
-    [DllImport("user32.dll")] public static extern void mouse_event(uint f, int dx, int dy, uint d, UIntPtr e);
+    [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, UIntPtr dwExtraInfo);
     [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
+
+    // Función consolidada para minimizar el tiempo que el cursor está fuera de su sitio
+    public static void ClickAt(int x, int y, uint down, uint up) {
+        POINT p;
+        if (GetCursorPos(out p)) {
+            SetCursorPos(x, y);
+            mouse_event(down, 0, 0, 0, UIntPtr.Zero);
+            mouse_event(up, 0, 0, 0, UIntPtr.Zero);
+            SetCursorPos(p.X, p.Y);
+        }
+    }
 }
 "@
 
 $targetX = ${x}
 $targetY = ${y}
 $interval = ${interval}
-# Monitor bounds for safety check
-$mLeft   = ${monitorBounds.x}
-$mTop    = ${monitorBounds.y}
-$mRight  = ${monitorBounds.x + monitorBounds.width}
-$mBottom = ${monitorBounds.y + monitorBounds.height}
+$down = [uint32]${downFlag}
+$up = [uint32]${upFlag}
 $clicks = 0
 
 while ($true) {
-    $p = New-Object AC+POINT
-    [AC]::GetCursorPos([ref]$p) | Out-Null
-
-    # Solo clickear si el target sigue dentro de los bounds del monitor
-    if ($targetX -ge $mLeft -and $targetX -lt $mRight -and $targetY -ge $mTop -and $targetY -lt $mBottom) {
-        [AC]::SetCursorPos($targetX, $targetY) | Out-Null
-        [AC]::mouse_event(${downFlag}, 0, 0, 0, [UIntPtr]::Zero)
-        [AC]::mouse_event(${upFlag},   0, 0, 0, [UIntPtr]::Zero)
-        [AC]::SetCursorPos($p.X, $p.Y) | Out-Null
-        $clicks++
-        if ($clicks % 50 -eq 0) { Write-Output "CLICKS:$clicks" }
-    }
+    # Ejecutar el click ultrarrápido
+    [AC]::ClickAt($targetX, $targetY, $down, $up)
+    
+    $clicks++
+    if ($clicks % 50 -eq 0) { Write-Output "CLICKS:$clicks" }
 
     Start-Sleep -Milliseconds $interval
 }
@@ -200,6 +200,9 @@ function stopClicker(io) {
 }
 
 function getPublicState() {
+    // Intentar refrescar si los datos son viejos
+    refreshMonitors();
+    
     return {
         running: clickerState.running,
         x: clickerState.x,

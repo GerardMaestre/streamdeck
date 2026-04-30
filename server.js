@@ -45,6 +45,7 @@ const { ejecutarScript, ejecutarScriptDinamico, listarScripts, stopAllRunningScr
 const { initDiscordRPC, requestInitialDiscordState, discordToggleMute, discordToggleDeaf, discordSetUserVolume } = require('./backend/discord/discordController');
 const { sendTuyaCommand, controlMultipleDevices } = require('./backend/iot/smart_home');
 const { minimizarTodo, cambiarResolucion, apagarPC, reiniciarPC } = require('./backend/system/systemController');
+const { handleAutoClickerSocket } = require('./backend/automation/autoClickerController');
 
 // --- CACHE DE SISTEMA ---
 let configCache = null;
@@ -71,7 +72,7 @@ const badAuthAttempts = new Map();
 const blockedIps = new Map();
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 120;
-const AUTH_BLOCK_THRESHOLD = 5;
+const AUTH_BLOCK_THRESHOLD = 20;
 const AUTH_BLOCK_DURATION_MS = 15 * 60 * 1000;
 
 const cleanupIpData = () => {
@@ -605,6 +606,9 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         log('[Socket] Centro de mando desconectado');
     });
+
+    // Registrar AutoClicker
+    handleAutoClickerSocket(socket, io);
 });
 
 let PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
