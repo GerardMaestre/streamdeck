@@ -547,7 +547,7 @@ export class StreamDeckApp {
         };
 
         const doLogin = async () => {
-            const token = input.value.trim();
+            const token = input.value.replace(/\s+/g, ' ').trim();
             if (!token) {
                 setError('Introduce un token válido.');
                 return;
@@ -560,12 +560,18 @@ export class StreamDeckApp {
             try {
                 const res = await fetch('/api/config', { headers: { 'Authorization': token } });
                 if (!res.ok) {
+                    let serverMessage = '';
+                    try {
+                        const body = await res.json();
+                        serverMessage = body?.error ? ` (${body.error})` : '';
+                    } catch (_) { /* ignore non-json responses */ }
+
                     if (res.status === 403) {
-                        setError('Token incorrecto. Revisa el valor y vuelve a intentarlo.');
+                        setError(`Token incorrecto. Revisa el valor y vuelve a intentarlo.${serverMessage}`);
                     } else if (res.status === 429) {
-                        setError('Demasiados intentos. Espera 1 minuto e inténtalo de nuevo.');
+                        setError(`Demasiados intentos. Espera 1 minuto e inténtalo de nuevo.${serverMessage}`);
                     } else {
-                        setError(`No se pudo validar el acceso (HTTP ${res.status}).`);
+                        setError(`No se pudo validar el acceso (HTTP ${res.status})${serverMessage}.`);
                     }
                     return;
                 }

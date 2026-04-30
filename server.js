@@ -221,6 +221,8 @@ const ensureAuthorizedRequest = (req, res) => {
     const isLocal = isLocalAddress(req.ip);
     if (verifyAccess(token, isLocal)) return true;
     registerBadAuthAttempt(req.ip);
+    Logger.warn(`[Auth] Acceso denegado en ${req.method} ${req.path} desde ${req.ip}`);
+    res.setHeader('WWW-Authenticate', 'Bearer realm="StreamDeckPro"');
     res.status(403).json({ error: 'Acceso denegado' });
     return false;
 };
