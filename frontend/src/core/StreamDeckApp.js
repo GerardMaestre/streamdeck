@@ -14,6 +14,7 @@ import { getButtonHelpText } from '../ui/ButtonFactory.js';
 import { MixerModule } from '../modules/MixerModule.js';
 import { DiscordModule } from '../modules/DiscordModule.js';
 import { DomoticaModule } from '../modules/DomoticaModule.js';
+import { AutoClickerModule } from '../modules/AutoClickerModule.js';
 import { CarouselModule } from '../modules/CarouselModule.js';
 import { EditModeModule } from '../modules/EditModeModule.js';
 import { NotificationToast } from '../ui/NotificationToast.js';
@@ -26,7 +27,9 @@ export class StreamDeckApp {
         // --- Global error handler ---
         window.addEventListener('error', (e) => {
             console.error('GLOBAL FRONTEND ERROR:', e.message);
-            document.body.innerHTML += `<div style="position:fixed;top:0;left:0;z-index:9999;background:red;color:white;padding:10px;">${e.message}</div>`;
+            if (this.toast) {
+                this.toast.show(`Error: ${e.message}`, 'error', 5000);
+            }
         });
 
         // --- Security token ---
@@ -71,7 +74,8 @@ export class StreamDeckApp {
             panels: {
                 mixer: document.getElementById('panel-mixer'),
                 discord: document.getElementById('panel-discord'),
-                domotica: document.getElementById('panel-domotica')
+                domotica: document.getElementById('panel-domotica'),
+                autoclicker: document.getElementById('panel-autoclicker')
             },
             onPanelChange: (panelId, previousPanel) => {
                 if (previousPanel === 'mixer' && panelId !== 'mixer') {
@@ -130,6 +134,7 @@ export class StreamDeckApp {
         this.mixer = new MixerModule(ctx);
         this.discord = new DiscordModule(ctx);
         this.domotica = new DomoticaModule(ctx);
+        this.autoclicker = new AutoClickerModule(ctx);
 
         // --- Wire editmode state to carousel ---
         this.events.on('editmode:changed', (active) => {
@@ -148,6 +153,7 @@ export class StreamDeckApp {
         // Socket listeners
         this.mixer.setupSocketListeners();
         this.discord.setupSocketListeners();
+        this.autoclicker.setupSocketListeners();
         this._setupCoreSocketListeners();
         this._setupButtonDelegation();
         this.carousel.setupDelegation();
@@ -383,6 +389,8 @@ export class StreamDeckApp {
                 this._openDiscord();
             } else if (btnData.type === 'domotica_panel') {
                 this._openDomotica();
+            } else if (btnData.type === 'autoclicker_panel') {
+                this._openAutoClicker();
             } else if (btnData.type === 'quick_action') {
                 this._processQuickAction(btnData);
             } else if (btnData.type === 'action') {
@@ -473,6 +481,17 @@ export class StreamDeckApp {
         this.carousel.setEditButtonVisibility(false);
         this.domotica.open(
             this.panelManager.panels.domotica,
+            () => {
+                this.panelManager.hidePanels();
+                this.carousel.renderSlide(this.carousel.getCarouselIndex(), 0);
+            }
+        );
+    }
+
+    _openAutoClicker() {
+        this.carousel.setEditButtonVisibility(false);
+        this.autoclicker.open(
+            this.panelManager.panels.autoclicker,
             () => {
                 this.panelManager.hidePanels();
                 this.carousel.renderSlide(this.carousel.getCarouselIndex(), 0);

@@ -141,9 +141,11 @@ export function createPanelBackButton(onClick) {
     backBtn.id = 'panel-back-button';
     backBtn.className = 'panel-back-btn-sketch-circle';
     backBtn.innerHTML = '<span>←</span>';
-    backBtn.addEventListener('pointerup', (e) => {
+    backBtn.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         e.stopImmediatePropagation();
+
+        if (navigator.vibrate) navigator.vibrate(50);
 
         const shield = document.createElement('div');
         shield.className = 'pointer-shield';
