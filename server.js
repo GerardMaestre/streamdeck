@@ -470,10 +470,6 @@ io.on('connection', (socket) => {
         if (typeof ack === 'function' && result !== null) ack({ ok: true });
     });
 
-    socket.on('ejecutar_script', async (scriptId, ack) => {
-        const result = await runSafely(socket, 'ejecutar_script', () => ejecutarScript(scriptId, socket), ack);
-        if (typeof ack === 'function' && result !== null) ack({ ok: true });
-    });
 
     socket.on('ejecutar_script_dinamico', async (payload, ack) => {
         // Si el script requiere parametros pero no han llegado en el payload, los pedimos en el PC

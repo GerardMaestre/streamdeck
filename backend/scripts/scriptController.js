@@ -28,13 +28,6 @@ const ensureFileExists = async (absolutePath) => {
     await fs.access(absolutePath);
 };
 
-const scripts = {
-    purgar_ram: path.join(baseScriptsPath, '02_Gaming', 'Purgar_ram.py'),
-    limpiar_shaders: path.join(baseScriptsPath, '02_Gaming', 'Purgador_Shaders.py'),
-    modo_tryhard: path.join(baseScriptsPath, '02_Gaming', 'Despertar_Nucleos.bat'),
-    limpieza_global: path.join(baseScriptsPath, '04_Archivos', 'Limpieza_Extrema_Global.py')
-};
-
 const buildExecutionCommand = (absolutePath, args) => {
     const extension = path.extname(absolutePath).toLowerCase();
     const parsedArgs = Array.isArray(args) ? args : parseShellArgs(args);
@@ -251,22 +244,6 @@ const resolveSafeScriptPath = (carpeta, archivo) => {
     return absolutePath;
 };
 
-const ejecutarScript = async (scriptId, socket) => {
-    try {
-        const absolutePath = scripts[scriptId];
-
-        if (!absolutePath) {
-            console.error(`[Error] Script no encontrado: ${scriptId}`);
-            return;
-        }
-
-        await ensureFileExists(absolutePath);
-        await runScriptExternally(scriptId, absolutePath, '');
-    } catch (error) {
-        logControllerError(`script:${scriptId}`, error);
-    }
-};
-
 const ejecutarScriptDinamico = async (payload, socket) => {
     try {
         const { carpeta, archivo, args } = validateDynamicPayload(payload);
@@ -280,7 +257,6 @@ const ejecutarScriptDinamico = async (payload, socket) => {
 };
 
 module.exports = {
-    ejecutarScript,
     ejecutarScriptDinamico,
     listarScripts,
     stopAllRunningScripts
