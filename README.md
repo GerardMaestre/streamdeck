@@ -47,7 +47,7 @@
 3. **Configurar Entorno:**
    Crea un archivo `.env` en la raíz (usa como base los valores proporcionados):
    ```env
-   SECURITY_TOKEN=CasaGerard
+   SECURITY_TOKEN=tu_token_seguro
    DISCORD_CLIENT_ID=tu_client_id
    TUYA_ACCESS_KEY=tu_key
    ...
@@ -74,7 +74,7 @@ npm run build
 ```
 
 ## 🔒 Seguridad
-La aplicación utiliza un sistema de **Security Token** para evitar accesos no autorizados desde tu red local. El token por defecto es `CasaGerard` y puede cambiarse en el archivo `.env`.
+La aplicación utiliza un sistema de **Security Token** para evitar accesos no autorizados desde tu red local. El token debe configurarse en el archivo `.env`.
 
 ---
 Desarrollado por [Gerard Maestre](https://github.com/gerardmaestre)

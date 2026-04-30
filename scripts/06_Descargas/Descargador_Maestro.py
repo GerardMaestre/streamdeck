@@ -35,59 +35,20 @@ def run():
     # Averiguar carpeta de Descargas del sistema actual
     downloads_path = str(Path.home() / "Downloads")
     
-    # Auto-Descargar el ejecutable de yt-dlp si no existe localmente
+    # Usar ejecutables locales (Deben estar incluidos en el paquete)
     script_dir = os.path.dirname(os.path.abspath(__file__))
     yt_dlp_exe = os.path.join(script_dir, "yt-dlp.exe")
     ffmpeg_exe = os.path.join(script_dir, "ffmpeg.exe")
     
     if not os.path.exists(yt_dlp_exe):
-        print("\n[*] Configurando el motor de extraccion (yt-dlp)...")
-        print("    Descargando componentes necesarios desde GitHub...")
-        download_url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
-        try:
-            import socket
-            socket.setdefaulttimeout(30)
-            urllib.request.urlretrieve(download_url, yt_dlp_exe)
-            print("[+] ¡Motor principal listo!")
-        except Exception as e:
-            print(f"[X] Fallo al instalar motor: {e}")
-            return
+        print("\n[!] ERROR: No se encuentra yt-dlp.exe.")
+        print("    Asegúrate de que el ejecutable esté en la carpeta del script.")
+        return
             
-    # Comprobar si FFmpeg funciona correctamente (el script anterior bajaba la version de Linux por error)
-    ffmpeg_valido = False
-    if os.path.exists(ffmpeg_exe):
-        try:
-            subprocess.run([ffmpeg_exe, "-version"], check=True, capture_output=True)
-            ffmpeg_valido = True
-        except:
-            print("\n[*] Advertencia: La version actual de FFmpeg esta dañada o es incorrecta. Se procedera a reinstalarla.")
-            os.remove(ffmpeg_exe)
-            ffmpeg_valido = False
-
-    # Auto-Descargar FFMPEG si no existe o era inválido
-    if not ffmpeg_valido:
-        print("\n[*] FFmpeg es necesario para MP3 HQ o calidad 1080p/4K. Instalando versión correcta para Windows...")
-        ffmpeg_url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
-        ffmpeg_zip = os.path.join(script_dir, "ffmpeg.zip")
-        print("    Descargando ffmpeg (puede demorar un poco dependiendo de tu internet)...")
-        try:
-            urllib.request.urlretrieve(ffmpeg_url, ffmpeg_zip)
-            print("    Extrayendo ffmpeg.exe y ffprobe.exe...")
-            with zipfile.ZipFile(ffmpeg_zip, 'r') as zf:
-                for file_info in zf.namelist():
-                    if file_info.endswith('ffmpeg.exe'):
-                        with zf.open(file_info) as source, open(ffmpeg_exe, 'wb') as target:
-                            target.write(source.read())
-                    elif file_info.endswith('ffprobe.exe'):
-                        ffprobe_exe = os.path.join(script_dir, "ffprobe.exe")
-                        with zf.open(file_info) as source, open(ffprobe_exe, 'wb') as target:
-                            target.write(source.read())
-            os.remove(ffmpeg_zip)
-            print("[+] ¡Convertidor FFmpeg instalado correctamente!")
-        except Exception as e:
-            print(f"    [X] Aviso: No se pudo instalar FFmpeg automáticamente: {e}")
-            if os.path.exists(ffmpeg_zip):
-                os.remove(ffmpeg_zip)
+    # Comprobar si FFmpeg está disponible
+    if not os.path.exists(ffmpeg_exe):
+        print("\n[!] AVISO: ffmpeg.exe no encontrado.")
+        print("    Las descargas de alta calidad y MP3 podrían fallar o ser de baja calidad.")
     
     print(f"\n[*] Analizando enlace: {url}")
     print(f"[*] Destino: {downloads_path}")
