@@ -350,7 +350,7 @@ app.post('/api/config', async (req, res) => {
         );
 
         configCache = newConfig;
-            log('[Config] config.json actualizado desde la tablet');
+        log('[Config] config.json actualizado desde la tablet');
 
         return res.json({ ok: true });
     } catch (err) {
