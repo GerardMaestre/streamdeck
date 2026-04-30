@@ -180,10 +180,38 @@ if (IS_DEV) {
 }
 
 // --- SEGURIDAD: TOKEN DE ACCESO ---
-const SECURITY_TOKEN = (process.env.SECURITY_TOKEN || '').trim();
+const SECURITY_TOKEN_FILE = getDataPath('security-token.txt');
 
-if (!SECURITY_TOKEN) {
-    console.warn('[Seguridad] SECURITY_TOKEN no definido. El servidor aceptará solo conexiones locales. Define SECURITY_TOKEN en .env o en el entorno para habilitar acceso remoto seguro.');
+const loadTokenFromFile = () => {
+    try {
+        if (!fs.existsSync(SECURITY_TOKEN_FILE)) return '';
+        return fs.readFileSync(SECURITY_TOKEN_FILE, 'utf8').trim();
+    } catch (error) {
+        Logger.warn('[Seguridad] No se pudo leer security-token.txt', error);
+        return '';
+    }
+};
+
+const saveTokenToFile = (token) => {
+    try {
+        fs.writeFileSync(SECURITY_TOKEN_FILE, `${token}\n`, { encoding: 'utf8', mode: 0o600 });
+        return true;
+    } catch (error) {
+        Logger.error('[Seguridad] No se pudo guardar security-token.txt', error);
+        return false;
+    }
+};
+
+const envSecurityToken = (process.env.SECURITY_TOKEN || '').trim();
+const fileSecurityToken = loadTokenFromFile();
+let ACTIVE_SECURITY_TOKEN = envSecurityToken || fileSecurityToken;
+
+if (envSecurityToken && fileSecurityToken && envSecurityToken !== fileSecurityToken) {
+    Logger.warn('[Seguridad] SECURITY_TOKEN del entorno tiene prioridad sobre security-token.txt.');
+}
+
+if (!ACTIVE_SECURITY_TOKEN) {
+    console.warn('[Seguridad] Token no configurado. Solo se aceptarán conexiones locales hasta crear uno.');
 }
 
 const normalizeAuthToken = (rawToken) => {
@@ -212,8 +240,8 @@ const getRequestToken = (req) => normalizeAuthToken(req.headers.authorization);
 
 const verifyAccess = (token, isLocal) => {
     if (isLocal) return true;
-    if (!SECURITY_TOKEN) return false;
-    const match = token === SECURITY_TOKEN;
+    if (!ACTIVE_SECURITY_TOKEN) return false;
+    const match = token === ACTIVE_SECURITY_TOKEN;
     if (!match && IS_DEV) {
         console.log(`[Auth Debug] Token mismatch detectado.`);
     }
@@ -242,6 +270,42 @@ io.use((socket, next) => {
     registerBadAuthAttempt(socket.handshake.address);
     console.warn(`[!] Intento de conexion rechazada desde ${socket.handshake.address} (Token invalido)`);
     return next(new Error('Acceso denegado: Token de seguridad invalido'));
+});
+
+
+app.get('/api/security/status', (req, res) => {
+    const isLocal = isLocalAddress(req.ip);
+    if (!isLocal) {
+        return res.status(403).json({ error: 'Acceso denegado' });
+    }
+
+    return res.json({
+        tokenConfigured: Boolean(ACTIVE_SECURITY_TOKEN),
+        source: envSecurityToken ? 'env' : (fileSecurityToken ? 'file' : 'none')
+    });
+});
+
+app.post('/api/security/token', (req, res) => {
+    const isLocal = isLocalAddress(req.ip);
+    if (!isLocal) {
+        return res.status(403).json({ error: 'Acceso denegado' });
+    }
+
+    if (envSecurityToken) {
+        return res.status(409).json({ error: 'SECURITY_TOKEN está fijado por entorno y no puede cambiarse desde API.' });
+    }
+
+    const token = normalizeAuthToken(req.body?.token);
+    if (!token || token.length < 12) {
+        return res.status(400).json({ error: 'El token debe tener al menos 12 caracteres.' });
+    }
+
+    if (!saveTokenToFile(token)) {
+        return res.status(500).json({ error: 'No se pudo persistir el token.' });
+    }
+
+    ACTIVE_SECURITY_TOKEN = token;
+    return res.json({ ok: true });
 });
 
 // Dynamic service worker route: inject build timestamp for cache busting
