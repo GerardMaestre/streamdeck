@@ -45,8 +45,7 @@
     "files": [
       "main.js",
       "server.js",
-      "backend/**/*",
-      "icon.png"
+      "backend/**/*"
     ],
     "extraResources": [
       "config.json",

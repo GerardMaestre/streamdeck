@@ -24,12 +24,8 @@ const ensureFileExists = async (absolutePath) => {
     await fs.access(absolutePath);
 };
 
-const scripts = {
-    purgar_ram: path.join(baseScriptsPath, '02_Gaming', 'Purgar_ram.py'),
-    limpiar_shaders: path.join(baseScriptsPath, '02_Gaming', 'Purgador_Shaders.py'),
-    modo_tryhard: path.join(baseScriptsPath, '02_Gaming', 'Despertar_Nucleos.bat'),
-    limpieza_global: path.join(baseScriptsPath, '04_Archivos', 'Limpieza_Extrema_Global.py')
-};
+// El mapeo de scripts ahora es dinámico a través de listarScripts()
+// y el controlador de ejecución dinámica en el servidor.
 
 const buildExecutionCommand = (absolutePath, args) => {
     const extension = path.extname(absolutePath).toLowerCase();
@@ -212,15 +208,11 @@ const resolveSafeScriptPath = (carpeta, archivo) => {
     return absolutePath;
 };
 
+// El scriptId fijo ha sido deprecado en favor de la ejecución dinámica.
+// Se mantiene por retrocompatibilidad con botones antiguos si existieran.
 const ejecutarScript = async (scriptId, socket) => {
     try {
-        const absolutePath = scripts[scriptId];
-
-        if (!absolutePath) {
-            console.error(`[Error] Script no encontrado: ${scriptId}`);
-            return;
-        }
-
+        const absolutePath = path.join(baseScriptsPath, scriptId); // Intento de fallback
         await ensureFileExists(absolutePath);
         await runScriptExternally(scriptId, absolutePath, '');
     } catch (error) {
@@ -306,3 +298,9 @@ async function listarScripts() {
         throw error;
     }
 }
+
+module.exports = {
+    ejecutarScript,
+    ejecutarScriptDinamico,
+    listarScripts
+};

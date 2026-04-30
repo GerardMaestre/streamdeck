@@ -429,18 +429,19 @@ const runSafely = async (socket, eventName, action, ack) => {
     }
 };
 
+const throttle = (fn, delay) => {
+    let last = 0;
+    return (...args) => {
+        const now = Date.now();
+        if (now - last > delay) {
+            last = now;
+            fn(...args);
+        }
+    };
+};
+
 io.on('connection', (socket) => {
     log('[Socket] Centro de mando conectado');
-    const throttle = (fn, delay) => {
-  let last = 0;
-  return (...args) => {
-    const now = Date.now();
-    if (now - last > delay) {
-      last = now;
-      fn(...args);
-    }
-  };
-};
 
     // Emitir versión actual para sincronización de clientes (cache bust)
     socket.emit('server_version', { version: SERVER_START_TS });

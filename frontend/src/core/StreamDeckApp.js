@@ -27,7 +27,9 @@ export class StreamDeckApp {
         // --- Global error handler ---
         window.addEventListener('error', (e) => {
             console.error('GLOBAL FRONTEND ERROR:', e.message);
-            document.body.innerHTML += `<div style="position:fixed;top:0;left:0;z-index:9999;background:red;color:white;padding:10px;">${e.message}</div>`;
+            if (this.toast) {
+                this.toast.show(`Error: ${e.message}`, 'error', 5000);
+            }
         });
 
         // --- Security token ---
