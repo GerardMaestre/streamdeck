@@ -4,10 +4,10 @@
 # PERM: admin
 # MODE: external
 
+import os
 import subprocess
 import random
 import ctypes
-import sys
 import sys
 try:
     if sys.stdout is None or getattr(sys.stdout, 'name', '').upper() == 'NUL':

@@ -531,17 +531,53 @@ export class StreamDeckApp {
                 <p>🔒 Acceso Protegido: Introduce el Token de Seguridad para continuar.</p>
                 <input type="password" class="auth-input" id="auth-password" placeholder="••••••••" autofocus>
                 <button class="auth-btn" id="auth-submit">Desbloquear Sistema</button>
+                <p id="auth-error-msg" style="display:none;color:#ff7a7a;font-size:.9rem;margin-top:10px;"></p>
             </div>
         `;
         document.body.appendChild(authOverlay);
 
         const input = document.getElementById('auth-password');
         const submit = document.getElementById('auth-submit');
-        const doLogin = () => {
+        const errorMsg = document.getElementById('auth-error-msg');
+
+        const setError = (message) => {
+            if (!errorMsg) return;
+            errorMsg.textContent = message;
+            errorMsg.style.display = message ? 'block' : 'none';
+        };
+
+        const doLogin = async () => {
             const token = input.value.trim();
-            if (token) {
+            if (!token) {
+                setError('Introduce un token válido.');
+                return;
+            }
+
+            submit.disabled = true;
+            submit.textContent = 'Verificando...';
+            setError('');
+
+            try {
+                const res = await fetch('/api/config', { headers: { 'Authorization': token } });
+                if (!res.ok) {
+                    if (res.status === 403) {
+                        setError('Token incorrecto. Revisa el valor y vuelve a intentarlo.');
+                    } else if (res.status === 429) {
+                        setError('Demasiados intentos. Espera 1 minuto e inténtalo de nuevo.');
+                    } else {
+                        setError(`No se pudo validar el acceso (HTTP ${res.status}).`);
+                    }
+                    return;
+                }
+
                 localStorage.setItem('streamdeck_token', token);
                 window.location.reload();
+            } catch (error) {
+                console.error('Error validando token:', error);
+                setError('Error de red al validar token. Verifica conexión con el servidor.');
+            } finally {
+                submit.disabled = false;
+                submit.textContent = 'Desbloquear Sistema';
             }
         };
         submit.addEventListener('click', doLogin);

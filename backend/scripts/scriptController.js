@@ -10,6 +10,19 @@ const {
 } = require('../utils/utils');
 
 const baseScriptsPath = getDataPath('scripts');
+const ALLOWED_DYNAMIC_SCRIPT_FOLDERS = new Set([
+    '01_Mantenimiento',
+    '02_Gaming',
+    '03_Seguridad',
+    '04_Archivos',
+    '06_Descargas',
+    '07_Personalizacion'
+]);
+const ALLOWED_DYNAMIC_SCRIPT_EXTENSIONS = new Set(['.py', '.bat', '.cmd', '.ps1', '.sh']);
+const MAX_ARGS_COUNT = 16;
+const MAX_ARG_LENGTH = 256;
+const SCRIPT_MAX_RUNTIME_MS = 10 * 60 * 1000;
+const RUNNING_SCRIPTS = new Set();
 
 const ensureFileExists = async (absolutePath) => {
     await fs.access(absolutePath);
@@ -20,15 +33,6 @@ const scripts = {
     limpiar_shaders: path.join(baseScriptsPath, '02_Gaming', 'Purgador_Shaders.py'),
     modo_tryhard: path.join(baseScriptsPath, '02_Gaming', 'Despertar_Nucleos.bat'),
     limpieza_global: path.join(baseScriptsPath, '04_Archivos', 'Limpieza_Extrema_Global.py')
-};
-
-const quoteForCmd = (value) => {
-    if (typeof value !== 'string') return value;
-    if (value === '') return '""';
-    if (/\s/.test(value) && !/^".*"$/.test(value)) {
-        return `"${value}"`;
-    }
-    return value;
 };
 
 const buildExecutionCommand = (absolutePath, args) => {
@@ -141,6 +145,18 @@ const runScriptExternally = async (scriptLabel, absolutePath, args) => {
             shell: false,
             stdio: ['ignore', 'pipe', 'pipe']
         });
+        let timeoutHandle = null;
+        RUNNING_SCRIPTS.add(child);
+
+        timeoutHandle = setTimeout(() => {
+            if (!child.killed) {
+                child.kill('SIGTERM');
+                if (global.appendTerminalLog) {
+                    global.appendTerminalLog(terminalId, `\n[TIMEOUT] Script finalizado tras exceder ${SCRIPT_MAX_RUNTIME_MS / 1000}s.\n`);
+                }
+            }
+        }, SCRIPT_MAX_RUNTIME_MS);
+        if (typeof timeoutHandle.unref === 'function') timeoutHandle.unref();
 
         child.stdout.on('data', (data) => {
             if (global.appendTerminalLog) global.appendTerminalLog(terminalId, data.toString());
@@ -151,6 +167,8 @@ const runScriptExternally = async (scriptLabel, absolutePath, args) => {
         });
 
         child.on('close', (code) => {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
+            RUNNING_SCRIPTS.delete(child);
             if (global.appendTerminalLog) {
                 const estado = code === 0 ? 'Exito' : 'Error';
                 global.appendTerminalLog(terminalId, `\n--- [Proceso terminado con código ${code} (${estado})] ---\n`);
@@ -158,13 +176,26 @@ const runScriptExternally = async (scriptLabel, absolutePath, args) => {
         });
 
         child.on('error', (error) => {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
+            RUNNING_SCRIPTS.delete(child);
             if (global.appendTerminalLog) global.appendTerminalLog(terminalId, `\n[FALLO FATAL]: ${error.message}\n`);
             logControllerError(`script:${scriptLabel}`, error);
         });
     } catch (error) {
-        if (global.appendTerminalLog) global.appendTerminalLog(`\n[ERROR INESPERADO]: ${error.message}\n`);
+        if (global.appendTerminalLog) global.appendTerminalLog(terminalId, `\n[ERROR INESPERADO]: ${error.message}\n`);
         logControllerError(`script:${scriptLabel}`, error);
     }
+};
+
+const stopAllRunningScripts = () => {
+    for (const child of RUNNING_SCRIPTS) {
+        try {
+            if (!child.killed) child.kill('SIGTERM');
+        } catch (error) {
+            logControllerError('script:shutdown', error);
+        }
+    }
+    RUNNING_SCRIPTS.clear();
 };
 
 const validateDynamicPayload = (payload = {}) => {
@@ -174,8 +205,40 @@ const validateDynamicPayload = (payload = {}) => {
         throw new Error('Payload inválido para script dinámico');
     }
 
+    const normalizedFolder = carpeta.trim();
+    const normalizedFile = archivo.trim();
+
+    if (!normalizedFolder || !normalizedFile) {
+        throw new Error('Payload inválido: carpeta/archivo vacíos');
+    }
+
+    if (normalizedFolder.includes('/') || normalizedFolder.includes('\\')) {
+        throw new Error('Payload inválido: carpeta no debe contener separadores');
+    }
+
+    if (path.basename(normalizedFile) !== normalizedFile) {
+        throw new Error('Payload inválido: nombre de archivo inválido');
+    }
+
+    if (!ALLOWED_DYNAMIC_SCRIPT_FOLDERS.has(normalizedFolder)) {
+        throw new Error('Carpeta no autorizada para ejecución');
+    }
+
+    const extension = path.extname(normalizedFile).toLowerCase();
+    if (!ALLOWED_DYNAMIC_SCRIPT_EXTENSIONS.has(extension)) {
+        throw new Error('Tipo de script no autorizado');
+    }
+
     const parsedArgs = parseShellArgs(args);
-    return { carpeta, archivo, args: parsedArgs };
+    if (parsedArgs.length > MAX_ARGS_COUNT) {
+        throw new Error(`Demasiados argumentos. Máximo permitido: ${MAX_ARGS_COUNT}`);
+    }
+    for (const arg of parsedArgs) {
+        if (arg.length > MAX_ARG_LENGTH) {
+            throw new Error(`Argumento demasiado largo. Máximo permitido: ${MAX_ARG_LENGTH} caracteres`);
+        }
+    }
+    return { carpeta: normalizedFolder, archivo: normalizedFile, args: parsedArgs };
 };
 
 const resolveSafeScriptPath = (carpeta, archivo) => {
@@ -219,7 +282,8 @@ const ejecutarScriptDinamico = async (payload, socket) => {
 module.exports = {
     ejecutarScript,
     ejecutarScriptDinamico,
-    listarScripts
+    listarScripts,
+    stopAllRunningScripts
 };
 
 async function listarScripts() {

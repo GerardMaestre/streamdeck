@@ -9,7 +9,6 @@ import shutil
 import getpass
 import time
 import sys
-import sys
 try:
     if sys.stdout is None or getattr(sys.stdout, 'name', '').upper() == 'NUL':
         sys.stdout = open('CONOUT$', 'w', encoding='utf-8')

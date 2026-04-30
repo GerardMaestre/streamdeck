@@ -41,7 +41,7 @@ const { initAudioMixer, sendInitialState, handleSocketCommands } = require('./ba
 const { abrirAplicacionOWeb } = require('./backend/launcher/appController');
 const { ejecutarMacro, controlMultimedia } = require('./backend/automation/macroController');
 const { hacerCaptura } = require('./backend/system/captureController');
-const { ejecutarScript, ejecutarScriptDinamico, listarScripts } = require('./backend/scripts/scriptController');
+const { ejecutarScript, ejecutarScriptDinamico, listarScripts, stopAllRunningScripts } = require('./backend/scripts/scriptController');
 const { initDiscordRPC, requestInitialDiscordState, discordToggleMute, discordToggleDeaf, discordSetUserVolume } = require('./backend/discord/discordController');
 const { sendTuyaCommand, controlMultipleDevices } = require('./backend/iot/smart_home');
 const { minimizarTodo, cambiarResolucion, apagarPC, reiniciarPC } = require('./backend/system/systemController');
@@ -87,7 +87,8 @@ const cleanupIpData = () => {
         }
     }
 };
-setInterval(cleanupIpData, 60 * 1000);
+const cleanupTimer = setInterval(cleanupIpData, 60 * 1000);
+if (typeof cleanupTimer.unref === 'function') cleanupTimer.unref();
 
 const rateLimiter = (req, res, next) => {
     // Solo aplicamos el rate limit a rutas de API autenticadas.
@@ -215,6 +216,15 @@ const verifyAccess = (token, isLocal) => {
     return token === SECURITY_TOKEN;
 };
 
+const ensureAuthorizedRequest = (req, res) => {
+    const token = getRequestToken(req);
+    const isLocal = isLocalAddress(req.ip);
+    if (verifyAccess(token, isLocal)) return true;
+    registerBadAuthAttempt(req.ip);
+    res.status(403).json({ error: 'Acceso denegado' });
+    return false;
+};
+
 // Middleware de Socket.io para verificar el token
 io.use((socket, next) => {
     const token = getSocketToken(socket);
@@ -230,28 +240,50 @@ io.use((socket, next) => {
 
 // Dynamic service worker route: inject build timestamp for cache busting
 const SERVER_START_TS = Date.now().toString(36);
+let cachedIndexContent = null;
+let cachedSwContent = null;
+
+const invalidateFrontendCache = () => {
+    cachedIndexContent = null;
+    cachedSwContent = null;
+};
+
+try {
+    const frontendRoot = getDataPath('frontend');
+    fs.watch(frontendRoot, { recursive: true, persistent: false }, () => {
+        invalidateFrontendCache();
+    });
+} catch (e) {
+    Logger.warn('No se pudo establecer watcher en frontend para invalidar cache', e);
+}
 // Dynamic index.html route for cache busting
-app.get(['/', '/index.html'], (req, res) => {
+app.get(['/', '/index.html'], async (req, res) => {
     const indexPath = getDataPath('frontend/index.html');
     try {
-        let content = fs.readFileSync(indexPath, 'utf8');
-        content = content.replace(/dist\/app\.bundle\.js/g, `dist/app.bundle.js?v=${SERVER_START_TS}`);
-        content = content.replace(/\.css/g, `.css?v=${SERVER_START_TS}`);
+        if (!cachedIndexContent) {
+            const raw = await fs.promises.readFile(indexPath, 'utf8');
+            cachedIndexContent = raw
+                .replace(/dist\/app\.bundle\.js/g, `dist/app.bundle.js?v=${SERVER_START_TS}`)
+                .replace(/\.css/g, `.css?v=${SERVER_START_TS}`);
+        }
         res.setHeader('Content-Type', 'text/html');
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-        res.send(content);
+        res.send(cachedIndexContent);
     } catch (err) {
         res.status(500).send('Error loading index.html');
     }
 });
 
-app.get('/sw.js', (req, res) => {
+app.get('/sw.js', async (req, res) => {
     const swPath = getDataPath('frontend/sw.js');
     try {
-        const swContent = fs.readFileSync(swPath, 'utf8').replace('__BUILD_TS__', SERVER_START_TS);
+        if (!cachedSwContent) {
+            const raw = await fs.promises.readFile(swPath, 'utf8');
+            cachedSwContent = raw.replace('__BUILD_TS__', SERVER_START_TS);
+        }
         res.setHeader('Content-Type', 'application/javascript');
         res.setHeader('Cache-Control', 'no-cache, no-store');
-        res.send(swContent);
+        res.send(cachedSwContent);
     } catch (err) {
         res.status(500).send('// SW load error');
     }
@@ -274,12 +306,7 @@ app.use(express.static(getDataPath('frontend'), {
 
 // Endpoint para entregar el JSON de configuracion de los botones
 app.get('/api/config', async (req, res) => {
-    const token = getRequestToken(req);
-    const isLocal = isLocalAddress(req.ip);
-
-    if (!verifyAccess(token, isLocal)) {
-        return res.status(403).json({ error: 'Acceso denegado' });
-    }
+    if (!ensureAuthorizedRequest(req, res)) return;
 
     try {
         if (configCache) {
@@ -299,13 +326,7 @@ app.get('/api/config', async (req, res) => {
 
 // Endpoint para guardar config reordenada (Modo Edicion Tablet)
 app.post('/api/config', async (req, res) => {
-    const token = getRequestToken(req);
-    const isLocal = isLocalAddress(req.ip);
-
-    if (!verifyAccess(token, isLocal)) {
-        registerBadAuthAttempt(req.ip);
-        return res.status(403).json({ error: 'Acceso denegado' });
-    }
+    if (!ensureAuthorizedRequest(req, res)) return;
 
     try {
         const newConfig = req.body;
@@ -337,13 +358,7 @@ app.post('/api/config', async (req, res) => {
 });
 
 app.get('/api/app-state', async (req, res) => {
-    const token = getRequestToken(req);
-    const isLocal = isLocalAddress(req.ip);
-
-    if (!verifyAccess(token, isLocal)) {
-        registerBadAuthAttempt(req.ip);
-        return res.status(403).json({ error: 'Acceso denegado' });
-    }
+    if (!ensureAuthorizedRequest(req, res)) return;
 
     try {
         return res.json(appStateStore.get() || {});
@@ -354,13 +369,7 @@ app.get('/api/app-state', async (req, res) => {
 });
 
 app.post('/api/app-state', async (req, res) => {
-    const token = getRequestToken(req);
-    const isLocal = isLocalAddress(req.ip);
-
-    if (!verifyAccess(token, isLocal)) {
-        registerBadAuthAttempt(req.ip);
-        return res.status(403).json({ error: 'Acceso denegado' });
-    }
+    if (!ensureAuthorizedRequest(req, res)) return;
 
     try {
         const payload = req.body;
@@ -407,8 +416,6 @@ const runSafely = async (socket, eventName, action, ack) => {
 
 io.on('connection', (socket) => {
     log('[Socket] Centro de mando conectado');
-    let aiRequestInFlight = false;
-
     const throttle = (fn, delay) => {
   let last = 0;
   return (...args) => {
@@ -644,13 +651,7 @@ server.listen(PORT, () => {
 
 // Endpoint para listar scripts disponibles en el directorio `scripts`
 app.get('/api/scripts', async (req, res) => {
-    // Verificacion de seguridad para la API
-    const token = getRequestToken(req);
-    const isLocal = isLocalAddress(req.ip);
-
-    if (!verifyAccess(token, isLocal)) {
-        return res.status(403).json({ error: 'Acceso denegado' });
-    }
+    if (!ensureAuthorizedRequest(req, res)) return;
 
     try {
         const now = Date.now();
@@ -667,3 +668,14 @@ app.get('/api/scripts', async (req, res) => {
         res.status(500).json({ error: 'No se pudieron listar los scripts.' });
     }
 });
+
+const gracefulShutdown = () => {
+    try {
+        stopAllRunningScripts();
+    } catch (error) {
+        Logger.error('Error during script shutdown', error);
+    }
+};
+
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);
