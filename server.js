@@ -41,11 +41,10 @@ const { initAudioMixer, sendInitialState, handleSocketCommands } = require('./ba
 const { abrirAplicacionOWeb } = require('./backend/launcher/appController');
 const { ejecutarMacro, controlMultimedia } = require('./backend/automation/macroController');
 const { hacerCaptura } = require('./backend/system/captureController');
-const { ejecutarScript, ejecutarScriptDinamico, listarScripts } = require('./backend/scripts/scriptController');
+const { ejecutarScript, ejecutarScriptDinamico, listarScripts, stopAllRunningScripts } = require('./backend/scripts/scriptController');
 const { initDiscordRPC, requestInitialDiscordState, discordToggleMute, discordToggleDeaf, discordSetUserVolume } = require('./backend/discord/discordController');
 const { sendTuyaCommand, controlMultipleDevices } = require('./backend/iot/smart_home');
 const { minimizarTodo, cambiarResolucion, apagarPC, reiniciarPC } = require('./backend/system/systemController');
-const { handleAutoClickerSocket, destroyAutoClicker } = require('./backend/automation/autoClickerController');
 
 // --- CACHE DE SISTEMA ---
 let configCache = null;
@@ -217,6 +216,17 @@ const verifyAccess = (token, isLocal) => {
     return token === SECURITY_TOKEN;
 };
 
+const ensureAuthorizedRequest = (req, res) => {
+    const token = getRequestToken(req);
+    const isLocal = isLocalAddress(req.ip);
+    if (verifyAccess(token, isLocal)) return true;
+    registerBadAuthAttempt(req.ip);
+    Logger.warn(`[Auth] Acceso denegado en ${req.method} ${req.path} desde ${req.ip}`);
+    res.setHeader('WWW-Authenticate', 'Bearer realm="StreamDeckPro"');
+    res.status(403).json({ error: 'Acceso denegado' });
+    return false;
+};
+
 // Middleware de Socket.io para verificar el token
 io.use((socket, next) => {
     const token = getSocketToken(socket);
@@ -298,12 +308,7 @@ app.use(express.static(getDataPath('frontend'), {
 
 // Endpoint para entregar el JSON de configuracion de los botones
 app.get('/api/config', async (req, res) => {
-    const token = getRequestToken(req);
-    const isLocal = isLocalAddress(req.ip);
-
-    if (!verifyAccess(token, isLocal)) {
-        return res.status(403).json({ error: 'Acceso denegado' });
-    }
+    if (!ensureAuthorizedRequest(req, res)) return;
 
     try {
         if (configCache) {
@@ -323,13 +328,7 @@ app.get('/api/config', async (req, res) => {
 
 // Endpoint para guardar config reordenada (Modo Edicion Tablet)
 app.post('/api/config', async (req, res) => {
-    const token = getRequestToken(req);
-    const isLocal = isLocalAddress(req.ip);
-
-    if (!verifyAccess(token, isLocal)) {
-        registerBadAuthAttempt(req.ip);
-        return res.status(403).json({ error: 'Acceso denegado' });
-    }
+    if (!ensureAuthorizedRequest(req, res)) return;
 
     try {
         const newConfig = req.body;
@@ -351,7 +350,7 @@ app.post('/api/config', async (req, res) => {
         );
 
         configCache = newConfig;
-            log('[Config] config.json actualizado desde la tablet');
+        log('[Config] config.json actualizado desde la tablet');
 
         return res.json({ ok: true });
     } catch (err) {
@@ -361,13 +360,7 @@ app.post('/api/config', async (req, res) => {
 });
 
 app.get('/api/app-state', async (req, res) => {
-    const token = getRequestToken(req);
-    const isLocal = isLocalAddress(req.ip);
-
-    if (!verifyAccess(token, isLocal)) {
-        registerBadAuthAttempt(req.ip);
-        return res.status(403).json({ error: 'Acceso denegado' });
-    }
+    if (!ensureAuthorizedRequest(req, res)) return;
 
     try {
         return res.json(appStateStore.get() || {});
@@ -378,13 +371,7 @@ app.get('/api/app-state', async (req, res) => {
 });
 
 app.post('/api/app-state', async (req, res) => {
-    const token = getRequestToken(req);
-    const isLocal = isLocalAddress(req.ip);
-
-    if (!verifyAccess(token, isLocal)) {
-        registerBadAuthAttempt(req.ip);
-        return res.status(403).json({ error: 'Acceso denegado' });
-    }
+    if (!ensureAuthorizedRequest(req, res)) return;
 
     try {
         const payload = req.body;
@@ -429,19 +416,18 @@ const runSafely = async (socket, eventName, action, ack) => {
     }
 };
 
-const throttle = (fn, delay) => {
-    let last = 0;
-    return (...args) => {
-        const now = Date.now();
-        if (now - last > delay) {
-            last = now;
-            fn(...args);
-        }
-    };
-};
-
 io.on('connection', (socket) => {
     log('[Socket] Centro de mando conectado');
+    const throttle = (fn, delay) => {
+  let last = 0;
+  return (...args) => {
+    const now = Date.now();
+    if (now - last > delay) {
+      last = now;
+      fn(...args);
+    }
+  };
+};
 
     // Emitir versión actual para sincronización de clientes (cache bust)
     socket.emit('server_version', { version: SERVER_START_TS });
@@ -454,9 +440,6 @@ io.on('connection', (socket) => {
     socket.on('mixer_bind_commands', async (ack) => {
         await runSafely(socket, 'mixer_bind_commands', () => handleSocketCommands(socket), ack);
     });
-
-    // AutoClicker
-    handleAutoClickerSocket(socket, io);
 
     socket.on('discord_initial_state', async (ack) => {
         await runSafely(socket, 'discord_initial_state', () => requestInitialDiscordState(socket), ack);
@@ -670,13 +653,7 @@ server.listen(PORT, () => {
 
 // Endpoint para listar scripts disponibles en el directorio `scripts`
 app.get('/api/scripts', async (req, res) => {
-    // Verificacion de seguridad para la API
-    const token = getRequestToken(req);
-    const isLocal = isLocalAddress(req.ip);
-
-    if (!verifyAccess(token, isLocal)) {
-        return res.status(403).json({ error: 'Acceso denegado' });
-    }
+    if (!ensureAuthorizedRequest(req, res)) return;
 
     try {
         const now = Date.now();
@@ -693,3 +670,14 @@ app.get('/api/scripts', async (req, res) => {
         res.status(500).json({ error: 'No se pudieron listar los scripts.' });
     }
 });
+
+const gracefulShutdown = () => {
+    try {
+        stopAllRunningScripts();
+    } catch (error) {
+        Logger.error('Error during script shutdown', error);
+    }
+};
+
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);

@@ -19,13 +19,21 @@ const ALLOWED_DYNAMIC_SCRIPT_FOLDERS = new Set([
     '07_Personalizacion'
 ]);
 const ALLOWED_DYNAMIC_SCRIPT_EXTENSIONS = new Set(['.py', '.bat', '.cmd', '.ps1', '.sh']);
+const MAX_ARGS_COUNT = 16;
+const MAX_ARG_LENGTH = 256;
+const SCRIPT_MAX_RUNTIME_MS = 10 * 60 * 1000;
+const RUNNING_SCRIPTS = new Set();
 
 const ensureFileExists = async (absolutePath) => {
     await fs.access(absolutePath);
 };
 
-// El mapeo de scripts ahora es dinámico a través de listarScripts()
-// y el controlador de ejecución dinámica en el servidor.
+const scripts = {
+    purgar_ram: path.join(baseScriptsPath, '02_Gaming', 'Purgar_ram.py'),
+    limpiar_shaders: path.join(baseScriptsPath, '02_Gaming', 'Purgador_Shaders.py'),
+    modo_tryhard: path.join(baseScriptsPath, '02_Gaming', 'Despertar_Nucleos.bat'),
+    limpieza_global: path.join(baseScriptsPath, '04_Archivos', 'Limpieza_Extrema_Global.py')
+};
 
 const buildExecutionCommand = (absolutePath, args) => {
     const extension = path.extname(absolutePath).toLowerCase();
@@ -137,6 +145,18 @@ const runScriptExternally = async (scriptLabel, absolutePath, args) => {
             shell: false,
             stdio: ['ignore', 'pipe', 'pipe']
         });
+        let timeoutHandle = null;
+        RUNNING_SCRIPTS.add(child);
+
+        timeoutHandle = setTimeout(() => {
+            if (!child.killed) {
+                child.kill('SIGTERM');
+                if (global.appendTerminalLog) {
+                    global.appendTerminalLog(terminalId, `\n[TIMEOUT] Script finalizado tras exceder ${SCRIPT_MAX_RUNTIME_MS / 1000}s.\n`);
+                }
+            }
+        }, SCRIPT_MAX_RUNTIME_MS);
+        if (typeof timeoutHandle.unref === 'function') timeoutHandle.unref();
 
         child.stdout.on('data', (data) => {
             if (global.appendTerminalLog) global.appendTerminalLog(terminalId, data.toString());
@@ -147,6 +167,8 @@ const runScriptExternally = async (scriptLabel, absolutePath, args) => {
         });
 
         child.on('close', (code) => {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
+            RUNNING_SCRIPTS.delete(child);
             if (global.appendTerminalLog) {
                 const estado = code === 0 ? 'Exito' : 'Error';
                 global.appendTerminalLog(terminalId, `\n--- [Proceso terminado con código ${code} (${estado})] ---\n`);
@@ -154,6 +176,8 @@ const runScriptExternally = async (scriptLabel, absolutePath, args) => {
         });
 
         child.on('error', (error) => {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
+            RUNNING_SCRIPTS.delete(child);
             if (global.appendTerminalLog) global.appendTerminalLog(terminalId, `\n[FALLO FATAL]: ${error.message}\n`);
             logControllerError(`script:${scriptLabel}`, error);
         });
@@ -161,6 +185,17 @@ const runScriptExternally = async (scriptLabel, absolutePath, args) => {
         if (global.appendTerminalLog) global.appendTerminalLog(terminalId, `\n[ERROR INESPERADO]: ${error.message}\n`);
         logControllerError(`script:${scriptLabel}`, error);
     }
+};
+
+const stopAllRunningScripts = () => {
+    for (const child of RUNNING_SCRIPTS) {
+        try {
+            if (!child.killed) child.kill('SIGTERM');
+        } catch (error) {
+            logControllerError('script:shutdown', error);
+        }
+    }
+    RUNNING_SCRIPTS.clear();
 };
 
 const validateDynamicPayload = (payload = {}) => {
@@ -195,6 +230,14 @@ const validateDynamicPayload = (payload = {}) => {
     }
 
     const parsedArgs = parseShellArgs(args);
+    if (parsedArgs.length > MAX_ARGS_COUNT) {
+        throw new Error(`Demasiados argumentos. Máximo permitido: ${MAX_ARGS_COUNT}`);
+    }
+    for (const arg of parsedArgs) {
+        if (arg.length > MAX_ARG_LENGTH) {
+            throw new Error(`Argumento demasiado largo. Máximo permitido: ${MAX_ARG_LENGTH} caracteres`);
+        }
+    }
     return { carpeta: normalizedFolder, archivo: normalizedFile, args: parsedArgs };
 };
 
@@ -208,11 +251,15 @@ const resolveSafeScriptPath = (carpeta, archivo) => {
     return absolutePath;
 };
 
-// El scriptId fijo ha sido deprecado en favor de la ejecución dinámica.
-// Se mantiene por retrocompatibilidad con botones antiguos si existieran.
 const ejecutarScript = async (scriptId, socket) => {
     try {
-        const absolutePath = path.join(baseScriptsPath, scriptId); // Intento de fallback
+        const absolutePath = scripts[scriptId];
+
+        if (!absolutePath) {
+            console.error(`[Error] Script no encontrado: ${scriptId}`);
+            return;
+        }
+
         await ensureFileExists(absolutePath);
         await runScriptExternally(scriptId, absolutePath, '');
     } catch (error) {
@@ -235,7 +282,8 @@ const ejecutarScriptDinamico = async (payload, socket) => {
 module.exports = {
     ejecutarScript,
     ejecutarScriptDinamico,
-    listarScripts
+    listarScripts,
+    stopAllRunningScripts
 };
 
 async function listarScripts() {
@@ -298,9 +346,3 @@ async function listarScripts() {
         throw error;
     }
 }
-
-module.exports = {
-    ejecutarScript,
-    ejecutarScriptDinamico,
-    listarScripts
-};
