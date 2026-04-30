@@ -56,6 +56,39 @@
 4. **Configurar Botones:**
    Edita `config.json` para personalizar tus páginas y acciones (puedes usar `config.example.json` como guía).
 
+
+## 🌍 Acceso remoto seguro (sin instalar nada en el dispositivo cliente)
+
+Si quieres entrar desde **cualquier dispositivo** (móvil, tablet, portátil) sin instalar app, la forma recomendada es:
+
+1. **Servidor en tu PC (empaquetado)**
+   * Ejecuta tu EXE de Stream Deck Pro en el PC que controlará todo.
+   * No necesitas tener VS Code/Visual Studio abiertos: solo la app empaquetada.
+
+2. **Clave privada (token) fuera de GitHub**
+   * Define `SECURITY_TOKEN` en `.env` (o en variable de entorno del sistema).
+   * `.env` ya está ignorado por Git (`.gitignore`), así que no se sube al repo.
+   * Usa un token largo y aleatorio (mínimo 32 caracteres).
+
+3. **Publicar de forma segura (HTTPS + túnel)**
+   * No abras puertos “a pelo” en el router.
+   * Usa un túnel seguro tipo **Cloudflare Tunnel** o **Tailscale Funnel** para exponer tu `http://localhost:3000` con HTTPS y autenticación adicional.
+
+4. **Login en navegador**
+   * Desde cualquier dispositivo, abres la URL HTTPS del túnel.
+   * La UI pedirá el token de seguridad al entrar.
+
+### Ejemplo de token seguro
+```txt
+SECURITY_TOKEN=8Vw!r9vK2mQ#xL1zP4tN7aD@fH3sJ6uB
+```
+
+### Buenas prácticas anti-filtración
+* Nunca subas `.env` ni pegues tokens en commits, issues o capturas.
+* Rota el token si sospechas filtración.
+* Mantén firewall activo y limita quién puede acceder al túnel.
+* Si vas a exponer por Internet, activa además una capa extra (SSO/IP allowlist) en el proveedor del túnel.
+
 ## 🚀 Uso
 
 ### Desarrollo
