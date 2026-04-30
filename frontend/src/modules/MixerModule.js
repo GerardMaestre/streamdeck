@@ -160,43 +160,6 @@ export class MixerModule {
             this.updateSliderUI(sanitizeId(data.name), data);
         });
 
-        this.socket.on('session_added', (sessionData) => {
-            if (this.lastMixerState) {
-                const existing = this.lastMixerState.sessions.find(s => s.name === sessionData.name);
-                if (!existing) {
-                    this.lastMixerState.sessions.push({
-                        name: sessionData.name,
-                        volume: sessionData.volume,
-                        mute: sessionData.mute
-                    });
-                } else {
-                    existing.volume = sessionData.volume;
-                    existing.mute = sessionData.mute;
-                }
-            }
-
-            const appsContainer = document.getElementById('app-mixers');
-            if (appsContainer) {
-                const sid = sanitizeId(sessionData.name);
-                const existingRow = document.getElementById(`mixer-row-${sid}`);
-                if (existingRow) {
-                    existingRow.classList.remove('fade-out');
-                    this.updateSliderUI(sid, { type: 'volume', value: sessionData.volume });
-                    this.updateSliderUI(sid, { type: 'mute', value: sessionData.mute });
-                } else {
-                    appsContainer.appendChild(this.createMixerRow(sessionData));
-                    requestAnimationFrame(() => {
-                        this.updateSliderUI(sid, { type: 'volume', value: sessionData.volume });
-                        this.updateSliderUI(sid, { type: 'mute', value: sessionData.mute });
-                    });
-                }
-            }
-        });
-
-        this.socket.on('session_removed', (sessionData) => {
-            this._handleSessionRemoved(sessionData.name);
-        });
-
         this.socket.on('mixer_batch', (batch) => {
             if (!this.lastMixerState) return;
             
@@ -225,6 +188,11 @@ export class MixerModule {
                             const sid = sanitizeId(sessionData.name);
                             if (!document.getElementById(`mixer-row-${sid}`)) {
                                 appsContainer.appendChild(this.createMixerRow(sessionData));
+                                // Posicionar fader inmediatamente tras inserción en el DOM
+                                const controller = this._faderControllers[this._faderControllers.length - 1];
+                                if (controller) {
+                                    requestAnimationFrame(() => controller.setPercent(sessionData.volume, true));
+                                }
                             }
                         }
                     } else {
@@ -248,6 +216,9 @@ export class MixerModule {
             this.lastMixerState.sessions = this.lastMixerState.sessions.filter(s => s.name !== name);
         }
         const sid = sanitizeId(name);
+        // Limpiar referencias cacheadas para evitar memory leak
+        delete this.mixerRefs[sid];
+        delete this[`last_mixer_${sid}`];
         const row = document.getElementById(`mixer-row-${sid}`);
         if (row && !row.classList.contains('fade-out')) {
             row.classList.add('fade-out');

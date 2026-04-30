@@ -16,6 +16,7 @@ const pollGroupArrayPool = [];
 const MAX_POLL_GROUPS = 256;
 for (let i = 0; i < MAX_POLL_GROUPS; i += 1) pollGroupArrayPool.push([]);
 const labelCache = new Map(); // Caché para nombres de aplicaciones
+const LABEL_CACHE_MAX_SIZE = 500; // Límite para evitar crecimiento indefinido
 const boundSockets = new Set(); // Guard para evitar listeners duplicados por socket
 let globalIo = null;
 
@@ -91,6 +92,8 @@ function getAppLabel(session) {
     // Si ya lo tenemos en caché por el par (rawName, windowTitle)
     const cacheKey = `${rawName}|${windowTitle}`;
     if (labelCache.has(cacheKey)) return labelCache.get(cacheKey);
+    // Evitar crecimiento indefinido del caché
+    if (labelCache.size >= LABEL_CACHE_MAX_SIZE) labelCache.clear();
 
     const titleLower = windowTitle.toLowerCase();
     const pathLower = rawName.toLowerCase();
@@ -287,9 +290,9 @@ function initAudioMixer(io) {
                         pollSessions(io);
                         io.emit('mixer_initial_state', getInitialStateData());
                     } else {
-                        // Refrescamos la referencia para asegurar sesiones actuales
-                        defaultDevice = currentDefault;
-                        pollSessions(io);
+                        // Usar referencia fresca para sesiones actualizadas
+                        // SIN reemplazar defaultDevice para preservar los listeners activos
+                        pollSessions(io, currentDefault);
                     }
                 }
             } catch (err) {
@@ -315,8 +318,9 @@ function initAudioMixer(io) {
     } catch (error) {}
 }
 
-function pollSessions(io) {
-    if (!defaultDevice) return;
+function pollSessions(io, deviceOverride) {
+    const pollDevice = deviceOverride || defaultDevice;
+    if (!pollDevice) return;
 
     // Reusar las colecciones para evitar nuevas asignaciones cada 250ms
     pollGroupedData.forEach((group) => {
@@ -328,7 +332,7 @@ function pollSessions(io) {
 
     const batchUpdates = { sessions: [], removed: [] };
 
-    const currentSessions = defaultDevice.sessions;
+    const currentSessions = pollDevice.sessions;
     if (visibleMixerClients > 0) refreshVisibleProcessLabels();
 
     // 1. Agrupación eficiente
@@ -370,12 +374,16 @@ function pollSessions(io) {
         // 2. Si las sesiones son inconsistentes entre sí, unificamos al último valor conocido (lastVolume)
         //    para evitar que una nueva sesión que aparece al 100% "gane" a la configuración del usuario.
         if (sessionsSnapshot.length > 0 && stored) {
-            const isBeingDragged = (Date.now() - stored.lastUserUpdate < 1500);
+            const now = Date.now();
+            const isBeingDragged = (now - stored.lastUserUpdate < 1500);
             const needsUnification = sessionsSnapshot.some(s => Math.abs(s.volume * 100 - stored.lastVolume) > 2);
 
             if (needsUnification) {
-                if (isBeingDragged || stored.lastVolume !== undefined) {
-                    // Forzamos la voluntad del usuario (o el último valor guardado) sobre las sesiones
+                // Solo forzar unificación si el usuario interactuó recientemente (30s)
+                // o está arrastrando el slider activamente. Esto permite que cambios
+                // desde el mixer de Windows se reflejen después de 30s.
+                const userSetRecently = stored.lastUserUpdate > 0 && (now - stored.lastUserUpdate < 30000);
+                if (isBeingDragged || userSetRecently) {
                     sessionsSnapshot.forEach(s => {
                         try { s.volume = stored.lastVolume / 100; } catch (_) {}
                     });
@@ -399,7 +407,7 @@ function pollSessions(io) {
 
         if (stored) {
             // Debounce contra cambios manuales del usuario en la tablet (reducido a 600ms para mayor agilidad)
-            if (stored.lastUserUpdate && (Date.now() - stored.lastUserUpdate < 600)) {
+            if (stored.lastUserUpdate && (Date.now() - stored.lastUserUpdate < DEBOUNCE_MS)) {
                 continue;
             }
 
