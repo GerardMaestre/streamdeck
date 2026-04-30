@@ -45,6 +45,7 @@ const { ejecutarScript, ejecutarScriptDinamico, listarScripts } = require('./bac
 const { initDiscordRPC, requestInitialDiscordState, discordToggleMute, discordToggleDeaf, discordSetUserVolume } = require('./backend/discord/discordController');
 const { sendTuyaCommand, controlMultipleDevices } = require('./backend/iot/smart_home');
 const { minimizarTodo, cambiarResolucion, apagarPC, reiniciarPC } = require('./backend/system/systemController');
+const { handleAutoClickerSocket, destroyAutoClicker } = require('./backend/automation/autoClickerController');
 
 // --- CACHE DE SISTEMA ---
 let configCache = null;
@@ -431,6 +432,9 @@ io.on('connection', (socket) => {
     socket.on('mixer_bind_commands', async (ack) => {
         await runSafely(socket, 'mixer_bind_commands', () => handleSocketCommands(socket), ack);
     });
+
+    // AutoClicker
+    handleAutoClickerSocket(socket, io);
 
     socket.on('discord_initial_state', async (ack) => {
         await runSafely(socket, 'discord_initial_state', () => requestInitialDiscordState(socket), ack);

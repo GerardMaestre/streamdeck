@@ -296,7 +296,7 @@ body.dragging-active .mixer-panel {
     flex: 1 !important;
     background: rgba(0, 0, 0, 0.6) !important;
     border-radius: 40px !important;
-    margin: 40px 0 !important;
+    margin: 25px 0 !important;
     position: relative !important;
     cursor: pointer !important;
     border: 1px solid rgba(255, 255, 255, 0.06) !important;
@@ -304,7 +304,6 @@ body.dragging-active .mixer-panel {
     touch-action: none !important;
     user-select: none;
     overflow: visible !important;
-    margin: 25px 0;
     will-change: auto;
     transform: translate3d(0, 0, 0);
     -webkit-transform: translate3d(0, 0, 0);
@@ -380,13 +379,8 @@ body.mixer-low-perf .mixer-panel, body.mixer-low-perf .mixer-panel-fullscreen {
     background: radial-gradient(circle at 35% 35%, #ffffff 0%, #f0f0f0 40%, #d0d0d0 100%) !important;
     border: 5px solid rgba(255, 255, 255, 0.9) !important;
     border-radius: 50% !important;
-    box-shadow: 
-        0 10px 20px rgba(0, 0, 0, 0.4),
-        inset 0 -4px 8px rgba(0, 0, 0, 0.2),
-        inset 0 4px 8px rgba(255, 255, 255, 0.6) !important;
-    transition: none !important;
     box-shadow: none !important;
-    border-color: #fff !important;
+    transition: none !important;
 }
 
 

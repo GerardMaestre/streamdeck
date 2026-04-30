@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Seleccionar Posición</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: rgba(0, 0, 0, 0.35);
+            cursor: crosshair;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        #crosshair-v, #crosshair-h {
+            position: fixed;
+            background: rgba(255, 70, 70, 0.8);
+            pointer-events: none;
+            z-index: 9999;
+        }
+        #crosshair-v { width: 2px; height: 100vh; top: 0; }
+        #crosshair-h { width: 100vw; height: 2px; left: 0; }
+
+        #coords {
+            position: fixed;
+            background: rgba(0, 0, 0, 0.85);
+            color: #fff;
+            font-size: 16px;
+            font-weight: 600;
+            padding: 8px 16px;
+            border-radius: 8px;
+            pointer-events: none;
+            z-index: 10000;
+            white-space: nowrap;
+            border: 1px solid rgba(255, 70, 70, 0.5);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+
+        #instructions {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 24px 40px;
+            border-radius: 16px;
+            font-size: 20px;
+            text-align: center;
+            pointer-events: none;
+            border: 1px solid rgba(255,255,255,0.15);
+            backdrop-filter: blur(10px);
+            animation: fadeIn 0.3s ease;
+        }
+
+        #instructions span {
+            color: #ff4646;
+            font-weight: 700;
+        }
+
+        #instructions small {
+            display: block;
+            margin-top: 8px;
+            opacity: 0.6;
+            font-size: 14px;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+            to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <div id="crosshair-v"></div>
+    <div id="crosshair-h"></div>
+    <div id="coords">X: 0 Y: 0</div>
+    <div id="instructions">
+        Haz <span>clic</span> en la posición deseada para el AutoClicker
+        <small>ESC para cancelar</small>
+    </div>
+
+    <script>
+        const crossV = document.getElementById('crosshair-v');
+        const crossH = document.getElementById('crosshair-h');
+        const coords = document.getElementById('coords');
+        const instructions = document.getElementById('instructions');
+
+        document.addEventListener('mousemove', (e) => {
+            crossV.style.left = e.clientX + 'px';
+            crossH.style.top = e.clientY + 'px';
+            coords.style.left = (e.clientX + 20) + 'px';
+            coords.style.top = (e.clientY + 20) + 'px';
+            coords.textContent = `X: ${e.screenX}  Y: ${e.screenY}`;
+
+            // Fade out instructions on first move
+            if (instructions.style.opacity !== '0') {
+                instructions.style.transition = 'opacity 0.5s';
+                instructions.style.opacity = '0';
+            }
+        });
+
+        document.addEventListener('click', (e) => {
+            e.preventDefault();
+            // Send screen coordinates back to main process
+            if (window.pickerAPI) {
+                window.pickerAPI.pick(e.screenX, e.screenY);
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                if (window.pickerAPI) window.pickerAPI.cancel();
+            }
+        });
+    </script>
+</body>
+</html>
