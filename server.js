@@ -180,7 +180,8 @@ if (IS_DEV) {
 }
 
 // --- SEGURIDAD: TOKEN DE ACCESO ---
-const SECURITY_TOKEN = process.env.SECURITY_TOKEN;
+const SECURITY_TOKEN = (process.env.SECURITY_TOKEN || '').trim();
+console.log(`[Seguridad] Token cargado. Longitud: ${SECURITY_TOKEN.length} caracteres.`);
 
 if (!SECURITY_TOKEN) {
     console.warn('[Seguridad] SECURITY_TOKEN no definido. El servidor aceptará solo conexiones locales. Define SECURITY_TOKEN en .env o en el entorno para habilitar acceso remoto seguro.');
@@ -213,7 +214,11 @@ const getRequestToken = (req) => normalizeAuthToken(req.headers.authorization);
 const verifyAccess = (token, isLocal) => {
     if (isLocal) return true;
     if (!SECURITY_TOKEN) return false;
-    return token === SECURITY_TOKEN;
+    const match = token === SECURITY_TOKEN;
+    if (!match && IS_DEV) {
+        console.log(`[Auth Debug] Token mismatch. Recv: "${token}" | Expected: "${SECURITY_TOKEN}"`);
+    }
+    return match;
 };
 
 const ensureAuthorizedRequest = (req, res) => {
