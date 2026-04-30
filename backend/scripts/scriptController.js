@@ -10,6 +10,15 @@ const {
 } = require('../utils/utils');
 
 const baseScriptsPath = getDataPath('scripts');
+const ALLOWED_DYNAMIC_SCRIPT_FOLDERS = new Set([
+    '01_Mantenimiento',
+    '02_Gaming',
+    '03_Seguridad',
+    '04_Archivos',
+    '06_Descargas',
+    '07_Personalizacion'
+]);
+const ALLOWED_DYNAMIC_SCRIPT_EXTENSIONS = new Set(['.py', '.bat', '.cmd', '.ps1', '.sh']);
 
 const ensureFileExists = async (absolutePath) => {
     await fs.access(absolutePath);
@@ -20,15 +29,6 @@ const scripts = {
     limpiar_shaders: path.join(baseScriptsPath, '02_Gaming', 'Purgador_Shaders.py'),
     modo_tryhard: path.join(baseScriptsPath, '02_Gaming', 'Despertar_Nucleos.bat'),
     limpieza_global: path.join(baseScriptsPath, '04_Archivos', 'Limpieza_Extrema_Global.py')
-};
-
-const quoteForCmd = (value) => {
-    if (typeof value !== 'string') return value;
-    if (value === '') return '""';
-    if (/\s/.test(value) && !/^".*"$/.test(value)) {
-        return `"${value}"`;
-    }
-    return value;
 };
 
 const buildExecutionCommand = (absolutePath, args) => {
@@ -162,7 +162,7 @@ const runScriptExternally = async (scriptLabel, absolutePath, args) => {
             logControllerError(`script:${scriptLabel}`, error);
         });
     } catch (error) {
-        if (global.appendTerminalLog) global.appendTerminalLog(`\n[ERROR INESPERADO]: ${error.message}\n`);
+        if (global.appendTerminalLog) global.appendTerminalLog(terminalId, `\n[ERROR INESPERADO]: ${error.message}\n`);
         logControllerError(`script:${scriptLabel}`, error);
     }
 };
@@ -174,8 +174,32 @@ const validateDynamicPayload = (payload = {}) => {
         throw new Error('Payload inválido para script dinámico');
     }
 
+    const normalizedFolder = carpeta.trim();
+    const normalizedFile = archivo.trim();
+
+    if (!normalizedFolder || !normalizedFile) {
+        throw new Error('Payload inválido: carpeta/archivo vacíos');
+    }
+
+    if (normalizedFolder.includes('/') || normalizedFolder.includes('\\')) {
+        throw new Error('Payload inválido: carpeta no debe contener separadores');
+    }
+
+    if (path.basename(normalizedFile) !== normalizedFile) {
+        throw new Error('Payload inválido: nombre de archivo inválido');
+    }
+
+    if (!ALLOWED_DYNAMIC_SCRIPT_FOLDERS.has(normalizedFolder)) {
+        throw new Error('Carpeta no autorizada para ejecución');
+    }
+
+    const extension = path.extname(normalizedFile).toLowerCase();
+    if (!ALLOWED_DYNAMIC_SCRIPT_EXTENSIONS.has(extension)) {
+        throw new Error('Tipo de script no autorizado');
+    }
+
     const parsedArgs = parseShellArgs(args);
-    return { carpeta, archivo, args: parsedArgs };
+    return { carpeta: normalizedFolder, archivo: normalizedFile, args: parsedArgs };
 };
 
 const resolveSafeScriptPath = (carpeta, archivo) => {
