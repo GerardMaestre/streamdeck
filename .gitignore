@@ -7,3 +7,4 @@ dist/
 test_output.txt
 scripts/06_Descargas/ffmpeg.exe
 config.json
+data/state.json
