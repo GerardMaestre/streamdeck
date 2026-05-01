@@ -55,6 +55,20 @@ const SCRIPTS_CACHE_TTL = 120000; // 120 segundos (2 minutos)
 
 // Watcher para config.json (Autoclean cache al editar en disco)
 const CONFIG_PATH = getDataPath('config.json');
+
+// INIT: Asegurar que config.json existe. Si no, copiar la plantilla empaquetada.
+if (!fs.existsSync(CONFIG_PATH)) {
+    try {
+        const fallbackPath = getDataPath('backend/data/defaultConfig.json');
+        if (fs.existsSync(fallbackPath)) {
+            fs.copyFileSync(fallbackPath, CONFIG_PATH);
+            Logger.info(`[Config] Plantilla defaultConfig.json restaurada en ${CONFIG_PATH}`);
+        }
+    } catch (e) {
+        Logger.warn('[Config] No se pudo restaurar la plantilla defaultConfig.json', e);
+    }
+}
+
 try {
     let configTimeout;
 

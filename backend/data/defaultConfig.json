@@ -1,0 +1,492 @@
+{
+    "carouselPages": [
+        "main",
+        "main2"
+    ],
+    "pages": {
+        "main2": [
+            {
+                "label": "Utilidades",
+                "icon": "🛠️",
+                "color": "linear-gradient(145deg, #16a085, #1abc9c)",
+                "type": "folder",
+                "targetPage": "script_utilidades"
+            },
+            {
+                "label": "Privacidad",
+                "icon": "🔒",
+                "color": "linear-gradient(145deg, #c0392b, #e74c3c)",
+                "type": "folder",
+                "targetPage": "script_privacidad"
+            },
+            {
+                "label": "Gaming",
+                "icon": "🎮",
+                "color": "linear-gradient(145deg, #8e44ad, #9b59b6)",
+                "type": "folder",
+                "targetPage": "script_gaming"
+            },
+            {
+                "label": "Windows",
+                "icon": "🪟",
+                "color": "linear-gradient(145deg, #2980b9, #34495e)",
+                "type": "folder",
+                "targetPage": "script_mantenimiento"
+            },
+            {
+                "label": "Personaliza",
+                "icon": "🎨",
+                "color": "linear-gradient(145deg, #e84393, #d63031)",
+                "type": "folder",
+                "targetPage": "script_personalizacion"
+            }
+        ],
+        "main": [
+            {
+                "label": "Mezclador",
+                "icon": "🎚️",
+                "color": "linear-gradient(145deg, #1e3c72, #2a5298)",
+                "type": "mixer"
+            },
+            {
+                "label": "Discord",
+                "icon": "🎧",
+                "color": "linear-gradient(145deg, #1e3c72, #4a69bd)",
+                "type": "discord_panel"
+            },
+            {
+                "label": "Domótica",
+                "icon": "💡",
+                "color": "linear-gradient(145deg, #27ae60, #2ecc71)",
+                "type": "domotica_panel"
+            },
+            {
+                "label": "AutoClicker",
+                "icon": "🖱️",
+                "color": "linear-gradient(145deg, #e74c3c, #c0392b)",
+                "type": "autoclicker_panel"
+            },
+            {
+                "label": "Multimedia",
+                "icon": "🎵",
+                "color": "linear-gradient(145deg, #e67e22, #f39c12)",
+                "type": "folder",
+                "targetPage": "multimedia"
+            },
+            {
+                "label": "Captura",
+                "icon": "📸",
+                "color": "linear-gradient(145deg, #1e3a5f, #2563eb)",
+                "type": "action",
+                "channel": "captura",
+                "action": "1"
+            },
+            {
+                "label": "Minimizar",
+                "icon": "🖥️",
+                "color": "linear-gradient(145deg, #2980b9, #2c3e50)",
+                "type": "action",
+                "action": "minimizar_todo",
+                "payload": {}
+            },
+            {
+                "label": "G. Keep",
+                "icon": "📝",
+                "color": "linear-gradient(145deg, #f1c40f, #f39c12)",
+                "type": "action",
+                "action": "abrir_keep",
+                "payload": {}
+            },
+            {
+                "label": "G. Calendar",
+                "icon": "📅",
+                "color": "linear-gradient(145deg, #4285f4, #0f9d58)",
+                "type": "action",
+                "action": "abrir_calendario",
+                "payload": {}
+            },
+            {
+                "label": "Res 1080p",
+                "icon": "📺",
+                "color": "linear-gradient(145deg, #16a085, #27ae60)",
+                "type": "action",
+                "action": "cambiar_resolucion",
+                "payload": {
+                    "width": 1920,
+                    "height": 1080
+                }
+            },
+            {
+                "label": "Res 1440p",
+                "icon": "🖥️",
+                "color": "linear-gradient(145deg, #8e44ad, #2c3e50)",
+                "type": "action",
+                "action": "cambiar_resolucion",
+                "payload": {
+                    "width": 2560,
+                    "height": 1440
+                }
+            },
+            {
+                "label": "Apagar",
+                "icon": "🔌",
+                "color": "linear-gradient(145deg, #ff4b2b, #ff416c)",
+                "type": "action",
+                "action": "apagar_pc",
+                "payload": {}
+            },
+            {
+                "label": "Reiniciar",
+                "icon": "🔄",
+                "color": "linear-gradient(145deg, #f7971e, #ffd200)",
+                "type": "action",
+                "action": "reiniciar_pc",
+                "payload": {}
+            }
+        ],
+        "multimedia": [
+            {
+                "label": "Anterior",
+                "icon": "⏮️",
+                "color": "linear-gradient(145deg, #e67e22, #f39c12)",
+                "type": "action",
+                "channel": "multimedia",
+                "action": "anterior"
+            },
+            {
+                "label": "Play/Pausa",
+                "icon": "⏯️",
+                "color": "linear-gradient(145deg, #e67e22, #f39c12)",
+                "type": "action",
+                "channel": "multimedia",
+                "action": "play_pause"
+            },
+            {
+                "label": "Siguiente",
+                "icon": "⏭️",
+                "color": "linear-gradient(145deg, #e67e22, #f39c12)",
+                "type": "action",
+                "channel": "multimedia",
+                "action": "siguiente"
+            }
+        ],
+        "script_mantenimiento": [
+            {
+                "label": "Activar Win 11",
+                "icon": "🔑",
+                "color": "linear-gradient(145deg, #2980b9, #3498db)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "01_Mantenimiento",
+                    "archivo": "Activar_Windows_11_Universal.bat"
+                }
+            },
+            {
+                "label": "Quitar Bloatware",
+                "icon": "🗑️",
+                "color": "linear-gradient(145deg, #2980b9, #3498db)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "01_Mantenimiento",
+                    "archivo": "Desinstalador_Bloatware.bat"
+                }
+            },
+            {
+                "label": "God Mode",
+                "icon": "⚙️",
+                "color": "linear-gradient(145deg, #2980b9, #3498db)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "01_Mantenimiento",
+                    "archivo": "god_mode.bat"
+                }
+            },
+            {
+                "label": "Salud Disco",
+                "icon": "💾",
+                "color": "linear-gradient(145deg, #2980b9, #3498db)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "01_Mantenimiento",
+                    "archivo": "Salud_Disco.bat"
+                }
+            }
+        ],
+        "script_gaming": [
+            {
+                "label": "Limpiar RAM",
+                "icon": "🧠",
+                "color": "linear-gradient(145deg, #8e44ad, #9b59b6)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "02_Gaming",
+                    "archivo": "Purgar_ram.py"
+                }
+            },
+            {
+                "label": "Anti-Stuttering",
+                "icon": "📉",
+                "color": "linear-gradient(145deg, #8e44ad, #9b59b6)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "02_Gaming",
+                    "archivo": "Purgador_Shaders.py"
+                }
+            },
+            {
+                "label": "Modo Tryhard",
+                "icon": "🔥",
+                "color": "linear-gradient(145deg, #8e44ad, #9b59b6)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "02_Gaming",
+                    "archivo": "Despertar_Nucleos.bat"
+                }
+            },
+            {
+                "label": "Game Priority",
+                "icon": "🎮",
+                "color": "linear-gradient(145deg, #8e44ad, #9b59b6)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "02_Gaming",
+                    "archivo": "Game_Priority.bat",
+                    "requiresParams": true
+                }
+            },
+            {
+                "label": "Ping Optimizer",
+                "icon": "🌐",
+                "color": "linear-gradient(145deg, #8e44ad, #9b59b6)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "02_Gaming",
+                    "archivo": "Ping_Optimizer.py"
+                }
+            }
+        ],
+        "script_privacidad": [
+            {
+                "label": "Asesino Zombies",
+                "icon": "🧟",
+                "color": "linear-gradient(145deg, #c0392b, #e74c3c)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "03_Seguridad",
+                    "archivo": "Asesino_Zombies.bat"
+                }
+            },
+            {
+                "label": "MAC Spoofer",
+                "icon": "🎭",
+                "color": "linear-gradient(145deg, #c0392b, #e74c3c)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "03_Seguridad",
+                    "archivo": "MAC_Spoofer.py",
+                    "requiresParams": true
+                }
+            },
+            {
+                "label": "Identidad Falsa",
+                "icon": "🕵️",
+                "color": "linear-gradient(145deg, #c0392b, #e74c3c)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "03_Seguridad",
+                    "archivo": "Identidad_Falsa.py"
+                }
+            },
+            {
+                "label": "Panic Button",
+                "icon": "🚨",
+                "color": "linear-gradient(145deg, #c0392b, #e74c3c)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "03_Seguridad",
+                    "archivo": "Panic_Button.py"
+                }
+            }
+        ],
+        "script_utilidades": [
+            {
+                "label": "Limpieza Extrema",
+                "icon": "🧨",
+                "color": "linear-gradient(145deg, #16a085, #1abc9c)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "04_Archivos",
+                    "archivo": "Limpieza_Extrema_Global.py"
+                }
+            },
+            {
+                "label": "Buscador Dupl.",
+                "icon": "📑",
+                "color": "linear-gradient(145deg, #16a085, #1abc9c)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "04_Archivos",
+                    "archivo": "Duplicados.py",
+                    "requiresParams": true
+                }
+            },
+            {
+                "label": "Organizador",
+                "icon": "🗂️",
+                "color": "linear-gradient(145deg, #16a085, #1abc9c)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "04_Archivos",
+                    "archivo": "Organizador.py"
+                }
+            }
+        ],
+        "script_descargas": [
+            {
+                "label": "Servidor Desc.",
+                "icon": "🖥️",
+                "color": "linear-gradient(145deg, #f1c40f, #f39c12)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "06_Descargas",
+                    "archivo": "Servidor_Descargar.py"
+                }
+            },
+            {
+                "label": "Descargador",
+                "icon": "📥",
+                "color": "linear-gradient(145deg, #f1c40f, #f39c12)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "06_Descargas",
+                    "archivo": "Descargador_Maestro.py",
+                    "requiresParams": true
+                }
+            }
+        ],
+        "script_personalizacion": [
+            {
+                "label": "Spicetify",
+                "icon": "🎨",
+                "color": "linear-gradient(145deg, #e84393, #d63031)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "07_Personalizacion",
+                    "archivo": "Spicetify.bat"
+                }
+            },
+            {
+                "label": "Macros",
+                "icon": "⌨️",
+                "color": "linear-gradient(145deg, #e84393, #d63031)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "07_Personalizacion",
+                    "archivo": "Inyector_Macros.py",
+                    "requiresParams": true
+                }
+            },
+            {
+                "label": "Cloud Gaming",
+                "icon": "☁️",
+                "color": "linear-gradient(145deg, #e84393, #d63031)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "07_Personalizacion",
+                    "archivo": "Lanzador_Cloud_Gaming.bat"
+                }
+            }
+        ],
+        "domotica": [
+            {
+                "label": "Control Brillo",
+                "icon": "🔆",
+                "color": "linear-gradient(145deg, #f1c40f, #e67e22)",
+                "type": "domotica_panel"
+            },
+            {
+                "label": "Todo ON",
+                "icon": "🌟",
+                "color": "linear-gradient(145deg, #27ae60, #2ecc71)",
+                "type": "action",
+                "action": "tuya_scene_toggle",
+                "payload": {
+                    "deviceIds": [
+                        "bf02a8f057179a10753ram",
+                        "bf63d2743895e42709akue",
+                        "bf9d385783be51f82cef86"
+                    ],
+                    "status": true
+                }
+            },
+            {
+                "label": "Todo OFF",
+                "icon": "🌑",
+                "color": "linear-gradient(145deg, #2c3e50, #000000)",
+                "type": "action",
+                "action": "tuya_scene_toggle",
+                "payload": {
+                    "deviceIds": [
+                        "bf02a8f057179a10753ram",
+                        "bf63d2743895e42709akue",
+                        "bf9d385783be51f82cef86"
+                    ],
+                    "status": false
+                }
+            },
+            {
+                "label": "Modo Escena",
+                "icon": "🌈",
+                "color": "linear-gradient(145deg, #8e44ad, #9b59b6)",
+                "type": "action",
+                "action": "tuya_command",
+                "payload": {
+                    "deviceIds": [
+                        "bf02a8f057179a10753ram",
+                        "bf63d2743895e42709akue",
+                        "bf9d385783be51f82cef86"
+                    ],
+                    "code": "work_mode",
+                    "value": "scene"
+                }
+            },
+            {
+                "label": "Modo Blanco",
+                "icon": "⚪",
+                "color": "linear-gradient(145deg, #ecf0f1, #bdc3c7)",
+                "type": "action",
+                "action": "tuya_command",
+                "payload": {
+                    "deviceIds": [
+                        "bf02a8f057179a10753ram",
+                        "bf63d2743895e42709akue",
+                        "bf9d385783be51f82cef86"
+                    ],
+                    "code": "work_mode",
+                    "value": "white"
+                }
+            }
+        ]
+    }
+}
