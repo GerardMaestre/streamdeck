@@ -73,7 +73,16 @@ export class NotificationToast {
         if (type === 'error') icon = '❌';
         if (type === 'warning') icon = '⚠️';
 
-        toast.innerHTML = `<span class="toast-icon">${icon}</span><span class="toast-message">${message}</span>`;
+        const iconEl = document.createElement('span');
+        iconEl.className = 'toast-icon';
+        iconEl.textContent = icon;
+
+        const messageEl = document.createElement('span');
+        messageEl.className = 'toast-message';
+        messageEl.textContent = String(message ?? '');
+
+        toast.appendChild(iconEl);
+        toast.appendChild(messageEl);
         
         this.container.appendChild(toast);
         
