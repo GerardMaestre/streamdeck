@@ -323,17 +323,44 @@ export class StreamDeckApp {
 
     // --- Button click delegation ---
     _setupButtonDelegation() {
+        let activePress = null;
+
+        const spawnRipple = (btn, clientX, clientY) => {
+            const rect = btn.getBoundingClientRect();
+            const ripple = document.createElement('span');
+            ripple.className = 'btn-ripple';
+
+            const maxSide = Math.max(rect.width, rect.height);
+            const size = maxSide * 1.35;
+            ripple.style.width = `${size}px`;
+            ripple.style.height = `${size}px`;
+            ripple.style.left = `${clientX - rect.left - size / 2}px`;
+            ripple.style.top = `${clientY - rect.top - size / 2}px`;
+
+            btn.appendChild(ripple);
+            ripple.addEventListener('animationend', () => ripple.remove(), { once: true });
+        };
+
         const onPointerDown = (e) => {
             const btn = e.target.closest('.boton');
             if (!btn || !this.buttonState.has(btn) || this.editMode.isActive()) return;
 
+            if (activePress && activePress.btn && this.buttonState.has(activePress.btn)) {
+                const prevState = this.buttonState.get(activePress.btn);
+                clearTimer(activePress.btn, prevState);
+            }
+
             const state = this.buttonState.get(btn);
             state.startPos = { x: e.clientX, y: e.clientY };
             state.longPressHandled = false;
+            btn.classList.remove('releasing');
             btn.classList.add('pressing');
+            spawnRipple(btn, e.clientX, e.clientY);
+            activePress = { btn, pointerId: e.pointerId };
 
             state.longPressTimer = setTimeout(async () => {
                 if (!this.buttonState.has(btn)) return;
+                if (!btn.isConnected) return;
                 state.longPressHandled = true;
                 if (navigator.vibrate) navigator.vibrate([40, 20, 40]);
                 const helpText = getButtonHelpText(state.btnData);
@@ -347,27 +374,38 @@ export class StreamDeckApp {
                 clearTimeout(state.longPressTimer);
                 state.longPressTimer = null;
             }
+            if (!btn || !btn.isConnected) return;
+            const wasPressing = btn.classList.contains('pressing');
             btn.classList.remove('pressing');
+            if (wasPressing) {
+                btn.classList.remove('releasing');
+                void btn.offsetWidth;
+                btn.classList.add('releasing');
+            }
         };
 
         const onPointerMove = (e) => {
-            const btn = e.target.closest('.boton');
+            if (!activePress || e.pointerId !== activePress.pointerId) return;
+            const { btn } = activePress;
             if (!btn || !this.buttonState.has(btn)) return;
             const state = this.buttonState.get(btn);
             if (!state.startPos) return;
             if (Math.hypot(e.clientX - state.startPos.x, e.clientY - state.startPos.y) > 15) {
                 clearTimer(btn, state);
                 state.startPos = null;
+                activePress = null;
             }
         };
 
         const onPointerUp = (e) => {
-            const btn = e.target.closest('.boton');
+            if (!activePress || e.pointerId !== activePress.pointerId) return;
+            const { btn } = activePress;
             if (!btn || !this.buttonState.has(btn)) return;
             const state = this.buttonState.get(btn);
             const handled = state.longPressHandled;
             clearTimer(btn, state);
             state.startPos = null;
+            activePress = null;
             if (handled) { e.preventDefault(); e.stopPropagation(); }
         };
 
@@ -417,9 +455,8 @@ export class StreamDeckApp {
         if (this.container) {
             this.container.addEventListener('pointerdown', onPointerDown);
             this.container.addEventListener('pointermove', onPointerMove, { passive: true });
-            this.container.addEventListener('pointerup', onPointerUp);
-            this.container.addEventListener('pointercancel', onPointerUp);
-            this.container.addEventListener('pointerout', onPointerUp);
+            window.addEventListener('pointerup', onPointerUp, true);
+            window.addEventListener('pointercancel', onPointerUp, true);
             this.container.addEventListener('click', onClick);
         }
     }
