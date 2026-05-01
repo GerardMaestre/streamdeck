@@ -323,7 +323,8 @@ export class StreamDeckApp {
 
     // --- Button click delegation ---
     _setupButtonDelegation() {
-        let activePress = null;
+        // Mapa para rastrear múltiples toques simultáneos por su pointerId
+        const activePresses = new Map();
 
         const spawnRipple = (btn, clientX, clientY) => {
             const rect = btn.getBoundingClientRect();
@@ -341,22 +342,45 @@ export class StreamDeckApp {
             ripple.addEventListener('animationend', () => ripple.remove(), { once: true });
         };
 
+        const clearTimer = (btn, state) => {
+            if (!state) return;
+            if (state.longPressTimer) {
+                clearTimeout(state.longPressTimer);
+                state.longPressTimer = null;
+            }
+            if (!btn) return;
+            
+            const wasPressing = btn.classList.contains('pressing');
+            btn.classList.remove('pressing');
+            
+            if (wasPressing && btn.isConnected) {
+                btn.classList.remove('releasing');
+                void btn.offsetWidth;
+                btn.classList.add('releasing');
+            }
+        };
+
         const onPointerDown = (e) => {
             const btn = e.target.closest('.boton');
             if (!btn || !this.buttonState.has(btn) || this.editMode.isActive()) return;
 
-            if (activePress && activePress.btn && this.buttonState.has(activePress.btn)) {
-                const prevState = this.buttonState.get(activePress.btn);
-                clearTimer(activePress.btn, prevState);
+            // Limpieza extra: si por algún motivo el mismo pointerId ya estaba registrado,
+            // forzamos su limpieza antes de registrar el nuevo para evitar atascos.
+            if (activePresses.has(e.pointerId)) {
+                const oldPress = activePresses.get(e.pointerId);
+                clearTimer(oldPress.btn, oldPress.state);
             }
 
             const state = this.buttonState.get(btn);
             state.startPos = { x: e.clientX, y: e.clientY };
             state.longPressHandled = false;
+            
             btn.classList.remove('releasing');
             btn.classList.add('pressing');
             spawnRipple(btn, e.clientX, e.clientY);
-            activePress = { btn, pointerId: e.pointerId };
+            
+            // Guardar esta pulsación específica
+            activePresses.set(e.pointerId, { btn, state });
 
             state.longPressTimer = setTimeout(async () => {
                 if (!this.buttonState.has(btn)) return;
@@ -368,45 +392,36 @@ export class StreamDeckApp {
             }, 600);
         };
 
-        const clearTimer = (btn, state) => {
-            if (!state) return;
-            if (state.longPressTimer) {
-                clearTimeout(state.longPressTimer);
-                state.longPressTimer = null;
-            }
-            if (!btn || !btn.isConnected) return;
-            const wasPressing = btn.classList.contains('pressing');
-            btn.classList.remove('pressing');
-            if (wasPressing) {
-                btn.classList.remove('releasing');
-                void btn.offsetWidth;
-                btn.classList.add('releasing');
-            }
-        };
-
         const onPointerMove = (e) => {
-            if (!activePress || e.pointerId !== activePress.pointerId) return;
-            const { btn } = activePress;
-            if (!btn || !this.buttonState.has(btn)) return;
-            const state = this.buttonState.get(btn);
+            const press = activePresses.get(e.pointerId);
+            if (!press) return;
+            
+            const { btn, state } = press;
             if (!state.startPos) return;
+
+            // Si el dedo se mueve más de 15px, cancelamos la pulsación visual
             if (Math.hypot(e.clientX - state.startPos.x, e.clientY - state.startPos.y) > 15) {
                 clearTimer(btn, state);
                 state.startPos = null;
-                activePress = null;
+                activePresses.delete(e.pointerId);
             }
         };
 
         const onPointerUp = (e) => {
-            if (!activePress || e.pointerId !== activePress.pointerId) return;
-            const { btn } = activePress;
-            if (!btn || !this.buttonState.has(btn)) return;
-            const state = this.buttonState.get(btn);
+            const press = activePresses.get(e.pointerId);
+            if (!press) return;
+
+            const { btn, state } = press;
             const handled = state.longPressHandled;
+            
             clearTimer(btn, state);
             state.startPos = null;
-            activePress = null;
-            if (handled) { e.preventDefault(); e.stopPropagation(); }
+            activePresses.delete(e.pointerId);
+
+            if (handled) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
         };
 
         const onClick = async (e) => {
