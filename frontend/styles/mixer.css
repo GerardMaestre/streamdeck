@@ -5,6 +5,13 @@
 /* --- CLASES GLOBALES EXTRAÍDAS DEL JS (Compartidas) --- */
 .btn-back-gradient {
     background: linear-gradient(145deg, #2c3e50, #34495e);
+    font-size: 2rem;
+    font-weight: 900;
+}
+
+.btn-back-gradient .icon {
+    font-size: 3.5rem;
+    margin-right: 15px;
 }
 
 .boton:not([style*="background"]) {

@@ -100,6 +100,42 @@ export class CarouselModule {
         const slideClass = direction > 0 ? 'slide-enter-right' : direction < 0 ? 'slide-enter-left' : '';
         const useSlideAnimation = !this.initialLoad && Boolean(slideClass);
 
+        // --- Displacement Animation Logic (Bug-Free & Optimized) ---
+        if (useSlideAnimation) {
+            // Limpiar timeouts previos si el usuario desliza muy rápido
+            if (this._animTimeout) clearTimeout(this._animTimeout);
+            
+            document.body.classList.add('animating');
+            
+            // Snapshot current state
+            const clone = this.container.cloneNode(true);
+            
+            // IMPORTANTE: Quitar IDs del clon para evitar conflictos con getElementById
+            clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+            
+            clone.classList.remove('slide-enter-right', 'slide-enter-left', 'slide-active');
+            clone.classList.add(direction > 0 ? 'slide-exit-left' : 'slide-exit-right');
+            
+            Object.assign(clone.style, {
+                position: 'fixed',
+                inset: '0',
+                width: '100vw',
+                height: '100vh',
+                zIndex: '10', // Mantener por debajo de modales pero visible para el efecto
+                pointerEvents: 'none',
+                background: 'var(--bg-base)',
+                transform: 'translate3d(0,0,0)'
+            });
+            
+            document.body.appendChild(clone);
+            
+            this._animTimeout = setTimeout(() => {
+                clone.remove();
+                document.body.classList.remove('animating');
+                this._animTimeout = null;
+            }, 400);
+        }
+
         // Page cache
         let cached = this._cachedGrids.get(pageId);
         if (!cached) {
@@ -116,16 +152,14 @@ export class CarouselModule {
 
         this.container.replaceChildren();
         this.container.className = 'deck-view';
-        if (useSlideAnimation) this.container.classList.add(slideClass);
+        if (useSlideAnimation) {
+            this.container.classList.add(slideClass);
+            // Limpiar la clase de animación tras finalizar para no ensuciar el DOM
+            setTimeout(() => this.container.classList.remove(slideClass), 400);
+        }
 
         this.container.appendChild(cached.grid);
         this.container.appendChild(cached.footer);
-
-        if (useSlideAnimation) {
-            void this.container.offsetWidth; // force reflow
-            this.container.classList.remove(slideClass);
-            this.container.classList.add('slide-active');
-        }
 
         // Remove floating edit buttons
         const existingFloating = document.getElementById('edit-mode-btn');
@@ -163,24 +197,6 @@ export class CarouselModule {
             this.onEditToggle();
         });
 
-        const btnAnterior = document.createElement('button');
-        btnAnterior.type = 'button';
-        btnAnterior.className = 'footer-btn';
-        btnAnterior.textContent = 'Anterior';
-        btnAnterior.addEventListener('click', (e) => {
-            e.preventDefault();
-            if (this.carouselIndex > 0) this.renderSlide(this.carouselIndex - 1, -1);
-        });
-
-        const btnSiguiente = document.createElement('button');
-        btnSiguiente.type = 'button';
-        btnSiguiente.className = 'footer-btn';
-        btnSiguiente.textContent = 'Siguiente';
-        btnSiguiente.addEventListener('click', (e) => {
-            e.preventDefault();
-            if (this.carouselIndex < this.carouselPages.length - 1) this.renderSlide(this.carouselIndex + 1, 1);
-        });
-
         const btnAjustes = document.createElement('button');
         btnAjustes.type = 'button';
         btnAjustes.className = 'footer-btn';
@@ -191,8 +207,12 @@ export class CarouselModule {
         });
 
         footer.appendChild(btnEditar);
-        footer.appendChild(btnAnterior);
-        footer.appendChild(btnSiguiente);
+        
+        // Spacer invisible para mantener el balance visual del footer
+        const spacer = document.createElement('div');
+        spacer.style.flex = '1';
+        footer.appendChild(spacer);
+
         footer.appendChild(btnAjustes);
 
         return footer;
@@ -241,5 +261,51 @@ export class CarouselModule {
             }
         };
         document.body.addEventListener('click', onCarouselTarget, true);
+
+        // --- Swipe Gestures ---
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let touchEndX = 0;
+        let touchEndY = 0;
+        const SWIPE_THRESHOLD = 40;
+
+        const handleSwipe = () => {
+            if (this.editMode || !this.carouselPages || this.carouselPages.length <= 1) return false;
+            const deltaX = touchEndX - touchStartX;
+            const deltaY = touchEndY - touchStartY;
+            
+            // Priorizar movimiento horizontal sobre vertical y asegurar el threshold
+            if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > SWIPE_THRESHOLD) {
+                if (deltaX < 0 && this.carouselIndex < this.carouselPages.length - 1) {
+                    // Swipe a la izquierda -> Siguiente página
+                    if (navigator.vibrate) navigator.vibrate(10);
+                    this.renderSlide(this.carouselIndex + 1, 1);
+                    return true;
+                } else if (deltaX > 0 && this.carouselIndex > 0) {
+                    // Swipe a la derecha -> Página anterior
+                    if (navigator.vibrate) navigator.vibrate(10);
+                    this.renderSlide(this.carouselIndex - 1, -1);
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        this.container.addEventListener('touchstart', (e) => {
+            // Ignorar swipe si se interactúa con elementos que requieren drag
+            if (e.target.closest('.fader-thumb') || e.target.closest('.slider-thumb') || e.target.closest('input')) return;
+            touchStartX = e.changedTouches[0].screenX;
+            touchStartY = e.changedTouches[0].screenY;
+        }, { passive: true });
+
+        this.container.addEventListener('touchend', (e) => {
+            if (e.target.closest('.fader-thumb') || e.target.closest('.slider-thumb') || e.target.closest('input')) return;
+            touchEndX = e.changedTouches[0].screenX;
+            touchEndY = e.changedTouches[0].screenY;
+            if (handleSwipe()) {
+                // Prevenir que el click se propague si ha sido un swipe
+                e.preventDefault();
+            }
+        }, { passive: false });
     }
 }

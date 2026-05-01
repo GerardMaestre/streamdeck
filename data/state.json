@@ -1,6 +1,6 @@
 {
     "ui": {
-        "lastPage": "main"
+        "lastPage": "main2"
     },
     "persistedMixer": {
         "masterMute": false,
@@ -10,7 +10,7 @@
                 "mute": false
             },
             "Spotify": {
-                "volume": 54,
+                "volume": 50,
                 "mute": false
             },
             "Robloxplayerbeta": {
@@ -28,8 +28,12 @@
             "WhatsApp": {
                 "volume": 0,
                 "mute": false
+            },
+            "Roblox": {
+                "volume": 0,
+                "mute": false
             }
         }
     },
-    "updatedAt": 1777569004344
+    "updatedAt": 1777634516357
 }

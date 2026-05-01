@@ -57,6 +57,14 @@ body.dragging-active {
     -webkit-backface-visibility: hidden;
 }
 
+/* Optimización agresiva durante animaciones */
+body.animating * {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    filter: none !important;
+    box-shadow: none !important;
+}
+
 
 * {
     box-sizing: border-box;
@@ -107,6 +115,11 @@ body {
     width: 100%;
     height: 100vh;
     box-sizing: border-box;
+    /* Eliminamos el gradiente pesado de aquí para ganar FPS en tablets */
+    background: transparent; 
+    will-change: transform;
+    transform: translateZ(0);
+    backface-visibility: hidden;
 }
 
 .deck-grid {
@@ -493,15 +506,15 @@ body {
     position: fixed !important;
     top: 20px !important;
     right: 20px !important;
-    width: 75px !important;
-    height: 75px !important;
+    width: 150px !important;
+    height: 150px !important;
     flex: none !important;
     aspect-ratio: 1 / 1 !important;
     border-radius: 50% !important;
     background: rgba(30, 41, 59, 0.88) !important;
-    border: 3px solid rgba(255, 255, 255, 0.25) !important;
+    border: 5px solid rgba(255, 255, 255, 0.3) !important;
     color: white !important;
-    font-size: 2.6rem !important;
+    font-size: 5rem !important;
     display: grid !important;
     place-items: center !important;
     cursor: pointer !important;
@@ -559,11 +572,12 @@ body {
     }
 
     .panel-back-btn {
-        width: 44px;
-        height: 44px;
-        top: 10px;
-        left: 10px;
-        opacity: 0.9;
+        width: 100px;
+        height: 100px;
+        top: 15px;
+        left: 15px;
+        opacity: 0.95;
+        font-size: 2.5rem;
     }
 
     .panel-back-btn-right {
@@ -585,36 +599,42 @@ body {
     transition: none; /* desactivamos transition global para controlar manualmente */
 }
 
-/* Slide entrando desde la derecha (swipe izquierda) */
-.grid-container.slide-enter-right {
-    animation: slideFromRight 0.18s var(--ease-smooth) both;
+.grid-container.slide-enter-right, .deck-view.slide-enter-right {
+    animation: slideFromRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 /* Slide entrando desde la izquierda (swipe derecha) */
-.grid-container.slide-enter-left {
-    animation: slideFromLeft 0.18s var(--ease-smooth) both;
+.grid-container.slide-enter-left, .deck-view.slide-enter-left {
+    animation: slideFromLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes slideFromRight {
-    from {
-        opacity: 0.85;
-        transform: translateX(20px);
-    }
-    to {
-        opacity: 1;
-        transform: translateX(0);
-    }
+    from { transform: translate3d(100%, 0, 0); }
+    to { transform: translate3d(0, 0, 0); }
 }
 
 @keyframes slideFromLeft {
-    from {
-        opacity: 0.85;
-        transform: translateX(-20px);
-    }
-    to {
-        opacity: 1;
-        transform: translateX(0);
-    }
+    from { transform: translate3d(-100%, 0, 0); }
+    to { transform: translate3d(0, 0, 0); }
+}
+
+/* Animaciones de Salida (Desplazamiento) */
+.slide-exit-left {
+    animation: slideExitLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1) both !important;
+    will-change: transform;
+}
+
+.slide-exit-right {
+    animation: slideExitRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) both !important;
+    will-change: transform;
+}
+
+@keyframes slideExitLeft {
+    to { transform: translate3d(-100%, 0, 0); }
+}
+
+@keyframes slideExitRight {
+    to { transform: translate3d(100%, 0, 0); }
 }
 
 /* ============================================================ */
