@@ -19,6 +19,7 @@ export class CarouselModule {
         this.editMode = false;
         this.initialLoad = true;
         this._cachedGrids = new Map();
+        this._slideDurationMs = 280;
 
         // Callbacks
         this.onPageChange = ctx.onPageChange || (() => {});
@@ -102,38 +103,24 @@ export class CarouselModule {
 
         // --- Displacement Animation Logic (Bug-Free & Optimized) ---
         if (useSlideAnimation) {
-            // Limpiar timeouts previos si el usuario desliza muy rápido
-            if (this._animTimeout) clearTimeout(this._animTimeout);
-            
+            this._cleanupSlideArtifacts();
             document.body.classList.add('animating');
-            
-            // Snapshot current state
+
             const clone = this.container.cloneNode(true);
-            
-            // IMPORTANTE: Quitar IDs del clon para evitar conflictos con getElementById
             clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
-            
             clone.classList.remove('slide-enter-right', 'slide-enter-left', 'slide-active');
-            clone.classList.add(direction > 0 ? 'slide-exit-left' : 'slide-exit-right');
-            
-            Object.assign(clone.style, {
-                position: 'fixed',
-                inset: '0',
-                width: '100vw',
-                height: '100vh',
-                zIndex: '10', // Mantener por debajo de modales pero visible para el efecto
-                pointerEvents: 'none',
-                background: 'var(--bg-base)',
-                transform: 'translate3d(0,0,0)'
-            });
-            
+            clone.classList.add('slide-snapshot', direction > 0 ? 'slide-exit-left' : 'slide-exit-right');
+
             document.body.appendChild(clone);
-            
-            this._animTimeout = setTimeout(() => {
-                clone.remove();
-                document.body.classList.remove('animating');
-                this._animTimeout = null;
-            }, 400);
+            this._activeSnapshot = clone;
+
+            this._snapshotFallbackTimeout = setTimeout(() => {
+                this._cleanupSlideArtifacts();
+            }, this._slideDurationMs + 140);
+
+            clone.addEventListener('animationend', () => {
+                this._cleanupSlideArtifacts();
+            }, { once: true });
         }
 
         // Page cache
@@ -154,8 +141,9 @@ export class CarouselModule {
         this.container.className = 'deck-view';
         if (useSlideAnimation) {
             this.container.classList.add(slideClass);
-            // Limpiar la clase de animación tras finalizar para no ensuciar el DOM
-            setTimeout(() => this.container.classList.remove(slideClass), 400);
+            this.container.addEventListener('animationend', () => {
+                this.container.classList.remove(slideClass);
+            }, { once: true });
         }
 
         this.container.appendChild(cached.grid);
@@ -179,6 +167,20 @@ export class CarouselModule {
 
         // Asegurar que el botón de edición vuelva a ser visible al retornar al carrusel
         this.setEditButtonVisibility(true);
+    }
+
+    _cleanupSlideArtifacts() {
+        if (this._snapshotFallbackTimeout) {
+            clearTimeout(this._snapshotFallbackTimeout);
+            this._snapshotFallbackTimeout = null;
+        }
+
+        if (this._activeSnapshot) {
+            this._activeSnapshot.remove();
+            this._activeSnapshot = null;
+        }
+
+        document.body.classList.remove('animating');
     }
 
     /** Build the footer with Editar/Anterior/Siguiente/Ajustes */

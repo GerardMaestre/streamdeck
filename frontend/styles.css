@@ -57,12 +57,25 @@ body.dragging-active {
     -webkit-backface-visibility: hidden;
 }
 
-/* Optimización agresiva durante animaciones */
-body.animating * {
+/* Optimización agresiva durante animaciones (solo snapshot para no degradar toda la UI) */
+body.animating .slide-snapshot * {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
     filter: none !important;
     box-shadow: none !important;
+}
+
+.slide-snapshot {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 10;
+    pointer-events: none;
+    background: var(--bg-base);
+    will-change: transform;
+    contain: strict;
+    transform: translate3d(0, 0, 0);
 }
 
 
@@ -600,12 +613,12 @@ body {
 }
 
 .grid-container.slide-enter-right, .deck-view.slide-enter-right {
-    animation: slideFromRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: slideFromRight 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 /* Slide entrando desde la izquierda (swipe derecha) */
 .grid-container.slide-enter-left, .deck-view.slide-enter-left {
-    animation: slideFromLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: slideFromLeft 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes slideFromRight {
@@ -620,13 +633,24 @@ body {
 
 /* Animaciones de Salida (Desplazamiento) */
 .slide-exit-left {
-    animation: slideExitLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1) both !important;
+    animation: slideExitLeft 0.28s cubic-bezier(0.22, 1, 0.36, 1) both !important;
     will-change: transform;
 }
 
 .slide-exit-right {
-    animation: slideExitRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) both !important;
+    animation: slideExitRight 0.28s cubic-bezier(0.22, 1, 0.36, 1) both !important;
     will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .grid-container.slide-enter-right,
+    .deck-view.slide-enter-right,
+    .grid-container.slide-enter-left,
+    .deck-view.slide-enter-left,
+    .slide-exit-left,
+    .slide-exit-right {
+        animation-duration: 0.01ms !important;
+    }
 }
 
 @keyframes slideExitLeft {
@@ -1099,4 +1123,3 @@ body.low-perf .drag-ghost {
     box-shadow: none !important;
     opacity: 0.72;
 }
-
