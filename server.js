@@ -403,13 +403,20 @@ app.get('/api/config', async (req, res) => {
             return res.json(configCache);
         }
 
-        const data = await fs.promises.readFile(CONFIG_PATH, 'utf8');
-        configCache = JSON.parse(data);
+        let config;
+        try {
+            const data = await fs.promises.readFile(CONFIG_PATH, 'utf8');
+            config = JSON.parse(data);
+        } catch (error) {
+            Logger.warn('Error leyendo o parseando config.json, usando config por defecto', error.message);
+            config = { pages: { main: [] }, carouselPages: ["main"] };
+        }
 
+        configCache = config;
         return res.json(configCache);
-    } catch (error) {
-        Logger.error('Error leyendo config.json', error);
-        return res.status(500).json({ error: 'Error al cargar la configuracion' });
+    } catch (err) {
+        Logger.error('Error imprevisto en /api/config', err);
+        return res.status(500).json({ error: 'Error interno del servidor' });
     }
 });
 
