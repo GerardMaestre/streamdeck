@@ -1,53 +1,93 @@
 @echo off
+setlocal enabledelayedexpansion
 :: DESC: Detiene el stack Docker de Immich para liberar recursos.
 :: ARGS: [Ruta_Immich]
 :: RISK: low
 :: PERM: user
 :: MODE: external
 
+:: =============================================
+::  CONFIGURACION
+:: =============================================
 set "IMMICH_DIR=%~1"
 if not defined IMMICH_DIR set "IMMICH_DIR=%HORUS_IMMICH_PATH%"
 if not defined IMMICH_DIR set "IMMICH_DIR=C:\immich-app"
 
-echo =========================================
-echo       Apagando Servidor Immich...
-echo =========================================
+:: =============================================
+::  BANNER
+:: =============================================
+echo.
+echo  ╔═══════════════════════════════════════╗
+echo  ║   📸  Servidor de Fotos - Immich      ║
+echo  ║       Apagando sistema...             ║
+echo  ╚═══════════════════════════════════════╝
 echo.
 
-:: Validar ruta objetivo ANTES de tocar Docker
+:: =============================================
+::  VALIDACIONES
+:: =============================================
 if not exist "%IMMICH_DIR%" (
-    echo [ERROR] No se encontro la carpeta de Immich: %IMMICH_DIR%
-    echo         Puedes pasar la ruta como argumento o definir HORUS_IMMICH_PATH.
+    echo  [X] No se encontro la carpeta de Immich:
+    echo      %IMMICH_DIR%
     pause
     exit /b 1
 )
 
-:: Verificar si Docker esta activo antes de intentar parar nada
+:: Verificar si Docker esta activo
 docker info >nul 2>&1
 if errorlevel 1 (
-    echo [INFO] Docker no esta activo o no responde. No hay nada que apagar.
+    echo  [OK] Docker no esta activo. No hay nada que apagar.
     echo.
-    echo =========================================
-    echo  No habia contenedores ejecutandose.
-    echo =========================================
+    echo  ╔═══════════════════════════════════════╗
+    echo  ║  ✅  No habia contenedores activos.   ║
+    echo  ╚═══════════════════════════════════════╝
     timeout /t 3 >nul
     exit /b 0
 )
 
+:: Verificar si Immich esta corriendo antes de intentar parar
 cd /d "%IMMICH_DIR%"
 
-:: Intentar apagar con docker compose (V2) o docker-compose (V1)
-echo [INFO] Ejecutando docker compose down...
-docker compose down >nul 2>&1
+docker compose ps --status running 2>nul | findstr /i "immich" >nul 2>&1
 if errorlevel 1 (
-    echo [WARN] Fallo 'docker compose'. Intentando 'docker-compose'...
-    docker-compose down
+    echo  [OK] Immich no estaba en ejecucion.
+    echo.
+    echo  ╔═══════════════════════════════════════╗
+    echo  ║  ✅  No habia contenedores activos.   ║
+    echo  ╚═══════════════════════════════════════╝
+    timeout /t 3 >nul
+    exit /b 0
 )
 
+:: =============================================
+::  APAGAR IMMICH
+:: =============================================
+echo  [~] Deteniendo contenedores de Immich...
 echo.
-echo =========================================
-echo  Todos los contenedores de Immich se han
-echo  apagado. Ya no consumen RAM ni CPU.
-echo =========================================
-timeout /t 5 >nul
+
+docker compose down >nul 2>&1
+if errorlevel 1 (
+    echo  [~] Reintentando con docker-compose (v1)...
+    docker-compose down >nul 2>&1
+    if errorlevel 1 (
+        echo.
+        echo  [X] No se pudieron detener los contenedores.
+        echo      Prueba manualmente: docker compose down
+        pause
+        exit /b 1
+    )
+)
+
+:: =============================================
+::  RESULTADO
+:: =============================================
+echo.
+echo  ╔═══════════════════════════════════════╗
+echo  ║  ✅  Immich apagado correctamente.    ║
+echo  ║                                       ║
+echo  ║  RAM y CPU liberados.                 ║
+echo  ║  Tus fotos siguen seguras en disco.   ║
+echo  ╚═══════════════════════════════════════╝
+echo.
+timeout /t 4 >nul
 exit /b 0

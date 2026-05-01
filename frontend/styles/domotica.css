@@ -33,7 +33,7 @@
 }
 
 /* Botón volver estilo Sketch (usado solo en Domótica dentro del masterFrame) */
-.domotica-master-frame .back-btn-sketch-circle {
+.domotica-master-frame .panel-back-btn-sketch-circle {
     width: 65px !important;
     height: 65px !important;
     border-radius: 50% !important;

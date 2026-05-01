@@ -39,7 +39,7 @@ export class DomoticaModule {
                 </div>
             `;
 
-            domoPanelEl.appendChild(createPanelBackButton(() => {
+            document.body.appendChild(createPanelBackButton(() => {
                 if (onBack) onBack();
             }));
 
@@ -123,7 +123,7 @@ export class DomoticaModule {
 
         // Asegurar que el botón de atrás siempre esté presente
         if (!document.getElementById('panel-back-button')) {
-            domoPanelEl.appendChild(createPanelBackButton(() => {
+            document.body.appendChild(createPanelBackButton(() => {
                 if (onBack) onBack();
             }));
         }

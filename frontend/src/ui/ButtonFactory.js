@@ -118,15 +118,20 @@ export function createButton(btnData, index, buttonStateMap, skipAnimation = fal
 /**
  * Creates a back button for sub-page navigation.
  */
-export function createBackButton(index, onBack) {
+export function createBackButton(index, onBack, buttonStateMap) {
     const backBtn = document.createElement('button');
     backBtn.className = 'boton btn-streamdeck btn-back-gradient';
     backBtn.style.animationDelay = `${index * 0.05}s`;
     backBtn.innerHTML = '<span class="icon">⬅️</span>Volver';
-    backBtn.addEventListener('click', () => {
-        if (navigator.vibrate) navigator.vibrate(50);
-        if (onBack) onBack();
+
+    // Lo registramos en el mapa de estados para que StreamDeckApp lo reconozca
+    buttonStateMap.set(backBtn, {
+        btnData: { type: 'back', onBack },
+        longPressTimer: null,
+        startPos: null,
+        longPressHandled: false
     });
+
     return backBtn;
 }
 
@@ -139,44 +144,36 @@ export function createPanelBackButton(onClick) {
 
     const backBtn = document.createElement('button');
     backBtn.id = 'panel-back-button';
-    backBtn.className = 'panel-back-btn-sketch-circle';
+    // Usamos ambas clases para asegurar compatibilidad con estilos locales y globales
+    backBtn.className = 'panel-back-btn-sketch-circle back-btn-sketch-circle';
     backBtn.innerHTML = '<span>←</span>';
-    let startPos = null;
-    let isPressing = false;
 
-    backBtn.addEventListener('pointerdown', (e) => {
-        startPos = { x: e.clientX, y: e.clientY };
-        isPressing = true;
+    backBtn.addEventListener('pointerdown', () => {
         backBtn.classList.add('pressing');
     });
 
-    backBtn.addEventListener('pointerup', (e) => {
-        if (!isPressing) return;
-        const dist = Math.hypot(e.clientX - startPos.x, e.clientY - startPos.y);
-        isPressing = false;
+    const release = () => {
         backBtn.classList.remove('pressing');
+    };
 
-        if (dist < 20) {
-            e.preventDefault();
-            e.stopImmediatePropagation();
+    backBtn.addEventListener('pointerup', release);
+    backBtn.addEventListener('pointercancel', release);
 
-            if (navigator.vibrate) navigator.vibrate(50);
+    backBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
 
-            const shield = document.createElement('div');
-            shield.className = 'pointer-shield';
-            document.body.appendChild(shield);
-            setTimeout(() => shield.remove(), 400);
+        if (navigator.vibrate) navigator.vibrate(50);
 
-            if (onClick) onClick();
-            backBtn.remove();
-        }
+        // Escudo anti-rebote temporal
+        const shield = document.createElement('div');
+        shield.className = 'pointer-shield';
+        document.body.appendChild(shield);
+        setTimeout(() => shield.remove(), 400);
+
+        if (onClick) onClick();
+        backBtn.remove();
     });
 
-    backBtn.addEventListener('pointercancel', () => {
-        isPressing = false;
-        backBtn.classList.remove('pressing');
-    });
-
-    backBtn.addEventListener('click', (e) => e.preventDefault());
     return backBtn;
 }

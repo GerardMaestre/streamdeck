@@ -85,7 +85,7 @@ export class DiscordModule {
 
         // Asegurar que el botón de atrás siempre esté presente al abrir
         if (!document.getElementById('panel-back-button')) {
-            discordPanelEl.appendChild(createPanelBackButton(() => {
+            document.body.appendChild(createPanelBackButton(() => {
                 if (onBack) onBack();
             }));
         }

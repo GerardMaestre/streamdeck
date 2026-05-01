@@ -74,7 +74,7 @@ export class CarouselModule {
         gridEl.className = 'deck-grid';
 
         if (shouldInjectBack) {
-            gridEl.appendChild(createBackButton(0, () => this.renderSlide(this.carouselIndex, 0)));
+            gridEl.appendChild(createBackButton(0, () => this.renderSlide(this.carouselIndex, 0), this.buttonStateMap));
         }
 
         pageData.forEach((btnData, index) => {

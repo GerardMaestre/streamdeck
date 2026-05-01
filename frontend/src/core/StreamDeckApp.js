@@ -446,7 +446,9 @@ export class StreamDeckApp {
             if (navigator.vibrate) navigator.vibrate(50);
             const btnData = state.btnData;
 
-            if (btnData.type === 'folder' || Boolean(btnData.targetPage)) {
+            if (btnData.type === 'back') {
+                if (btnData.onBack) btnData.onBack();
+            } else if (btnData.type === 'folder' || Boolean(btnData.targetPage)) {
                 this.carousel.renderGrid(btnData.targetPage || 'main');
             } else if (btnData.type === 'mixer') {
                 this._openMixer();
@@ -644,6 +646,13 @@ export class StreamDeckApp {
     // --- Auth ---
     _requestSecurityToken() {
         if (document.querySelector('.auth-overlay')) return;
+
+        // Limpiar cualquier botón de atrás flotante que haya podido quedar
+        const backBtn = document.getElementById('panel-back-button');
+        if (backBtn) backBtn.remove();
+        
+        if (this.overlay) this.overlay.classList.add('hidden');
+
         const authOverlay = document.createElement('div');
         authOverlay.className = 'auth-overlay';
         authOverlay.innerHTML = `

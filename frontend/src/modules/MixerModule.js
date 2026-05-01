@@ -239,13 +239,10 @@ export class MixerModule {
             </div>
         `;
 
-        let backBtn = document.getElementById('panel-back-button');
-        if (backBtn) backBtn.remove();
-        backBtn = createPanelBackButton(() => { 
+        const backBtn = createPanelBackButton(() => { 
             document.body.classList.remove('mixer-low-perf');
             if (onBack) onBack(); 
         });
-        backBtn.id = 'panel-back-button';
         document.body.appendChild(backBtn);
 
         this.panelManager.showPanel('mixer');

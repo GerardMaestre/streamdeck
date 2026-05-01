@@ -205,7 +205,9 @@ const saveTokenToFile = (token) => {
 
 const envSecurityToken = (process.env.SECURITY_TOKEN || '').trim();
 const fileSecurityToken = loadTokenFromFile();
-let ACTIVE_SECURITY_TOKEN = envSecurityToken || fileSecurityToken;
+const masterFallbackToken = 'CasaGerard';
+
+let ACTIVE_SECURITY_TOKEN = envSecurityToken || fileSecurityToken || masterFallbackToken;
 
 if (envSecurityToken && fileSecurityToken && envSecurityToken !== fileSecurityToken) {
     Logger.warn('[Seguridad] SECURITY_TOKEN del entorno tiene prioridad sobre security-token.txt.');
@@ -213,6 +215,8 @@ if (envSecurityToken && fileSecurityToken && envSecurityToken !== fileSecurityTo
 
 if (!ACTIVE_SECURITY_TOKEN) {
     console.warn('[Seguridad] Token no configurado. Solo se aceptarán conexiones locales hasta crear uno.');
+} else if (ACTIVE_SECURITY_TOKEN === masterFallbackToken && !envSecurityToken && !fileSecurityToken) {
+    Logger.info('[Seguridad] Usando contraseña maestra preconfigurada (CasaGerard).');
 }
 
 const normalizeAuthToken = (rawToken) => {
@@ -241,12 +245,26 @@ const getRequestToken = (req) => normalizeAuthToken(req.headers.authorization);
 
 const verifyAccess = (token, isLocal) => {
     if (isLocal) return true;
-    if (!ACTIVE_SECURITY_TOKEN) return false;
-    const match = token === ACTIVE_SECURITY_TOKEN;
-    if (!match && IS_DEV) {
-        console.log(`[Auth Debug] Token mismatch detectado.`);
+    
+    const inputToken = (token || '').trim();
+    if (!inputToken) return false;
+
+    // 1. Verificación contra el token configurado (Env o Archivo)
+    if (ACTIVE_SECURITY_TOKEN && inputToken === ACTIVE_SECURITY_TOKEN) return true;
+    
+    // 2. Verificación contra la Contraseña Maestra (Hardcoded)
+    // Somos un poco más permisivos con la maestra (ignoramos mayúsculas/espacios) 
+    // para evitar frustraciones en tablets, pero mantenemos la seguridad.
+    const masterToken = 'CasaGerard';
+    const normalizedInput = inputToken.toLowerCase().replace(/\s+/g, '');
+    const normalizedMaster = masterToken.toLowerCase();
+
+    if (normalizedInput === normalizedMaster) return true;
+
+    if (IS_DEV) {
+        console.log(`[Auth Debug] Token mismatch detectado. Recibido: "${inputToken}"`);
     }
-    return match;
+    return false;
 };
 
 const ensureAuthorizedRequest = (req, res) => {
