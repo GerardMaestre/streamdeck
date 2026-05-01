@@ -30,11 +30,10 @@ const SLIDER_ACTIVITY_TIMEOUT = 2000; // Después de 2s sin actividad → modo i
 const DEBOUNCE_MS = 350;       // 400→350: Ventana de protección optimizada
 const VOL_THRESHOLD = 0.5;     // Diferencia mínima para emitir cambio (evita ruido jitter)
 // Sesiones que siempre queremos ver si están abiertas (aunque no emitan sonido)
-const ALWAYS_SHOW_SILENT_SESSIONS = new Set(['Spotify', 'Google Chrome', 'Microsoft Edge', 'Brave Browser', 'Firefox', 'VLC Player', 'OBS Studio', 'Discord', 'Telegram', 'WhatsApp']);
+const ALWAYS_SHOW_SILENT_SESSIONS = new Set(['Spotify', 'VLC Player', 'OBS Studio', 'Discord', 'Telegram', 'WhatsApp']);
 const KNOWN_VISIBLE_PROCESSES = new Map([
     ['spotify.exe', 'Spotify'],
     ['chrome.exe', 'Google Chrome'],
-    ['msedge.exe', 'Microsoft Edge'],
     ['brave.exe', 'Brave Browser'],
     ['firefox.exe', 'Firefox'],
     ['vlc.exe', 'VLC Player'],
@@ -62,7 +61,8 @@ function refreshVisibleProcessLabels() {
     // Usamos PowerShell para obtener procesos.
     // 1. Procesos con ventana (para la mayoría de apps)
     // 2. Procesos críticos aunque no tengan ventana (WhatsApp, Spotify, etc.)
-    const psCommand = "$known = @('spotify','chrome','msedge','brave','firefox','vlc','obs64','obs32','whatsapp','whatsapp.root','whatsappdesktop','telegram'); Get-Process | Where-Object { ($_.MainWindowTitle -and $_.MainWindowTitle.Trim().Length -gt 0) -or ($known -contains $_.Name.ToLower()) } | Select-Object -ExpandProperty Name";
+    // NOTA: Excluimos navegadores del grupo 2 para evitar procesos de fondo (Startup Boost, etc)
+    const psCommand = "$knownNoWindow = @('spotify','vlc','obs64','obs32','whatsapp','whatsapp.root','whatsappdesktop','telegram'); Get-Process | Where-Object { ($_.MainWindowTitle -and $_.MainWindowTitle.Trim().Length -gt 0) -or ($knownNoWindow -contains $_.Name.ToLower()) } | Select-Object -ExpandProperty Name";
     
     execFile('powershell', ['-NoProfile', '-Command', psCommand], { windowsHide: true, timeout: 3000 }, (error, stdout) => {
         processScanInFlight = false;
@@ -100,6 +100,28 @@ function getAppLabel(session) {
     const baseName = path.basename(rawName).toLowerCase().replace(/\.exe$/i, '').trim();
     const canonicalExe = `${baseName}.exe`;
     const isBrowser = ['msedge', 'chrome', 'brave', 'firefox'].includes(baseName);
+
+    // 0) PRIORIDAD ABSOLUTA: Identificar WhatsApp (suele camuflarse como Edge/WebView2)
+    if (titleLower.includes('whatsapp') || pathLower.includes('whatsapp')) {
+        labelCache.set(cacheKey, 'WhatsApp');
+        return 'WhatsApp';
+    }
+
+    // 0.5) Heurística para WhatsApp en UWP / PWA:
+    // Si es un Edge o WebView2 sin título útil y WhatsApp está corriendo, asumimos que este canal de audio pertenece a WhatsApp.
+    if ((baseName === 'msedgewebview2' || baseName === 'msedge') && (!windowTitle || windowTitle.toLowerCase() === baseName || windowTitle.toLowerCase() === 'msedge' || windowTitle.toLowerCase() === 'webview2' || windowTitle.toLowerCase() === 'msedgewebview2')) {
+        if (visibleProcessLabels.has('WhatsApp')) {
+            labelCache.set(cacheKey, 'WhatsApp');
+            return 'WhatsApp';
+        }
+    }
+
+    // 0.8) Bloqueo agresivo de procesos Edge de fondo / Widgets
+    // Si es un proceso derivado de Edge sin título útil, lo marcamos como null para que no ensucie como fantasma.
+    if ((baseName === 'msedge' || baseName === 'msedgewebview2') && (!windowTitle || windowTitle === baseName || windowTitle === 'msedge' || windowTitle === 'webview2')) {
+        labelCache.set(cacheKey, null);
+        return null;
+    }
 
     // 1) Mapeo por ejecutable (más estable que títulos de ventana).
     if (KNOWN_VISIBLE_PROCESSES.has(canonicalExe)) {
@@ -147,6 +169,8 @@ function getAppLabel(session) {
         return null;
     }
 
+
+
     const processRules = [
         { pattern: 'whatsapp', name: 'WhatsApp' },
         { pattern: 'spotify', name: 'Spotify' },
@@ -193,7 +217,7 @@ function getAppLabel(session) {
         'wininit', 'winlogon', 'crashpad_handler', 'wermgr', 'werfault', 
         'backgroundtransferhost', 'smartscreen', 'igfxcuiservice', 'igfxem', 
         'nvsphelper64', 'rtkngui64', 'nahimic', 'wavesyssvc', 'securityhealthsystray',
-        'msedgewebview2', 'devicedriver', 'dock_64', 'antigravity', 'wallpaper64', 'wallpaper32',
+        'devicedriver', 'dock_64', 'antigravity', 'wallpaper64', 'wallpaper32',
         'experiencia de entrada', 'gamebar', 'remind_m', 'ascom', 'winwdr', 'winring0'
     ];
 

@@ -357,6 +357,15 @@ export class StreamDeckApp {
                 btn.classList.remove('releasing');
                 void btn.offsetWidth;
                 btn.classList.add('releasing');
+                
+                // Limpiamos la clase después de que termine la animación para evitar
+                // que se reproduzca de nuevo al re-insertar el botón desde la caché.
+                const cleanup = () => btn.classList.remove('releasing');
+                btn.addEventListener('animationend', cleanup, { once: true });
+                setTimeout(cleanup, 400); // Fallback por si se desvincula del DOM antes
+            } else if (wasPressing) {
+                // Si no está conectado (caché), simplemente quitamos cualquier rastro.
+                btn.classList.remove('releasing');
             }
         };
 
@@ -399,8 +408,9 @@ export class StreamDeckApp {
             const { btn, state } = press;
             if (!state.startPos) return;
 
-            // Si el dedo se mueve más de 15px, cancelamos la pulsación visual
-            if (Math.hypot(e.clientX - state.startPos.x, e.clientY - state.startPos.y) > 15) {
+            // Si el dedo se mueve más de 25px (antes 15), cancelamos la pulsación visual.
+            // Esto permite pulsaciones con dedos gruesos sin cancelaciones falsas.
+            if (Math.hypot(e.clientX - state.startPos.x, e.clientY - state.startPos.y) > 25) {
                 clearTimer(btn, state);
                 state.startPos = null;
                 activePresses.delete(e.pointerId);
@@ -417,7 +427,7 @@ export class StreamDeckApp {
             clearTimer(btn, state);
             state.startPos = null;
             activePresses.delete(pointerId);
-            return handled;
+            return { handled, btn };
         };
 
         const clearAllPresses = () => {
@@ -428,30 +438,10 @@ export class StreamDeckApp {
             }
         };
 
-        const onPointerUp = (e) => {
-            const handled = releasePress(e.pointerId);
-            if (handled === null) return;
-
-            if (handled) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-        };
-
-        const onPointerCancel = (e) => {
-            releasePress(e.pointerId);
-        };
-
-        const onClick = async (e) => {
-            const btn = e.target.closest('.boton');
+        const executeButtonAction = async (btn) => {
             if (!btn || !this.buttonState.has(btn)) return;
             const state = this.buttonState.get(btn);
             if (this.editMode.isActive()) return;
-            if (state.longPressHandled) {
-                state.longPressHandled = false;
-                e.preventDefault(); e.stopPropagation();
-                return;
-            }
 
             if (navigator.vibrate) navigator.vibrate(50);
             const btnData = state.btnData;
@@ -485,16 +475,50 @@ export class StreamDeckApp {
             }
         };
 
+        const onPointerUp = (e) => {
+            const result = releasePress(e.pointerId);
+            if (!result) return; // Si es null, fue cancelado por movimiento o no registrado
+
+            const { handled, btn } = result;
+            
+            // Siempre prevenimos comportamientos por defecto del pointerup para evitar dobles disparos
+            e.preventDefault();
+            
+            if (handled) {
+                // Fue un long press, no hacer la acción corta
+                e.stopPropagation();
+                return;
+            }
+
+            // Ejecutamos la acción INMEDIATAMENTE en pointerup
+            executeButtonAction(btn);
+        };
+
+        const onPointerCancel = (e) => {
+            releasePress(e.pointerId);
+        };
+
+        const onClick = (e) => {
+            const btn = e.target.closest('.boton');
+            if (btn) {
+                // Anulamos el click del navegador en los botones para que no dispare dos veces,
+                // ya que lo hemos resuelto de forma rápida y responsiva en pointerup.
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        };
+
         if (this.container) {
             this.container.addEventListener('pointerdown', onPointerDown);
             this.container.addEventListener('pointermove', onPointerMove, { passive: true });
-            window.addEventListener('pointerup', onPointerUp, true);
-            window.addEventListener('pointercancel', onPointerCancel, true);
+            window.addEventListener('pointerup', onPointerUp, { passive: false });
+            window.addEventListener('pointercancel', onPointerCancel, { passive: true });
             window.addEventListener('blur', clearAllPresses);
             document.addEventListener('visibilitychange', () => {
                 if (document.visibilityState !== 'visible') clearAllPresses();
             });
-            this.container.addEventListener('click', onClick);
+            // Atrapamos el click para anularlo y confiar solo en pointerup
+            this.container.addEventListener('click', onClick, { capture: true });
         }
     }
 
