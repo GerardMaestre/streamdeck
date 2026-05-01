@@ -407,21 +407,39 @@ export class StreamDeckApp {
             }
         };
 
-        const onPointerUp = (e) => {
-            const press = activePresses.get(e.pointerId);
-            if (!press) return;
+        const releasePress = (pointerId) => {
+            const press = activePresses.get(pointerId);
+            if (!press) return null;
 
             const { btn, state } = press;
             const handled = state.longPressHandled;
-            
+
             clearTimer(btn, state);
             state.startPos = null;
-            activePresses.delete(e.pointerId);
+            activePresses.delete(pointerId);
+            return handled;
+        };
+
+        const clearAllPresses = () => {
+            for (const [pointerId, press] of activePresses.entries()) {
+                clearTimer(press.btn, press.state);
+                press.state.startPos = null;
+                activePresses.delete(pointerId);
+            }
+        };
+
+        const onPointerUp = (e) => {
+            const handled = releasePress(e.pointerId);
+            if (handled === null) return;
 
             if (handled) {
                 e.preventDefault();
                 e.stopPropagation();
             }
+        };
+
+        const onPointerCancel = (e) => {
+            releasePress(e.pointerId);
         };
 
         const onClick = async (e) => {
@@ -471,7 +489,11 @@ export class StreamDeckApp {
             this.container.addEventListener('pointerdown', onPointerDown);
             this.container.addEventListener('pointermove', onPointerMove, { passive: true });
             window.addEventListener('pointerup', onPointerUp, true);
-            window.addEventListener('pointercancel', onPointerUp, true);
+            window.addEventListener('pointercancel', onPointerCancel, true);
+            window.addEventListener('blur', clearAllPresses);
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState !== 'visible') clearAllPresses();
+            });
             this.container.addEventListener('click', onClick);
         }
     }
