@@ -323,6 +323,24 @@ export class StreamDeckApp {
 
     // --- Button click delegation ---
     _setupButtonDelegation() {
+        let activePress = null;
+
+        const spawnRipple = (btn, clientX, clientY) => {
+            const rect = btn.getBoundingClientRect();
+            const ripple = document.createElement('span');
+            ripple.className = 'btn-ripple';
+
+            const maxSide = Math.max(rect.width, rect.height);
+            const size = maxSide * 1.35;
+            ripple.style.width = `${size}px`;
+            ripple.style.height = `${size}px`;
+            ripple.style.left = `${clientX - rect.left - size / 2}px`;
+            ripple.style.top = `${clientY - rect.top - size / 2}px`;
+
+            btn.appendChild(ripple);
+            ripple.addEventListener('animationend', () => ripple.remove(), { once: true });
+        };
+
         const onPointerDown = (e) => {
             const btn = e.target.closest('.boton');
             if (!btn || !this.buttonState.has(btn) || this.editMode.isActive()) return;
@@ -330,7 +348,10 @@ export class StreamDeckApp {
             const state = this.buttonState.get(btn);
             state.startPos = { x: e.clientX, y: e.clientY };
             state.longPressHandled = false;
+            btn.classList.remove('releasing');
             btn.classList.add('pressing');
+            spawnRipple(btn, e.clientX, e.clientY);
+            activePress = { btn, pointerId: e.pointerId };
 
             state.longPressTimer = setTimeout(async () => {
                 if (!this.buttonState.has(btn)) return;
@@ -347,27 +368,37 @@ export class StreamDeckApp {
                 clearTimeout(state.longPressTimer);
                 state.longPressTimer = null;
             }
+            const wasPressing = btn.classList.contains('pressing');
             btn.classList.remove('pressing');
+            if (wasPressing) {
+                btn.classList.remove('releasing');
+                void btn.offsetWidth;
+                btn.classList.add('releasing');
+            }
         };
 
         const onPointerMove = (e) => {
-            const btn = e.target.closest('.boton');
+            if (!activePress || e.pointerId !== activePress.pointerId) return;
+            const { btn } = activePress;
             if (!btn || !this.buttonState.has(btn)) return;
             const state = this.buttonState.get(btn);
             if (!state.startPos) return;
             if (Math.hypot(e.clientX - state.startPos.x, e.clientY - state.startPos.y) > 15) {
                 clearTimer(btn, state);
                 state.startPos = null;
+                activePress = null;
             }
         };
 
         const onPointerUp = (e) => {
-            const btn = e.target.closest('.boton');
+            if (!activePress || e.pointerId !== activePress.pointerId) return;
+            const { btn } = activePress;
             if (!btn || !this.buttonState.has(btn)) return;
             const state = this.buttonState.get(btn);
             const handled = state.longPressHandled;
             clearTimer(btn, state);
             state.startPos = null;
+            activePress = null;
             if (handled) { e.preventDefault(); e.stopPropagation(); }
         };
 
@@ -419,7 +450,6 @@ export class StreamDeckApp {
             this.container.addEventListener('pointermove', onPointerMove, { passive: true });
             this.container.addEventListener('pointerup', onPointerUp);
             this.container.addEventListener('pointercancel', onPointerUp);
-            this.container.addEventListener('pointerout', onPointerUp);
             this.container.addEventListener('click', onClick);
         }
     }
