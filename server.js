@@ -181,18 +181,18 @@ process.on('uncaughtException', (error) => {
 
 // Init logger para Socket y Performance
 const IS_DEV = process.env.NODE_ENV !== 'production';
+
+// Siempre habilitar monitoreo en esta fase de depuración de producción
+initSocketMonitoring(io);
+startPerformanceMonitor();
+
 const log = (...args) => {
-    if (IS_DEV) console.log(...args);
+    console.log(...args);
 };
 
 const errorLog = (...args) => {
     console.error(...args);
 };
-
-if (IS_DEV) {
-  initSocketMonitoring(io);
-  startPerformanceMonitor();
-}
 
 // --- SEGURIDAD: TOKEN DE ACCESO ---
 const SECURITY_TOKEN_FILE = getDataPath('security-token.txt');

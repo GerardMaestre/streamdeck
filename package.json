@@ -12,6 +12,7 @@
     "pm2-start": "pm2 start ecosystem.config.js",
     "pm2-stop": "pm2 stop streamdeck-pro",
     "pm2-restart": "pm2 restart streamdeck-pro",
+    "postinstall": "patch-package",
     "check": "node --check server.js && node --check main.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -28,7 +29,8 @@
     "native-sound-mixer": "^3.4.6-win",
     "open": "^8.4.2",
     "screenshot-desktop": "^1.15.3",
-    "socket.io": "^4.8.3"
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "electron": "^31.0.0",

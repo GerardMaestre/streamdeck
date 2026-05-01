@@ -5,9 +5,12 @@ const { app, Tray, Menu, shell, nativeImage, dialog, BrowserWindow, ipcMain } = 
 // 1. Cargar variables de entorno según el entorno (Producción vs Desarrollo)
 const dotenv = require('dotenv');
 if (app.isPackaged) {
-    dotenv.config({ path: path.join(process.resourcesPath, '.env'), quiet: true });
+    const envPath = path.join(process.resourcesPath, '.env');
+    const result = dotenv.config({ path: envPath, quiet: true });
+    require('fs').writeFileSync('C:\\Users\\gerar\\Desktop\\mi-streamdeck\\debug.log', `Packaged: true, EnvPath: ${envPath}, Parsed: ${JSON.stringify(result.parsed || {})}, TUYA: ${process.env.TUYA_ACCESS_KEY}\n`);
 } else {
-    dotenv.config({ quiet: true });
+    const result = dotenv.config({ quiet: true });
+    require('fs').writeFileSync('C:\\Users\\gerar\\Desktop\\mi-streamdeck\\debug.log', `Packaged: false, Parsed: ${JSON.stringify(result.parsed || {})}, TUYA: ${process.env.TUYA_ACCESS_KEY}\n`);
 }
 
 /**

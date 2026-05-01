@@ -1,14 +1,15 @@
 const { exec } = require('child_process');
 const RPC = require('discord-rpc');
+const Logger = require('../core/logger/logger');
 
 const clientId = (process.env.DISCORD_CLIENT_ID || '').trim();
 const clientSecret = (process.env.DISCORD_CLIENT_SECRET || '').trim();
 const redirectUri = (process.env.DISCORD_REDIRECT_URI || 'http://localhost').trim();
 
 if (!clientId) {
-    console.warn('[Discord] DISCORD_CLIENT_ID no definido en .env. Discord deshabilitado.');
+    Logger.warn('[Discord] DISCORD_CLIENT_ID no definido en .env. Discord deshabilitado.');
 } else {
-    console.log(`[Discord] Cargado Client ID: ${clientId.substring(0, 5)}...`);
+    Logger.info(`[Discord] Cargado Client ID: ${clientId.substring(0, 5)}...`);
 }
 
 const LOGIN_SCOPES = ['rpc', 'rpc.voice.read', 'rpc.voice.write'];
@@ -49,7 +50,7 @@ class DiscordConnectionManager {
                 this.ioInstance.emit('discord_connection_state', this.connectionState);
             }
         } catch (error) {
-            console.error('[Discord Connection] Error al emitir estado a sockets:', error.message);
+            Logger.error('[Discord Connection] Error al emitir estado a sockets:', error.message);
         }
     }
 
@@ -134,7 +135,7 @@ class DiscordConnectionManager {
         this.lastDiscordLaunchAttemptAt = now;
         exec('start "" "discord://"', (error) => {
             if (error) {
-                console.warn('[Discord Connection] No se pudo lanzar Discord automáticamente:', error.message);
+                Logger.warn(`[Discord Connection] No se pudo lanzar Discord automáticamente: ${error.message}`);
             }
         });
     }
@@ -184,7 +185,7 @@ class DiscordConnectionManager {
 
     async loginWithAttempts() {
         const isRunning = await this.isDiscordRunning();
-        console.log(`[Discord] Comprobando ejecucion: ${isRunning ? 'Discord DETECTADO' : 'Discord NO DETECTADO'}`);
+        Logger.info(`[Discord] Comprobando ejecucion: ${isRunning ? 'Discord DETECTADO' : 'Discord NO DETECTADO'}`);
         if (!isRunning) {
             const error = new Error('Discord no está ejecutándose en este PC');
             error.code = 'DISCORD_NOT_RUNNING';
@@ -203,7 +204,7 @@ class DiscordConnectionManager {
             const attemptClient = new RPC.Client({ transport: 'ipc' });
             
             try {
-                console.log(`[Discord] Intentando conexion: ${attempt.label}...`);
+                Logger.info(`[Discord] Intentando conexion: ${attempt.label}...`);
                 const loginPromise = attemptClient.login(attempt.options);
                 const timeoutPromise = new Promise((_, reject) => 
                     setTimeout(() => reject(new Error('TIMEOUT_EXCEEDED')), attempt.timeoutMs)
@@ -215,14 +216,14 @@ class DiscordConnectionManager {
                     try {
                         await loggedClient.getVoiceSettings();
                     } catch (voiceError) {
-                        console.warn(`[Discord] El modo ${attempt.label} conecto pero no tiene permisos de voz.`);
+                        Logger.warn(`[Discord] El modo ${attempt.label} conecto pero no tiene permisos de voz.`);
                         this.destroyRpcClient(attemptClient);
                         continue;
                     }
                 }
                 return { client: loggedClient, attemptLabel: attempt.label, voiceCapable: !!attempt.voiceCapable };
             } catch (error) {
-                console.warn(`[Discord] Intento ${attempt.label} fallo: ${error.message}`);
+                Logger.warn(`[Discord] Intento ${attempt.label} fallo: ${error.message}`);
                 this.destroyRpcClient(attemptClient);
                 if (this.isAuthLoginError(error?.message)) authFailureDetected = true;
                 lastError = error;
@@ -281,7 +282,7 @@ class DiscordConnectionManager {
 
             if (voiceCapable) {
                 this.updateConnectionState('connected', `Conectado como ${client.user?.username || 'Discord'}`);
-                console.log(`[Discord] [OK] Conectado como ${client.user?.username} (${attemptLabel})`);
+                Logger.info(`[Discord] [OK] Conectado como ${client.user?.username} (${attemptLabel})`);
                 try {
                     await this.onConnected(currentClient);
                 } catch (e) {
@@ -289,7 +290,7 @@ class DiscordConnectionManager {
                 }
             } else {
                 this.updateConnectionState('fallback', `Conectado básico como ${client.user?.username || 'Usuario'}`);
-                console.log(`[Discord] [!] Conectado en modo básico (${attemptLabel})`);
+                Logger.warn(`[Discord] [!] Conectado en modo básico (${attemptLabel})`);
                 try {
                     this.onFallback();
                 } catch (e) {
@@ -310,7 +311,7 @@ class DiscordConnectionManager {
         const authError = Boolean(error?.authFailureDetected) || this.isAuthLoginError(message);
 
         if (error.code === 'DISCORD_NOT_RUNNING' || lowerMessage.includes('discord no está ejecutándose')) {
-            console.log('[Discord Connection] Discord no está ejecutándose. Reintentando en 60 segundos.');
+            Logger.info('[Discord Connection] Discord no está ejecutándose. Reintentando en 60 segundos.');
             this.fallbackMode = true;
             this.voiceControlAvailable = false;
             this.updateConnectionState('error', 'Discord cerrado. Reintentando en 60 segundos...');
@@ -321,11 +322,11 @@ class DiscordConnectionManager {
             return;
         }
 
-        console.error('[Discord Connection] Fallo al conectar:', message);
-        if (error.code) console.error(`[Discord Connection] Codigo de error: ${error.code}`);
+        Logger.error(`[Discord Connection] Fallo al conectar: ${message}`);
+        if (error.code) Logger.error(`[Discord Connection] Codigo de error: ${error.code}`);
         if (error.stack && !lowerMessage.includes('connection closed')) {
              // Solo mostrar stack si no es el tipico cierre de conexion
-             console.debug(error.stack);
+             Logger.error(error.stack);
         }
         if (this.rpc) {
             this.destroyRpcClient(this.rpc);
