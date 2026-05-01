@@ -61,13 +61,43 @@ export class DomoticaModule {
                 btn.className = 'domotica-sketch-btn';
                 btn.style.setProperty('--btn-accent', c.color);
                 btn.innerHTML = `<span class="k-icon">${c.icon}</span><span class="k-label">${c.label}</span>`;
-                btn.addEventListener('pointerdown', () => {
-                    if (navigator.vibrate) navigator.vibrate(40);
-                    const payload = c.action === 'tuya_scene_toggle'
-                        ? { deviceIds: this.tuyaDevices, code: 'switch_led', value: c.value }
-                        : { deviceIds: this.tuyaDevices, code: c.code, value: c.value };
-                    this.socket.emit('tuya_command', payload);
-                });
+                
+                let startPos = null;
+                let isPressing = false;
+
+                const onDown = (e) => {
+                    startPos = { x: e.clientX, y: e.clientY };
+                    isPressing = true;
+                    btn.classList.add('pressing');
+                };
+
+                const onUp = (e) => {
+                    if (!isPressing) return;
+                    const endPos = { x: e.clientX, y: e.clientY };
+                    const dist = Math.hypot(endPos.x - startPos.x, endPos.y - startPos.y);
+                    
+                    isPressing = false;
+                    btn.classList.remove('pressing');
+
+                    if (dist < 20) {
+                        if (navigator.vibrate) navigator.vibrate(40);
+                        const payload = c.action === 'tuya_scene_toggle'
+                            ? { deviceIds: this.tuyaDevices, code: 'switch_led', value: c.value }
+                            : { deviceIds: this.tuyaDevices, code: c.code, value: c.value };
+                        this.socket.emit('tuya_command', payload);
+                    }
+                };
+
+                const onCancel = () => {
+                    isPressing = false;
+                    btn.classList.remove('pressing');
+                };
+
+                btn.addEventListener('pointerdown', onDown);
+                btn.addEventListener('pointerup', onUp);
+                btn.addEventListener('pointercancel', onCancel);
+                btn.addEventListener('click', (e) => e.preventDefault());
+
                 controlGrid.appendChild(btn);
             });
 

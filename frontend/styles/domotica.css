@@ -207,7 +207,7 @@ body.dragging-active .fader-thumb-pro {
     opacity: 0.95;
 }
 
-.domotica-sketch-btn:active {
+.domotica-sketch-btn.pressing {
     transform: scale(0.94) translateY(4px) !important;
     background: var(--btn-accent) !important;
     border-color: rgba(255, 255, 255, 0.4) !important;

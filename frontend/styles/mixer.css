@@ -153,32 +153,56 @@ body.dragging-active .mixer-panel {
 
 .mixer-panel-fullscreen {
     touch-action: none !important;
-    background: var(--glass-panel-strong) !important;
-    backdrop-filter: blur(var(--blur-strong)) !important;
-    -webkit-backdrop-filter: blur(var(--blur-strong)) !important;
+    background: rgba(13, 20, 31, 0.88) !important;
+    backdrop-filter: blur(24px) !important;
+    -webkit-backdrop-filter: blur(24px) !important;
     box-shadow: 0 40px 100px rgba(0,0,0,0.6) !important;
-    border: 1px solid var(--glass-border) !important;
-    border-radius: var(--radius-xl) !important;
-    width: auto !important;
-    min-width: 98vw !important;
-    max-width: 98vw !important;
-    width: 98vw !important;
-    height: 96vh !important;
-    max-height: 96vh !important;
-    padding: 10px 40px !important;
+    border: 1px solid rgba(255,255,255,0.12) !important;
+    border-radius: 40px !important;
+    
+    /* Dimensiones fijas para evitar saltos visuales al entrar */
+    width: 96vw !important;
+    max-width: 96vw !important;
+    height: 94vh !important;
+    max-height: 94vh !important;
+    
+    padding: 28px 34px !important;
     box-sizing: border-box !important;
     overflow: hidden !important;
     display: flex !important;
     flex-direction: row !important;
-    align-items: stretch !important;
+    align-items: center !important;
     justify-content: center !important;
+    gap: 26px !important;
     
-    /* Centrado Absoluto Premium (más estable que margin:auto en fit-content) */
     position: absolute !important;
     top: 50% !important;
     left: 50% !important;
     transform: translate(-50%, -50%) !important;
     scrollbar-width: none;
+}
+
+.mixer-loading-state {
+    color: white;
+    opacity: 0.5;
+    font-size: 1.2rem;
+    font-style: italic;
+}
+
+.mixer-vertical-divider {
+    width: 2px;
+    height: 80vh;
+    background: rgba(255,255,255,0.2);
+    margin: 0 40px;
+    flex: 0 0 auto;
+}
+
+.mixer-apps-grid {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 40px;
+    height: 100%;
 }
 
 .mixer-panel-fullscreen::-webkit-scrollbar {
@@ -241,7 +265,7 @@ body.dragging-active .mixer-panel {
     to { transform: scale(0.9); }
 }
 
-.mixer-icon-btn:active {
+.mixer-icon-btn.pressing {
     transform: scale(0.85);
 }
 
@@ -265,7 +289,7 @@ body.dragging-active .mixer-panel {
     transition: filter 0.2s var(--ease-standard);
 }
 
-.mixer-icon-btn:active .mixer-icon-shadow {
+.mixer-icon-btn.pressing .mixer-icon-shadow {
     filter: drop-shadow(0 2px 3px rgba(0,0,0,0.6));
 }
 

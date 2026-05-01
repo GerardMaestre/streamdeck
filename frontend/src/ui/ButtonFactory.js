@@ -141,19 +141,42 @@ export function createPanelBackButton(onClick) {
     backBtn.id = 'panel-back-button';
     backBtn.className = 'panel-back-btn-sketch-circle';
     backBtn.innerHTML = '<span>←</span>';
+    let startPos = null;
+    let isPressing = false;
+
     backBtn.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-
-        if (navigator.vibrate) navigator.vibrate(50);
-
-        const shield = document.createElement('div');
-        shield.className = 'pointer-shield';
-        document.body.appendChild(shield);
-        setTimeout(() => shield.remove(), 400);
-
-        if (onClick) onClick();
-        backBtn.remove();
+        startPos = { x: e.clientX, y: e.clientY };
+        isPressing = true;
+        backBtn.classList.add('pressing');
     });
+
+    backBtn.addEventListener('pointerup', (e) => {
+        if (!isPressing) return;
+        const dist = Math.hypot(e.clientX - startPos.x, e.clientY - startPos.y);
+        isPressing = false;
+        backBtn.classList.remove('pressing');
+
+        if (dist < 20) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+
+            if (navigator.vibrate) navigator.vibrate(50);
+
+            const shield = document.createElement('div');
+            shield.className = 'pointer-shield';
+            document.body.appendChild(shield);
+            setTimeout(() => shield.remove(), 400);
+
+            if (onClick) onClick();
+            backBtn.remove();
+        }
+    });
+
+    backBtn.addEventListener('pointercancel', () => {
+        isPressing = false;
+        backBtn.classList.remove('pressing');
+    });
+
+    backBtn.addEventListener('click', (e) => e.preventDefault());
     return backBtn;
 }

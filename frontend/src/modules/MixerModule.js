@@ -234,8 +234,8 @@ export class MixerModule {
         // RECREAR SIEMPRE EL DOM BASE. Esto evita problemas de nodos huérfanos
         // al salir y entrar del panel varias veces.
         mixerPanelEl.innerHTML = `
-            <div class="mixer-panel mixer-panel-fullscreen" id="mixer-main-container" style="display: flex !important; flex-direction: row !important; align-items: center !important; justify-content: center !important; gap: 26px !important; width: auto !important; min-width: 0 !important; max-width: calc(100vw - 40px) !important; padding: 28px 34px !important; position: absolute !important; top: 50% !important; left: 50% !important; transform: translate(-50%, -50%) !important; border-radius: 40px !important; background: rgba(13, 20, 31, 0.88) !important; backdrop-filter: blur(24px) !important; border: 1px solid rgba(255,255,255,0.12) !important;">
-                <div style="color: white; opacity: 0.5;">Cargando mezclador...</div>
+            <div class="mixer-panel mixer-panel-fullscreen" id="mixer-main-container">
+                <div class="mixer-loading-state">Cargando mezclador...</div>
             </div>
         `;
 
@@ -298,15 +298,15 @@ export class MixerModule {
                 requestAnimationFrame(() => masterCtrl.setPercent(masterData.volume, true));
             }
 
-            // 2. Separador visual (Altura dinámica máxima)
+            // 2. Separador visual
             const divider = document.createElement('div');
-            divider.style.cssText = 'width: 2px; height: 80vh; background: rgba(255,255,255,0.2); margin: 0 40px; flex: 0 0 auto;';
+            divider.className = 'mixer-vertical-divider';
             container.appendChild(divider);
 
-            // 3. Contenedor de Aplicaciones (Espacio adaptado y estirado)
+            // 3. Contenedor de Aplicaciones
             const appsContainer = document.createElement('div');
             appsContainer.id = 'app-mixers';
-            appsContainer.style.cssText = 'display: flex; flex-direction: row; align-items: stretch; gap: 40px; height: 100%;';
+            appsContainer.className = 'mixer-apps-grid';
             container.appendChild(appsContainer);
 
             if (sessions.length > 0) {
@@ -398,11 +398,34 @@ export class MixerModule {
             return row;
         }
 
-        button.addEventListener('pointerdown', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            this.toggleMute(isMaster ? 'Master' : name, isMaster, id);
+        let startPos = null;
+        let isPressing = false;
+
+        button.addEventListener('pointerdown', (e) => {
+            startPos = { x: e.clientX, y: e.clientY };
+            isPressing = true;
+            button.classList.add('pressing');
         });
+
+        button.addEventListener('pointerup', (e) => {
+            if (!isPressing) return;
+            const dist = Math.hypot(e.clientX - startPos.x, e.clientY - startPos.y);
+            isPressing = false;
+            button.classList.remove('pressing');
+
+            if (dist < 20) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.toggleMute(isMaster ? 'Master' : name, isMaster, id);
+            }
+        });
+
+        button.addEventListener('pointercancel', () => {
+            isPressing = false;
+            button.classList.remove('pressing');
+        });
+
+        button.addEventListener('click', (e) => e.preventDefault());
 
         this.mixerRefs[id] = { wrapper, track, fill, thumb, row };
 
