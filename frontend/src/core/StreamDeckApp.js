@@ -323,6 +323,22 @@ export class StreamDeckApp {
 
     // --- Button click delegation ---
     _setupButtonDelegation() {
+        const spawnRipple = (btn, clientX, clientY) => {
+            const rect = btn.getBoundingClientRect();
+            const ripple = document.createElement('span');
+            ripple.className = 'btn-ripple';
+
+            const maxSide = Math.max(rect.width, rect.height);
+            const size = maxSide * 1.35;
+            ripple.style.width = `${size}px`;
+            ripple.style.height = `${size}px`;
+            ripple.style.left = `${clientX - rect.left - size / 2}px`;
+            ripple.style.top = `${clientY - rect.top - size / 2}px`;
+
+            btn.appendChild(ripple);
+            ripple.addEventListener('animationend', () => ripple.remove(), { once: true });
+        };
+
         const onPointerDown = (e) => {
             const btn = e.target.closest('.boton');
             if (!btn || !this.buttonState.has(btn) || this.editMode.isActive()) return;
@@ -330,7 +346,9 @@ export class StreamDeckApp {
             const state = this.buttonState.get(btn);
             state.startPos = { x: e.clientX, y: e.clientY };
             state.longPressHandled = false;
+            btn.classList.remove('releasing');
             btn.classList.add('pressing');
+            spawnRipple(btn, e.clientX, e.clientY);
 
             state.longPressTimer = setTimeout(async () => {
                 if (!this.buttonState.has(btn)) return;
@@ -348,6 +366,9 @@ export class StreamDeckApp {
                 state.longPressTimer = null;
             }
             btn.classList.remove('pressing');
+            btn.classList.remove('releasing');
+            void btn.offsetWidth;
+            btn.classList.add('releasing');
         };
 
         const onPointerMove = (e) => {
