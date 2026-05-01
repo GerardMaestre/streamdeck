@@ -8,6 +8,12 @@ export class AutoClickerModule {
     constructor(ctx) {
         this.socket = ctx.socket;
         this.panelManager = ctx.panelManager;
+        this.errorHideTimer = null;
+        this.configDebounceTimer = null;
+        this.listenersBound = false;
+        this.domListenersAbort = null;
+        this.renderScheduled = false;
+        this.pendingState = null;
         this.state = {
             running: false,
             x: 0, y: 0,
@@ -20,9 +26,11 @@ export class AutoClickerModule {
     }
 
     setupSocketListeners() {
+        if (this.listenersBound) return;
+        this.listenersBound = true;
+
         this.socket.on('autoclicker_state', (s) => {
-            this.state = { ...this.state, ...s };
-            this._updateUI();
+            this._scheduleStateUpdate(s);
         });
 
         this.socket.on('autoclicker_position_picked', (pos) => {
@@ -34,9 +42,12 @@ export class AutoClickerModule {
         this.socket.on('autoclicker_error', (err) => {
             const el = document.getElementById('ac-error');
             if (el) {
-                el.textContent = err.message;
+                el.textContent = err?.message || 'Error desconocido en AutoClicker';
                 el.style.display = 'block';
-                setTimeout(() => { el.style.display = 'none'; }, 4000);
+                if (this.errorHideTimer) clearTimeout(this.errorHideTimer);
+                this.errorHideTimer = setTimeout(() => {
+                    el.style.display = 'none';
+                }, 4000);
             }
         });
     }
@@ -126,7 +137,7 @@ export class AutoClickerModule {
                     <label class="ac-setting-label">Monitor</label>
                     <select class="ac-select" id="ac-monitor">
                         ${(s.monitors || []).map(m =>
-                            `<option value="${m.index}" ${m.index === s.monitorIndex ? 'selected' : ''}>${m.label}</option>`
+                            `<option value="${m.index}" ${m.index === s.monitorIndex ? 'selected' : ''}>${this._escapeHtml(m.label)}</option>`
                         ).join('')}
                     </select>
                 </div>
@@ -147,6 +158,10 @@ export class AutoClickerModule {
     }
 
     _bindEvents() {
+        if (this.domListenersAbort) this.domListenersAbort.abort();
+        this.domListenersAbort = new AbortController();
+        const signal = this.domListenersAbort.signal;
+
         const pickBtn = document.getElementById('ac-btn-pick');
         const toggleBtn = document.getElementById('ac-btn-toggle');
         const intervalSlider = document.getElementById('ac-interval');
@@ -159,14 +174,14 @@ export class AutoClickerModule {
                 this.socket.emit('autoclicker_pick_position');
                 pickBtn.textContent = '⏳ Esperando selección en PC...';
                 pickBtn.classList.add('ac-btn-waiting');
-            });
+            }, { signal });
         }
 
         if (toggleBtn) {
             toggleBtn.addEventListener('pointerdown', (e) => {
                 e.preventDefault();
                 this.socket.emit('autoclicker_toggle');
-            });
+            }, { signal });
         }
 
         if (intervalSlider) {
@@ -174,8 +189,8 @@ export class AutoClickerModule {
                 const val = parseInt(intervalSlider.value, 10);
                 document.getElementById('ac-interval-val').textContent = val + 'ms';
                 this.state.interval = val;
-                this._sendConfig();
-            });
+                this._sendConfigDebounced();
+            }, { signal });
         }
 
         if (clickTypeGroup) {
@@ -185,17 +200,34 @@ export class AutoClickerModule {
                     clickTypeGroup.querySelectorAll('.ac-toggle').forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
                     this.state.clickType = btn.dataset.value;
-                    this._sendConfig();
-                });
+                    this._sendConfigDebounced();
+                }, { signal });
             });
         }
 
         if (monitorSelect) {
             monitorSelect.addEventListener('change', () => {
                 this.state.monitorIndex = parseInt(monitorSelect.value, 10);
-                this._sendConfig();
-            });
+                this._sendConfigDebounced();
+            }, { signal });
         }
+    }
+
+    _scheduleStateUpdate(partialState) {
+        this.pendingState = { ...(this.pendingState || this.state), ...partialState };
+        if (this.renderScheduled) return;
+        this.renderScheduled = true;
+        requestAnimationFrame(() => {
+            this.state = this.pendingState;
+            this.pendingState = null;
+            this.renderScheduled = false;
+            this._updateUI();
+        });
+    }
+
+    _sendConfigDebounced() {
+        if (this.configDebounceTimer) clearTimeout(this.configDebounceTimer);
+        this.configDebounceTimer = setTimeout(() => this._sendConfig(), 120);
     }
 
     _sendConfig() {
@@ -253,10 +285,19 @@ export class AutoClickerModule {
             const currentOpts = monitorSelect.options.length;
             if (currentOpts !== s.monitors.length) {
                 monitorSelect.innerHTML = s.monitors.map(m =>
-                    `<option value="${m.index}" ${m.index === s.monitorIndex ? 'selected' : ''}>${m.label}</option>`
+                    `<option value="${m.index}" ${m.index === s.monitorIndex ? 'selected' : ''}>${this._escapeHtml(m.label)}</option>`
                 ).join('');
             }
             monitorSelect.value = s.monitorIndex;
         }
+    }
+
+    _escapeHtml(value) {
+        return String(value)
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#39;');
     }
 }
