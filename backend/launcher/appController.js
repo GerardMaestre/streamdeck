@@ -1,5 +1,4 @@
 const open = require('open');
-const { exec } = require('child_process');
 
 const appUrls = {
     'google-keep': 'https://keep.google.com/',
@@ -17,8 +16,8 @@ const abrirAplicacionOWeb = async (destino) => {
             try {
                 await open(url, { app: { name: 'chrome', arguments: [`--app=${url}`] } });
             } catch (err) {
-                const command = `start chrome --app="${url}"`;
-                exec(command);
+                // Fallback seguro sin shell interpolation.
+                await open(url);
             }
         }
 
