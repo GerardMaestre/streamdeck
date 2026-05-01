@@ -1,6 +1,6 @@
 {
     "ui": {
-        "lastPage": "main2"
+        "lastPage": "main"
     },
     "persistedMixer": {
         "masterMute": false,
@@ -35,5 +35,5 @@
             }
         }
     },
-    "updatedAt": 1777634516357
+    "updatedAt": 1777634945317
 }
