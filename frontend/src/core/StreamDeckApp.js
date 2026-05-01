@@ -345,6 +345,11 @@ export class StreamDeckApp {
             const btn = e.target.closest('.boton');
             if (!btn || !this.buttonState.has(btn) || this.editMode.isActive()) return;
 
+            if (activePress && activePress.btn && this.buttonState.has(activePress.btn)) {
+                const prevState = this.buttonState.get(activePress.btn);
+                clearTimer(activePress.btn, prevState);
+            }
+
             const state = this.buttonState.get(btn);
             state.startPos = { x: e.clientX, y: e.clientY };
             state.longPressHandled = false;
@@ -355,6 +360,7 @@ export class StreamDeckApp {
 
             state.longPressTimer = setTimeout(async () => {
                 if (!this.buttonState.has(btn)) return;
+                if (!btn.isConnected) return;
                 state.longPressHandled = true;
                 if (navigator.vibrate) navigator.vibrate([40, 20, 40]);
                 const helpText = getButtonHelpText(state.btnData);
@@ -368,6 +374,7 @@ export class StreamDeckApp {
                 clearTimeout(state.longPressTimer);
                 state.longPressTimer = null;
             }
+            if (!btn || !btn.isConnected) return;
             const wasPressing = btn.classList.contains('pressing');
             btn.classList.remove('pressing');
             if (wasPressing) {
@@ -448,8 +455,8 @@ export class StreamDeckApp {
         if (this.container) {
             this.container.addEventListener('pointerdown', onPointerDown);
             this.container.addEventListener('pointermove', onPointerMove, { passive: true });
-            this.container.addEventListener('pointerup', onPointerUp);
-            this.container.addEventListener('pointercancel', onPointerUp);
+            window.addEventListener('pointerup', onPointerUp, true);
+            window.addEventListener('pointercancel', onPointerUp, true);
             this.container.addEventListener('click', onClick);
         }
     }
