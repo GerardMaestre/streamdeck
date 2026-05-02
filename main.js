@@ -85,12 +85,15 @@ app.whenReady().then(async () => {
         console.log('[App Bandeja] Iniciando motor del servidor...');
         
         // Verificación de integridad de archivos críticos antes de arrancar
-        const serverScript = path.join(__dirname, 'server.js');
+        const serverScript = fs.existsSync(path.join(__dirname, 'server.js'))
+            ? path.join(__dirname, 'server.js')
+            : path.join(process.resourcesPath, 'app.asar', 'server.js');
+        
         if (!fs.existsSync(serverScript)) {
             throw new Error(`No se encontró el archivo del servidor en: ${serverScript}`);
         }
 
-        require('./server.js');
+        require(serverScript);
         
         // Esperar a que el servidor asigne el puerto (máximo 5 segundos)
         const portFromServer = await waitForServerPort(5000);

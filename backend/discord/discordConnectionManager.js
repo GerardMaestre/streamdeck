@@ -143,9 +143,17 @@ class DiscordConnectionManager {
             return attempts;
         }
 
-        const redirectCandidates = [redirectUri, 'http://localhost', 'http://127.0.0.1']
-            .filter(Boolean)
-            .filter((value, index, list) => list.indexOf(value) === index);
+        const redirectCandidates = [
+            redirectUri,
+            'http://localhost',
+            'http://127.0.0.1',
+            'http://localhost/callback',
+            'http://127.0.0.1/callback',
+            'http://localhost:3000/callback',
+            'http://127.0.0.1:3000/callback'
+        ]
+        .filter(Boolean)
+        .filter((value, index, list) => list.indexOf(value) === index);
 
         // 1. INTENTOS AVANZADOS (OAuth) - Para control de volumen y voz
         for (const candidate of redirectCandidates) {
