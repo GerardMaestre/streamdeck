@@ -11,13 +11,40 @@ const logPath = app.isPackaged
     : path.join(__dirname, 'debug.log');
 
 if (app.isPackaged) {
-    const exeDir = path.dirname(process.execPath);
+    const exeDir = process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(process.execPath);
     const externalEnv = path.join(exeDir, '.env');
+    const userDataEnv = path.join(app.getPath('userData'), '.env');
     const resourcesEnv = path.join(process.resourcesPath, '.env');
     
-    // Prioridad al .env junto al .exe, fallback al de resources
-    const envPath = fs.existsSync(externalEnv) ? externalEnv : resourcesEnv;
-    
+    // Prioridades:
+    // 1. .env junto al ejecutable (para portables o configuración externa)
+    // 2. .env en la carpeta userData persistente
+    // 3. .env en la carpeta de recursos de instalación
+    let envPath = null;
+    if (fs.existsSync(externalEnv)) {
+        envPath = externalEnv;
+    } else if (fs.existsSync(userDataEnv)) {
+        envPath = userDataEnv;
+    } else if (fs.existsSync(resourcesEnv)) {
+        envPath = resourcesEnv;
+    }
+
+    // Si no existe en ningún sitio, creamos uno de plantilla en userData para evitar errores y permitir edición
+    if (!envPath) {
+        const templateContent = `DISCORD_CLIENT_ID=\nDISCORD_CLIENT_SECRET=\nTUYA_ACCESS_KEY=\nTUYA_SECRET_KEY=\nSECURITY_TOKEN=CasaGerard\n`;
+        try {
+            fs.writeFileSync(userDataEnv, templateContent, 'utf8');
+            envPath = userDataEnv;
+        } catch (err) {}
+    } else {
+        // Sincronizar a userData para que persista y el usuario tenga permisos plenos
+        if (envPath !== userDataEnv && !fs.existsSync(userDataEnv)) {
+            try {
+                fs.copyFileSync(envPath, userDataEnv);
+            } catch (err) {}
+        }
+    }
+
     const result = dotenv.config({ path: envPath, quiet: true });
     try {
         fs.appendFileSync(logPath, `[${new Date().toISOString()}] Packaged: true, EnvPath: ${envPath}, Parsed: ${JSON.stringify(result.parsed || {})}, TUYA: ${process.env.TUYA_ACCESS_KEY}\n`);

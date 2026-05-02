@@ -5,7 +5,8 @@ const fs = require('fs');
 /**
  * Resuelve rutas de forma dinámica para que funcionen tanto en desarrollo
  * como en la aplicación empaquetada (Portable/Instalador).
- * Prioriza archivos externos en la carpeta 'resources' para permitir personalización del usuario.
+ * Prioriza archivos externos en la carpeta 'resources' para permitir personalización del usuario,
+ * y usa 'userData' para guardar cambios con permisos de escritura.
  */
 const getDataPath = (relativePath) => {
     let app;
@@ -23,12 +24,14 @@ const getDataPath = (relativePath) => {
 
     const isPackaged = app.isPackaged;
 
-    // 1. Prioridad: Archivos externos (para config.json, scripts, logs, .env)
     if (isPackaged) {
-        // En portables o instalaciones, el usuario suele querer poner sus archivos junto al .exe
-        const exeDir = path.dirname(process.execPath);
+        // Carpeta que contiene el ejecutable (soporta portables de electron-builder)
+        const exeDir = process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(process.execPath);
         const externalPath = path.join(exeDir, relativePath);
         
+        // Carpeta userData persistente (AppData/Roaming/mi-streamdeck)
+        const userDataPath = path.join(app.getPath('userData'), relativePath);
+
         // Carpeta resources estándar de Electron
         const resourcesPath = path.join(process.resourcesPath, relativePath);
 
@@ -40,21 +43,58 @@ const getDataPath = (relativePath) => {
                                relativePath.startsWith('.env');
 
         if (isExternalData) {
-            // Si el archivo existe junto al .exe, usamos ese (máxima prioridad)
+            // Para directorios (como scripts/, logs/, data/, frontend/), evitamos copiar recursivamente
+            try {
+                if (fs.existsSync(resourcesPath)) {
+                    const stats = fs.statSync(resourcesPath);
+                    if (stats.isDirectory()) {
+                        if (fs.existsSync(externalPath)) return externalPath;
+                        if (fs.existsSync(userDataPath)) return userDataPath;
+                        return resourcesPath;
+                    }
+                }
+            } catch (err) {}
+
+            // 1. Si existe junto al ejecutable (máxima prioridad para portables o personalización avanzada)
             if (fs.existsSync(externalPath)) {
                 return externalPath;
             }
-            // Si no, usamos el de la carpeta resources (el que viene empaquetado)
-            return resourcesPath;
+            // 2. Si existe en la carpeta userData persistente
+            if (fs.existsSync(userDataPath)) {
+                return userDataPath;
+            }
+            // 3. Fallback: Si existe en la carpeta resources, lo copiamos a userData para que tenga permisos de escritura
+            if (fs.existsSync(resourcesPath)) {
+                try {
+                    const dir = path.dirname(userDataPath);
+                    if (!fs.existsSync(dir)) {
+                        fs.mkdirSync(dir, { recursive: true });
+                    }
+                    fs.copyFileSync(resourcesPath, userDataPath);
+                    return userDataPath;
+                } catch (err) {
+                    // Fallback a resourcesPath si algo falla
+                    return resourcesPath;
+                }
+            }
+            
+            // Si el archivo no existe en absoluto, creamos su directorio padre en userData y lo devolvemos
+            try {
+                const dir = path.dirname(userDataPath);
+                if (!fs.existsSync(dir)) {
+                    fs.mkdirSync(dir, { recursive: true });
+                }
+            } catch (err) {}
+            return userDataPath;
         }
     }
 
-    // 2. Archivos internos (frontend, controllers, etc) dentro del ASAR en prod
+    // Archivos internos (como controllers, core, etc.) dentro de app.asar en producción
     if (isPackaged) {
         return path.join(app.getAppPath(), relativePath);
     }
 
-    // 3. Desarrollo
+    // Desarrollo
     return path.resolve(__dirname, '../../', relativePath);
 };
 
