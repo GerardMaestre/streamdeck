@@ -28,9 +28,23 @@ jobs:
         cache: 'npm'
 
     - name: Instalar dependencias
-      # Usamos install directamente. Al haber quitado el 'postinstall' del package.json, 
-      # este paso será mucho más rápido y no debería quedarse bloqueado.
       run: npm install
+
+    - name: Preparar archivos para compilación
+      shell: pwsh
+      run: |
+        if (!(Test-Path .env)) { 
+          "SECURITY_TOKEN=CasaGerard`nPORT=3000" | Out-File -FilePath .env -Encoding utf8 
+        }
+        if (!(Test-Path config.json)) { 
+          if (Test-Path config.example.json) {
+            Copy-Item config.example.json config.json
+          } else {
+            '{"pages": {"main": []}, "carouselPages": ["main"]}' | Out-File -FilePath config.json -Encoding utf8
+          }
+        }
+        if (!(Test-Path data)) { New-Item -Path data -ItemType Directory }
+        if (!(Test-Path data/state.json)) { "{}" | Out-File -FilePath data/state.json -Encoding utf8 }
 
     - name: Compilar ejecutable con Electron Builder
       # Electron-builder se encargará de reconstruir los módulos nativos aquí.
