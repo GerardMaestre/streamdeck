@@ -6,55 +6,67 @@ const { getDataPath } = require('./backend/utils/utils');
 // 1. Cargar variables de entorno según el entorno (Producción vs Desarrollo)
 const dotenv = require('dotenv');
 const fs = require('fs');
-const logPath = app.isPackaged 
-    ? path.join(app.getPath('userData'), 'debug.log') 
-    : path.join(__dirname, 'debug.log');
 
-if (app.isPackaged) {
-    const exeDir = process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(process.execPath);
-    const externalEnv = path.join(exeDir, '.env');
-    const userDataEnv = path.join(app.getPath('userData'), '.env');
-    const resourcesEnv = path.join(process.resourcesPath, '.env');
-    
-    // Prioridades:
-    // 1. .env junto al ejecutable (para portables o configuración externa)
-    // 2. .env en la carpeta userData persistente
-    // 3. .env en la carpeta de recursos de instalación
-    let envPath = null;
-    if (fs.existsSync(externalEnv)) {
-        envPath = externalEnv;
-    } else if (fs.existsSync(userDataEnv)) {
-        envPath = userDataEnv;
-    } else if (fs.existsSync(resourcesEnv)) {
-        envPath = resourcesEnv;
-    }
-
-    // Si no existe en ningún sitio, creamos uno de plantilla en userData para evitar errores y permitir edición
-    if (!envPath) {
-        const templateContent = `DISCORD_CLIENT_ID=\nDISCORD_CLIENT_SECRET=\nTUYA_ACCESS_KEY=\nTUYA_SECRET_KEY=\nSECURITY_TOKEN=CasaGerard\n`;
-        try {
-            fs.writeFileSync(userDataEnv, templateContent, 'utf8');
-            envPath = userDataEnv;
-        } catch (err) {}
-    } else {
-        // Sincronizar a userData para que persista y el usuario tenga permisos plenos
-        if (envPath !== userDataEnv && !fs.existsSync(userDataEnv)) {
+const loadAllEnvs = () => {
+    const getUserDataPath = () => {
+        if (app && app.isPackaged) {
+            if (process.env.APPDATA) {
+                return path.join(process.env.APPDATA, 'mi-streamdeck');
+            }
             try {
-                fs.copyFileSync(envPath, userDataEnv);
-            } catch (err) {}
+                return app.getPath('userData');
+            } catch (e) {
+                return path.join(os.homedir(), 'AppData', 'Roaming', 'mi-streamdeck');
+            }
         }
-    }
+        return __dirname;
+    };
 
-    const result = dotenv.config({ path: envPath, quiet: true });
-    try {
-        fs.appendFileSync(logPath, `[${new Date().toISOString()}] Packaged: true, EnvPath: ${envPath}, Parsed: ${JSON.stringify(result.parsed || {})}, TUYA: ${process.env.TUYA_ACCESS_KEY}\n`);
-    } catch (e) {}
-} else {
-    const result = dotenv.config({ quiet: true });
-    try {
-        fs.appendFileSync(logPath, `[${new Date().toISOString()}] Packaged: false, Parsed: ${JSON.stringify(result.parsed || {})}, TUYA: ${process.env.TUYA_ACCESS_KEY}\n`);
-    } catch (e) {}
-}
+    const parseEnv = (fp) => {
+        try {
+            if (fs.existsSync(fp)) return dotenv.parse(fs.readFileSync(fp, 'utf8'));
+        } catch (e) {}
+        return {};
+    };
+
+    const userData = getUserDataPath();
+    const logPath = path.join(userData, 'debug.log');
+
+    if (app && app.isPackaged) {
+        const exeDir = process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(process.execPath);
+        const externalEnv = path.join(exeDir, '.env');
+        const userDataEnv = path.join(userData, '.env');
+        const resourcesEnv = path.join(process.resourcesPath, '.env');
+
+        // Parse all 3 files
+        const resourcesObj = parseEnv(resourcesEnv);
+        const userDataObj = parseEnv(userDataEnv);
+        const externalObj = parseEnv(externalEnv);
+
+        // Merge in correct priority: resources < userData < external
+        const merged = Object.assign({}, resourcesObj, userDataObj, externalObj);
+        for (const k of Object.keys(merged)) {
+            process.env[k] = merged[k];
+        }
+
+        try {
+            const logContent = `[${new Date().toISOString()}] PROD ENV LOADED (main):\n` +
+                `- externalEnv: ${externalEnv} (exists: ${fs.existsSync(externalEnv)})\n` +
+                `- userDataEnv: ${userDataEnv} (exists: ${fs.existsSync(userDataEnv)})\n` +
+                `- resourcesEnv: ${resourcesEnv} (exists: ${fs.existsSync(resourcesEnv)})\n` +
+                `- Variables Merged: ${Object.keys(merged).join(', ')}\n` +
+                `- TUYA_ACCESS_KEY: ${process.env.TUYA_ACCESS_KEY ? 'Present' : 'Missing'}\n` +
+                `- DISCORD_CLIENT_ID: ${process.env.DISCORD_CLIENT_ID ? 'Present' : 'Missing'}\n`;
+            fs.appendFileSync(logPath, logContent);
+        } catch (e) {}
+    } else {
+        const result = dotenv.config({ quiet: true });
+        try {
+            fs.appendFileSync(logPath, `[${new Date().toISOString()}] DEV ENV LOADED (main): Parsed: ${JSON.stringify(result.parsed || {})}\n`);
+        } catch (e) {}
+    }
+};
+loadAllEnvs();
 
 /**
  * Stream Deck Pro - Tray App Wrapper

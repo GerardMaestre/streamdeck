@@ -1,11 +1,75 @@
 const { emitErrorToFrontend, getErrorMessage, getDataPath } = require('./backend/utils/utils');
-require('dotenv').config({ path: getDataPath('.env'), quiet: true });
+// 1. Cargar variables de entorno según el entorno (Producción vs Desarrollo)
+const dotenv = require('dotenv');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { app: electronApp } = require('electron');
+
+const loadAllEnvs = () => {
+    const getUserDataPath = () => {
+        if (electronApp && electronApp.isPackaged) {
+            if (process.env.APPDATA) {
+                return path.join(process.env.APPDATA, 'mi-streamdeck');
+            }
+            try {
+                return electronApp.getPath('userData');
+            } catch (e) {
+                return path.join(os.homedir(), 'AppData', 'Roaming', 'mi-streamdeck');
+            }
+        }
+        return __dirname;
+    };
+
+    const parseEnv = (fp) => {
+        try {
+            if (fs.existsSync(fp)) return dotenv.parse(fs.readFileSync(fp, 'utf8'));
+        } catch (e) {}
+        return {};
+    };
+
+    const userData = getUserDataPath();
+    const logPath = path.join(userData, 'debug.log');
+
+    if (electronApp && electronApp.isPackaged) {
+        const exeDir = process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(process.execPath);
+        const externalEnv = path.join(exeDir, '.env');
+        const userDataEnv = path.join(userData, '.env');
+        const resourcesEnv = path.join(process.resourcesPath, '.env');
+
+        // Parse all 3 files
+        const resourcesObj = parseEnv(resourcesEnv);
+        const userDataObj = parseEnv(userDataEnv);
+        const externalObj = parseEnv(externalEnv);
+
+        // Merge in correct priority: resources < userData < external
+        const merged = Object.assign({}, resourcesObj, userDataObj, externalObj);
+        for (const k of Object.keys(merged)) {
+            process.env[k] = merged[k];
+        }
+
+        try {
+            const logContent = `[${new Date().toISOString()}] PROD ENV LOADED (server):\n` +
+                `- externalEnv: ${externalEnv} (exists: ${fs.existsSync(externalEnv)})\n` +
+                `- userDataEnv: ${userDataEnv} (exists: ${fs.existsSync(userDataEnv)})\n` +
+                `- resourcesEnv: ${resourcesEnv} (exists: ${fs.existsSync(resourcesEnv)})\n` +
+                `- Variables Merged: ${Object.keys(merged).join(', ')}\n` +
+                `- TUYA_ACCESS_KEY: ${process.env.TUYA_ACCESS_KEY ? 'Present' : 'Missing'}\n` +
+                `- DISCORD_CLIENT_ID: ${process.env.DISCORD_CLIENT_ID ? 'Present' : 'Missing'}\n`;
+            fs.appendFileSync(logPath, logContent);
+        } catch (e) {}
+    } else {
+        const result = dotenv.config({ quiet: true });
+        try {
+            fs.appendFileSync(logPath, `[${new Date().toISOString()}] DEV ENV LOADED (server): Parsed: ${JSON.stringify(result.parsed || {})}\n`);
+        } catch (e) {}
+    }
+};
+loadAllEnvs();
 // 1. IMPORTS
 const express = require('express');
 const http = require('http');
 const https = require('https');
-const path = require('path');
-const fs = require('fs');
 const { Server } = require('socket.io');
 const compression = require('compression');
 const { appStateStore } = require('./backend/data/state-store');
