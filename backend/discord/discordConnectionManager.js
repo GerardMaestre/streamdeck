@@ -2,15 +2,7 @@ const { exec } = require('child_process');
 const RPC = require('discord-rpc');
 const Logger = require('../core/logger/logger');
 
-const clientId = (process.env.DISCORD_CLIENT_ID || '').trim();
-const clientSecret = (process.env.DISCORD_CLIENT_SECRET || '').trim();
-const redirectUri = (process.env.DISCORD_REDIRECT_URI || 'http://localhost').trim();
-
-if (!clientId) {
-    Logger.warn('[Discord] DISCORD_CLIENT_ID no definido en .env. Discord deshabilitado.');
-} else {
-    Logger.info(`[Discord] Cargado Client ID: ${clientId.substring(0, 5)}...`);
-}
+// Discord variables will be dynamically retrieved from process.env on demand.
 
 const LOGIN_SCOPES = ['rpc', 'rpc.voice.read', 'rpc.voice.write'];
 const DEFAULT_RECONNECT_MS = 10000;
@@ -142,7 +134,15 @@ class DiscordConnectionManager {
 
     buildLoginAttempts() {
         const attempts = [];
+        const clientId = (process.env.DISCORD_CLIENT_ID || '').trim();
+        const clientSecret = (process.env.DISCORD_CLIENT_SECRET || '').trim();
+        const redirectUri = (process.env.DISCORD_REDIRECT_URI || 'http://localhost').trim();
         
+        if (!clientId) {
+            Logger.warn('[Discord] DISCORD_CLIENT_ID no definido en .env. No se pueden generar intentos.');
+            return attempts;
+        }
+
         const redirectCandidates = [redirectUri, 'http://localhost', 'http://127.0.0.1']
             .filter(Boolean)
             .filter((value, index, list) => list.indexOf(value) === index);

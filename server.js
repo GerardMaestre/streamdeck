@@ -69,6 +69,52 @@ if (!fs.existsSync(CONFIG_PATH)) {
     }
 }
 
+// Merge con la plantilla empaquetada para asegurar que no falten nuevos botones/páginas
+try {
+    const fallbackPath = getDataPath('backend/data/defaultConfig.json');
+    if (fs.existsSync(fallbackPath) && fs.existsSync(CONFIG_PATH)) {
+        const defaultConfig = JSON.parse(fs.readFileSync(fallbackPath, 'utf8'));
+        const existingConfig = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+        let changed = false;
+
+        if (existingConfig && existingConfig.pages) {
+            for (const pageName of Object.keys(defaultConfig.pages)) {
+                if (!existingConfig.pages[pageName]) {
+                    existingConfig.pages[pageName] = defaultConfig.pages[pageName];
+                    changed = true;
+                } else {
+                    const existingLabels = new Set(existingConfig.pages[pageName].map(b => b.label));
+                    for (const defaultBtn of defaultConfig.pages[pageName]) {
+                        if (!existingLabels.has(defaultBtn.label)) {
+                            existingConfig.pages[pageName].push(defaultBtn);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            if (Array.isArray(defaultConfig.carouselPages)) {
+                if (!Array.isArray(existingConfig.carouselPages)) {
+                    existingConfig.carouselPages = defaultConfig.carouselPages;
+                    changed = true;
+                } else {
+                    for (const cp of defaultConfig.carouselPages) {
+                        if (!existingConfig.carouselPages.includes(cp)) {
+                            existingConfig.carouselPages.push(cp);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+        if (changed) {
+            fs.writeFileSync(CONFIG_PATH, JSON.stringify(existingConfig, null, 4), 'utf8');
+            Logger.info(`[Config] config.json se ha actualizado y combinado con las novedades de defaultConfig.json`);
+        }
+    }
+} catch (err) {
+    Logger.warn('[Config] Error al fusionar config.json con las novedades', err.message);
+}
+
 try {
     let configTimeout;
 

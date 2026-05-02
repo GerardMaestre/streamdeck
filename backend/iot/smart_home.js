@@ -1,12 +1,21 @@
 const { TuyaContext } = require('@tuya/tuya-connector-nodejs');
 const Logger = require('../core/logger/logger');
 
-// Configuración con tus credenciales del panel (Overview) a través de variables de entorno
-const context = new TuyaContext({
-  baseUrl: 'https://openapi.tuyaeu.com', 
-  accessKey: process.env.TUYA_ACCESS_KEY,
-  secretKey: process.env.TUYA_SECRET_KEY,
-});
+// Obtener el contexto de Tuya de forma dinámica para garantizar que usa las variables más recientes de .env
+const getTuyaContext = () => {
+  const accessKey = (process.env.TUYA_ACCESS_KEY || '').trim();
+  const secretKey = (process.env.TUYA_SECRET_KEY || '').trim();
+
+  if (!accessKey || !secretKey) {
+    Logger.warn('[Tuya] TUYA_ACCESS_KEY o TUYA_SECRET_KEY no definidos. Verifica tu archivo .env.');
+  }
+
+  return new TuyaContext({
+    baseUrl: 'https://openapi.tuyaeu.com', 
+    accessKey: accessKey,
+    secretKey: secretKey,
+  });
+};
 
 if (process.env.TUYA_ACCESS_KEY) {
   Logger.info(`[Tuya] Sistema inicializado con Access Key: ${process.env.TUYA_ACCESS_KEY.substring(0, 5)}...`);
@@ -19,6 +28,7 @@ if (process.env.TUYA_ACCESS_KEY) {
  */
 const sendTuyaCommand = async (deviceId, code, value) => {
   try {
+    const context = getTuyaContext();
     const res = await context.request({
       path: `/v1.0/devices/${deviceId}/commands`,
       method: 'POST',

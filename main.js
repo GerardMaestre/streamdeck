@@ -1,6 +1,7 @@
 const path = require('path');
 const os = require('os');
 const { app, Tray, Menu, shell, nativeImage, dialog, BrowserWindow, ipcMain } = require('electron');
+const { getDataPath } = require('./backend/utils/utils');
 
 // 1. Cargar variables de entorno según el entorno (Producción vs Desarrollo)
 const dotenv = require('dotenv');
