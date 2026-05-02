@@ -229,32 +229,37 @@ export class StreamDeckApp {
     getPageData(pageId) {
         let pageData = this.pages[pageId];
 
+        // 1. Si la página tiene botones configurados, miramos si alguno es una carpeta de scripts
         if (Array.isArray(pageData) && pageData.length > 0) {
             const anyWithCarpeta = pageData.find(item => item?.payload?.carpeta);
             if (anyWithCarpeta) {
                 const carpeta = anyWithCarpeta.payload.carpeta;
-                const detected = this.scriptsByFolder?.[carpeta]?.archivos || [];
+                const detected = (this.scriptsByFolder?.[carpeta]?.archivos) || [];
                 const configured = pageData.slice();
                 const existingFiles = new Set(configured.filter(i => i.payload?.archivo).map(i => i.payload.archivo));
 
+                // Añadir archivos que están en el disco pero no en el config.json
                 detected.forEach(f => {
                     if (!existingFiles.has(f.archivo)) {
                         configured.push({
-                            label: f.label, icon: '⚙️',
+                            label: f.label || f.archivo,
+                            icon: '⚙️',
                             color: 'linear-gradient(145deg, #2980b9, #3498db)',
-                            type: 'action', action: 'ejecutar_script_dinamico',
+                            type: 'action',
+                            action: 'ejecutar_script_dinamico',
                             payload: { carpeta, archivo: f.archivo },
-                            helpText: f.helpText || f.description || ''
+                            helpText: f.helpText || ''
                         });
                     }
                 });
 
+                // Enriquecer los botones existentes con descripciones del script si faltan
                 for (let i = 0; i < configured.length; i++) {
                     const item = configured[i];
                     if (item?.payload?.archivo) {
                         const found = detected.find(d => d.archivo === item.payload.archivo);
                         if (found?.helpText) {
-                            item.helpText = item.helpText || found.helpText || '';
+                            item.helpText = item.helpText || found.helpText;
                         }
                     }
                 }
@@ -262,13 +267,16 @@ export class StreamDeckApp {
             }
         }
 
+        // 2. Fallback: Si la página no existe en config.json pero es una carpeta de scripts válida
         if ((!pageData || pageData.length === 0) && this.scriptsByFolder?.[pageId]) {
             pageData = this.scriptsByFolder[pageId].archivos.map(f => ({
-                label: f.label, icon: '⚙️',
+                label: f.label || f.archivo,
+                icon: '⚙️',
                 color: 'linear-gradient(145deg, #2980b9, #3498db)',
-                type: 'action', action: 'ejecutar_script_dinamico',
+                type: 'action',
+                action: 'ejecutar_script_dinamico',
                 payload: { carpeta: pageId, archivo: f.archivo },
-                helpText: f.helpText || f.description || ''
+                helpText: f.helpText || ''
             }));
         }
 

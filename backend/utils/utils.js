@@ -23,19 +23,29 @@ const getDataPath = (relativePath) => {
 
     const isPackaged = app.isPackaged;
 
-    // 1. Prioridad: Carpeta 'resources' externa (para config.json, scripts, logs)
+    // 1. Prioridad: Archivos externos (para config.json, scripts, logs, .env)
     if (isPackaged) {
-        const extraPath = path.join(process.resourcesPath, relativePath);
+        // En portables o instalaciones, el usuario suele querer poner sus archivos junto al .exe
+        const exeDir = path.dirname(process.execPath);
+        const externalPath = path.join(exeDir, relativePath);
         
+        // Carpeta resources estándar de Electron
+        const resourcesPath = path.join(process.resourcesPath, relativePath);
+
         const isExternalData = relativePath.startsWith('config.json') || 
                                relativePath.startsWith('scripts') || 
                                relativePath.startsWith('logs') ||
                                relativePath.startsWith('data') ||
                                relativePath.startsWith('frontend') ||
                                relativePath.startsWith('.env');
-                               
-        if (isExternalData || fs.existsSync(extraPath)) {
-            return extraPath;
+
+        if (isExternalData) {
+            // Si el archivo existe junto al .exe, usamos ese (máxima prioridad)
+            if (fs.existsSync(externalPath)) {
+                return externalPath;
+            }
+            // Si no, usamos el de la carpeta resources (el que viene empaquetado)
+            return resourcesPath;
         }
     }
 

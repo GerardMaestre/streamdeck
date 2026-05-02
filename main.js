@@ -10,7 +10,13 @@ const logPath = app.isPackaged
     : path.join(__dirname, 'debug.log');
 
 if (app.isPackaged) {
-    const envPath = path.join(process.resourcesPath, '.env');
+    const exeDir = path.dirname(process.execPath);
+    const externalEnv = path.join(exeDir, '.env');
+    const resourcesEnv = path.join(process.resourcesPath, '.env');
+    
+    // Prioridad al .env junto al .exe, fallback al de resources
+    const envPath = fs.existsSync(externalEnv) ? externalEnv : resourcesEnv;
+    
     const result = dotenv.config({ path: envPath, quiet: true });
     try {
         fs.appendFileSync(logPath, `[${new Date().toISOString()}] Packaged: true, EnvPath: ${envPath}, Parsed: ${JSON.stringify(result.parsed || {})}, TUYA: ${process.env.TUYA_ACCESS_KEY}\n`);
@@ -79,7 +85,7 @@ app.whenReady().then(async () => {
         
         // Verificación de integridad de archivos críticos antes de arrancar
         const serverScript = path.join(__dirname, 'server.js');
-        if (!require('fs').existsSync(serverScript)) {
+        if (!fs.existsSync(serverScript)) {
             throw new Error(`No se encontró el archivo del servidor en: ${serverScript}`);
         }
 
@@ -105,7 +111,7 @@ app.whenReady().then(async () => {
     let icon;
     try {
         // Intenta cargar un icono local si existe
-        icon = nativeImage.createFromPath(path.join(__dirname, 'icon.png'));
+        icon = nativeImage.createFromPath(getDataPath('icon.png'));
         if (icon.isEmpty()) throw new Error('Icono no encontrado');
     } catch (e) {
         // Fallback al icono en memoria
@@ -179,14 +185,14 @@ app.whenReady().then(async () => {
                 center: true,
                 resizable: false,
                 webPreferences: {
-                    preload: path.join(__dirname, 'frontend', 'preload_prompt.js'),
+                    preload: getDataPath('frontend/preload_prompt.js'),
                     nodeIntegration: false,
                     contextIsolation: true,
                     enableRemoteModule: false
                 }
             });
 
-            promptWindow.loadFile(path.join(__dirname, 'frontend', 'prompt.html'));
+            promptWindow.loadFile(getDataPath('frontend/prompt.html'));
 
             promptWindow.once('ready-to-show', () => {
                 promptWindow.show();
@@ -220,7 +226,7 @@ app.whenReady().then(async () => {
             resizable: true,
             movable: true,
             webPreferences: {
-                preload: path.join(__dirname, 'frontend', 'preload_terminal.js'),
+                preload: getDataPath('frontend/preload_terminal.js'),
                 nodeIntegration: false,
                 contextIsolation: true
             }
@@ -234,7 +240,7 @@ app.whenReady().then(async () => {
 
         terminalWindows.set(terminalId, terminalState);
 
-        terminalWindow.loadFile(path.join(__dirname, 'frontend', 'terminal.html'));
+        terminalWindow.loadFile(getDataPath('frontend/terminal.html'));
 
         terminalWindow.once('ready-to-show', () => {
             terminalState.ready = true;
@@ -317,14 +323,14 @@ app.whenReady().then(async () => {
                     fullscreen: false,
                     hasShadow: false,
                     webPreferences: {
-                        preload: path.join(__dirname, 'frontend', 'preload_picker.js'),
+                        preload: getDataPath('frontend/preload_picker.js'),
                         nodeIntegration: false,
                         contextIsolation: true
                     }
                 });
 
                 win.setAlwaysOnTop(true, 'screen-saver');
-                win.loadFile(path.join(__dirname, 'frontend', 'picker.html'));
+                win.loadFile(getDataPath('frontend/picker.html'));
 
                 win.once('ready-to-show', () => {
                     win.show();
