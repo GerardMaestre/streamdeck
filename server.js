@@ -690,8 +690,15 @@ const REQUIRED_TUYA_KEYS = ['TUYA_ACCESS_KEY', 'TUYA_SECRET_KEY'];
 const REQUIRED_DISCORD_KEYS = ['DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'DISCORD_REDIRECT_URI'];
 
 const SKIPPED_INTEGRATIONS = new Set();
+const PENDING_PROMPTS = new Map(); // Lock para evitar prompts duplicados por integración
 
-const getMissingEnvKeys = (keys = []) => keys.filter((k) => !(process.env[k] || '').trim());
+const getMissingEnvKeys = (keys = []) => {
+    const missing = keys.filter((k) => !(process.env[k] || '').trim());
+    if (missing.length > 0) {
+        Logger.system(`[Auth] Claves faltantes: ${missing.join(', ')}`);
+    }
+    return missing;
+};
 
 const persistEnvValues = (values = {}) => {
     Logger.info(`[Auth] Intentando persistir ${Object.keys(values).length} claves en .env...`);
@@ -718,51 +725,70 @@ const persistEnvValues = (values = {}) => {
 };
 
 const ensureIntegrationCredentials = async (type) => {
-    if (SKIPPED_INTEGRATIONS.has(type)) {
-        return { ok: false, message: `Integración ${type} saltada para esta sesión.` };
-    }
-
-    const required = type === 'tuya' ? REQUIRED_TUYA_KEYS : REQUIRED_DISCORD_KEYS;
-    const missing = getMissingEnvKeys(required);
-    if (!missing.length) return { ok: true };
-
-    if (!global.showPCPrompt) {
-        return { ok: false, message: `Faltan credenciales ${missing.join(', ')} y no hay panel de configuración disponible.` };
-    }
-
-    const fields = missing.map(key => ({
-        key,
-        label: key.replace(/_/g, ' ').replace('TUYA ', '').replace('DISCORD ', ''),
-        placeholder: key === 'DISCORD_REDIRECT_URI' ? 'http://localhost' : key,
-        isSecret: key.includes('SECRET'),
-        defaultValue: key === 'DISCORD_REDIRECT_URI' ? (process.env.DISCORD_REDIRECT_URI || 'http://localhost') : ''
-    }));
-
-    const result = await global.showPCPrompt({
-        title: `Configuración ${type.toUpperCase()}`,
-        description: `Para activar ${type === 'tuya' ? 'la Domótica (Tuya)' : 'Discord'}, introduce las siguientes credenciales. Puedes cancelar para usar la app sin esta función.`,
-        fields
-    });
-
-    if (result === null) {
-        // Marcamos como saltada para que no vuelva a molestar en esta ejecución
-        SKIPPED_INTEGRATIONS.add(type);
-        Logger.info(`[Auth] Usuario saltó la configuración de ${type}. No se volverá a preguntar en esta sesión.`);
-        return { ok: false, message: 'Configuración cancelada por el usuario.' };
-    }
-
-    // Validar que todos los campos tengan valor
-    const missingValues = Object.keys(result).filter(k => !result[k].trim());
-    if (missingValues.length > 0) {
-        return { ok: false, message: `Faltan valores para: ${missingValues.join(', ')}` };
-    }
-
-    persistEnvValues(result);
+    if (SKIPPED_INTEGRATIONS.has(type)) return { ok: false, message: `Saltado ${type}` };
     
-    if (type === 'discord') {
-        try { await forceDiscordReconnect(); } catch (e) {}
+    // Si ya hay un prompt en curso para esta integración, esperar a ese
+    if (PENDING_PROMPTS.has(type)) return PENDING_PROMPTS.get(type);
+
+    const checkAndPrompt = async () => {
+        const required = type === 'tuya' ? REQUIRED_TUYA_KEYS : REQUIRED_DISCORD_KEYS;
+        const missing = getMissingEnvKeys(required);
+        if (!missing.length) return { ok: true };
+
+        if (!global.showPCPrompt) {
+            return { ok: false, message: `Faltan credenciales ${missing.join(', ')}.` };
+        }
+
+        const fields = missing.map(key => ({
+            key,
+            label: key.replace(/_/g, ' ').replace('TUYA ', '').replace('DISCORD ', ''),
+            placeholder: key === 'DISCORD_REDIRECT_URI' ? 'http://localhost' : key,
+            isSecret: key.includes('SECRET'),
+            defaultValue: key === 'DISCORD_REDIRECT_URI' ? (process.env.DISCORD_REDIRECT_URI || 'http://localhost') : ''
+        }));
+
+        const result = await global.showPCPrompt({
+            title: `Configuración ${type.toUpperCase()}`,
+            description: `Introduce las credenciales de ${type === 'tuya' ? 'Tuya' : 'Discord'}. Pulsa cancelar para omitir.`,
+            fields
+        });
+
+        if (result === null) {
+            SKIPPED_INTEGRATIONS.add(type);
+            return { ok: false, message: 'Cancelado' };
+        }
+
+        persistEnvValues(result);
+        
+        // Pequeño retardo para asegurar que el sistema de archivos y process.env están sincronizados
+        await new Promise(r => setTimeout(r, 100));
+
+        // Re-verificar después de persistir
+        const missingAfter = getMissingEnvKeys(required);
+        if (missingAfter.length > 0) {
+            Logger.error(`[Auth] CRÍTICO: Claves siguen faltando tras guardado: ${missingAfter.join(', ')}`);
+            // Forzar en memoria si falló la detección normal
+            for (const key of missingAfter) {
+                if (result[key]) {
+                    process.env[key] = result[key];
+                    Logger.warn(`[Auth] Forzando clave en memoria: ${key}`);
+                }
+            }
+        }
+
+        if (type === 'discord') try { await forceDiscordReconnect(); } catch (e) {}
+        return { ok: true };
+    };
+
+    const promptPromise = checkAndPrompt();
+    PENDING_PROMPTS.set(type, promptPromise);
+    
+    try {
+        const res = await promptPromise;
+        return res;
+    } finally {
+        PENDING_PROMPTS.delete(type);
     }
-    return { ok: true };
 };
 
 const runSafely = async (socket, eventName, action, ack) => {
@@ -1012,6 +1038,27 @@ server.on('error', (err) => {
             setTimeout(() => {
                 try {
                     server.listen(PORT);
+                    promptWindow = new BrowserWindow({
+                        width: calculatedWidth,
+                        height: calculatedHeight,
+                        frame: false,
+                        transparent: true,
+                        alwaysOnTop: true,
+                        skipTaskbar: true,
+                        center: true,
+                        resizable: false,
+                        hasShadow: false, // Quitar sombra para evitar bordes feos en Windows
+                        thickFrame: false,
+                        webPreferences: {
+                            preload: getDataPath('frontend/preload_prompt.js'),
+                            nodeIntegration: false,
+                            contextIsolation: true,
+                            enableRemoteModule: false
+                        }
+                    });
+
+                    // Forzar fondo transparente
+                    promptWindow.setBackgroundColor('#00000000');
                 } catch (e) {
                     console.error('[Error] Error al reintentar server.listen:', e);
                     process.exit(1);

@@ -275,6 +275,8 @@ app.whenReady().then(async () => {
                 skipTaskbar: true,
                 center: true,
                 resizable: false,
+                hasShadow: false, // Quitar sombra para evitar bordes feos en Windows
+                thickFrame: false,
                 webPreferences: {
                     preload: getDataPath('frontend/preload_prompt.js'),
                     nodeIntegration: false,
@@ -282,6 +284,9 @@ app.whenReady().then(async () => {
                     enableRemoteModule: false
                 }
             });
+
+            // Forzar fondo transparente a nivel de ventana
+            promptWindow.setBackgroundColor('#00000000');
 
             promptWindow.loadFile(getDataPath('frontend/prompt.html'));
 
