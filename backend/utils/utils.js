@@ -35,11 +35,14 @@ const getDataPath = (relativePath) => {
         // Carpeta resources estándar de Electron
         const resourcesPath = path.join(process.resourcesPath, relativePath);
 
+        if (relativePath.startsWith('frontend')) {
+            return path.join(process.resourcesPath, relativePath);
+        }
+
         const isExternalData = relativePath.startsWith('config.json') || 
                                relativePath.startsWith('scripts') || 
                                relativePath.startsWith('logs') ||
                                relativePath.startsWith('data') ||
-                               relativePath.startsWith('frontend') ||
                                relativePath.startsWith('.env');
 
         if (isExternalData) {

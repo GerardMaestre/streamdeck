@@ -483,8 +483,8 @@ app.get(['/', '/index.html'], async (req, res) => {
         if (!cachedIndexContent) {
             const raw = await fs.promises.readFile(indexPath, 'utf8');
             cachedIndexContent = raw
-                .replace(/dist\/app\.bundle\.js/g, `dist/app.bundle.js?v=${SERVER_START_TS}`)
-                .replace(/\.css/g, `.css?v=${SERVER_START_TS}`);
+                .replace(/dist\/app\.bundle\.js(\?v=[^\s"']*)?/g, `dist/app.bundle.js?v=${SERVER_START_TS}`)
+                .replace(/\.css(\?v=[^\s"']*)?/g, `.css?v=${SERVER_START_TS}`);
         }
         res.setHeader('Content-Type', 'text/html');
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
