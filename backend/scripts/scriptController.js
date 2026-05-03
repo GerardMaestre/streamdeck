@@ -19,7 +19,14 @@ const ALLOWED_DYNAMIC_SCRIPT_FOLDERS = new Set([
     '06_Descargas',
     '07_Personalizacion'
 ]);
-const ALLOWED_DYNAMIC_SCRIPT_EXTENSIONS = new Set(['.py', '.bat', '.cmd', '.ps1', '.sh']);
+const DYNAMIC_SCRIPT_SUPPORT = Object.freeze({
+    '.py': { bin: 'python', resolveArgs: (absolutePath, parsedArgs) => [absolutePath, ...parsedArgs] },
+    '.bat': { bin: 'cmd.exe', resolveArgs: (absolutePath, parsedArgs) => ['/c', absolutePath, ...parsedArgs] },
+    '.cmd': { bin: 'cmd.exe', resolveArgs: (absolutePath, parsedArgs) => ['/c', absolutePath, ...parsedArgs] },
+    '.ps1': { bin: 'powershell', resolveArgs: (absolutePath, parsedArgs) => ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', absolutePath, ...parsedArgs] },
+    '.sh': { bin: 'bash', resolveArgs: (absolutePath, parsedArgs) => [absolutePath, ...parsedArgs] }
+});
+const ALLOWED_DYNAMIC_SCRIPT_EXTENSIONS = new Set(Object.keys(DYNAMIC_SCRIPT_SUPPORT));
 const MAX_ARGS_COUNT = 16;
 const MAX_ARG_LENGTH = 256;
 const SCRIPT_MAX_RUNTIME_MS = 10 * 60 * 1000;
@@ -30,32 +37,23 @@ const ensureFileExists = async (absolutePath) => {
     await fs.access(absolutePath);
 };
 
-const buildExecutionCommand = (absolutePath, args) => {
+const getDynamicScriptRuntime = (absolutePath) => {
     const extension = path.extname(absolutePath).toLowerCase();
+    return DYNAMIC_SCRIPT_SUPPORT[extension] || null;
+};
+
+const buildExecutionCommand = (absolutePath, args) => {
     const parsedArgs = Array.isArray(args) ? args : parseShellArgs(args);
+    const runtime = getDynamicScriptRuntime(absolutePath);
 
-    if (extension === '.py') {
-        return {
-            bin: 'python',
-            args: [absolutePath, ...parsedArgs]
-        };
+    if (!runtime) {
+        throw new Error(`Tipo de script no habilitado: ${path.extname(absolutePath).toLowerCase() || 'sin extensión'}`);
     }
 
-    if (extension === '.bat' || extension === '.cmd') {
-        return {
-            bin: 'cmd.exe',
-            args: ['/c', absolutePath, ...parsedArgs]
-        };
-    }
-
-    if (extension === '.exe') {
-        return {
-            bin: absolutePath,
-            args: parsedArgs
-        };
-    }
-
-    throw new Error(`Extensión de archivo no soportada: ${path.basename(absolutePath)}`);
+    return {
+        bin: runtime.bin,
+        args: runtime.resolveArgs(absolutePath, parsedArgs)
+    };
 };
 
 const readScriptDescription = async (absolutePath) => {
@@ -253,6 +251,10 @@ const ejecutarScriptDinamico = async (payload, socket) => {
     try {
         const { carpeta, archivo, args } = validateDynamicPayload(payload);
         const absolutePath = resolveSafeScriptPath(carpeta, archivo);
+
+        if (!getDynamicScriptRuntime(absolutePath)) {
+            throw new Error(`Tipo de script no habilitado: ${path.extname(archivo).toLowerCase() || 'sin extensión'}`);
+        }
 
         await ensureFileExists(absolutePath);
         await runScriptExternally(`${carpeta}/${archivo}`, absolutePath, args);
