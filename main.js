@@ -242,7 +242,7 @@ app.whenReady().then(async () => {
     const terminalWindows = new Map();
     let nextTerminalId = 1;
 
-    global.showPCPrompt = (title) => {
+    global.showPCPrompt = (promptConfig) => {
         return new Promise((resolve) => {
             if (promptWindow) promptWindow.close();
 
@@ -271,7 +271,8 @@ app.whenReady().then(async () => {
             });
 
             promptWindow.webContents.once('did-finish-load', () => {
-                promptWindow.webContents.send('setup-prompt', { title });
+                const payload = typeof promptConfig === 'string' ? { title: promptConfig } : (promptConfig || {});
+                promptWindow.webContents.send('setup-prompt', payload);
             });
 
             promptWindow.on('closed', () => {

@@ -116,7 +116,7 @@
 <body>
     <div class="prompt-container">
         <h2 id="title">Parámetros de Script</h2>
-        <p id="description">Escribe los argumentos que necesita el script para ejecutarse.</p>
+        <p id="description">Introduce el valor solicitado para continuar.</p>
         
         <div class="input-wrapper">
             <input type="text" id="prompt-input" placeholder="Escribe aquí..." autocomplete="off">
@@ -138,6 +138,11 @@
 
             const onSetupPrompt = (data) => {
                 if (data?.title) titleEl.innerText = data.title;
+                const descEl = document.getElementById('description');
+                if (descEl) descEl.innerText = data?.description || 'Introduce el valor solicitado para continuar.';
+                input.placeholder = data?.placeholder || 'Escribe aquí...';
+                input.type = data?.isSecret ? 'password' : 'text';
+                input.value = '';
                 input.focus();
             };
 

@@ -142,7 +142,7 @@ const { abrirAplicacionOWeb } = require('./backend/launcher/appController');
 const { ejecutarMacro, controlMultimedia } = require('./backend/automation/macroController');
 const { hacerCaptura } = require('./backend/system/captureController');
 const { ejecutarScript, ejecutarScriptDinamico, listarScripts, stopAllRunningScripts } = require('./backend/scripts/scriptController');
-const { initDiscordRPC, requestInitialDiscordState, discordToggleMute, discordToggleDeaf, discordSetUserVolume } = require('./backend/discord/discordController');
+const { initDiscordRPC, requestInitialDiscordState, discordToggleMute, discordToggleDeaf, discordSetUserVolume, forceDiscordReconnect } = require('./backend/discord/discordController');
 const { sendTuyaCommand, controlMultipleDevices } = require('./backend/iot/smart_home');
 const { minimizarTodo, cambiarResolucion, apagarPC, reiniciarPC } = require('./backend/system/systemController');
 const { handleAutoClickerSocket } = require('./backend/automation/autoClickerController');
@@ -717,7 +717,12 @@ const ensureIntegrationCredentials = async (type) => {
 
     const collected = {};
     for (const key of missing) {
-        const value = await global.showPCPrompt(`Configurar ${type.toUpperCase()} · ${key}`);
+        const value = await global.showPCPrompt({
+            title: `Configuración ${type.toUpperCase()}`,
+            description: `Introduce el valor de ${key} para activar ${type === 'tuya' ? 'Domótica (Tuya)' : 'Discord'}.`,
+            placeholder: key,
+            isSecret: key.includes('SECRET')
+        });
         if (value === null) {
             return { ok: false, message: 'Configuración cancelada por el usuario.' };
         }
@@ -728,6 +733,9 @@ const ensureIntegrationCredentials = async (type) => {
     }
 
     persistEnvValues(collected);
+    if (type === 'discord') {
+        try { await forceDiscordReconnect(); } catch (e) {}
+    }
     return { ok: true };
 };
 

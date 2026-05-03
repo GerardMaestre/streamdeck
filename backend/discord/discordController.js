@@ -31,10 +31,15 @@ const requestInitialDiscordState = async (socket) => {
     return await discordVoiceService.requestInitialState(socket);
 };
 
+const forceDiscordReconnect = async () => {
+    return await discordConnectionManager.connect(true);
+};
+
 module.exports = {
     initDiscordRPC,
     discordToggleMute,
     discordToggleDeaf,
     discordSetUserVolume,
-    requestInitialDiscordState
+    requestInitialDiscordState,
+    forceDiscordReconnect
 };
