@@ -218,6 +218,32 @@ const runSpawnCommand = ({
     });
 };
 
+const executeSafeCommand = ({
+    bin,
+    args = [],
+    timeoutMs = 0,
+    stdio = ['ignore', 'pipe', 'pipe'],
+    cwd,
+    env,
+    windowsHide = true,
+    detached = false,
+    onStdout,
+    onStderr,
+    onClose,
+    onError
+} = {}) => {
+    return runSpawnCommand({
+        bin,
+        args,
+        options: { stdio, cwd, env, windowsHide, detached },
+        timeoutMs,
+        onStdout,
+        onStderr,
+        onClose,
+        onError
+    });
+};
+
 const isPathInsideBase = (basePath, targetPath) => {
     const normalizedBase = path.resolve(basePath);
     const normalizedTarget = path.resolve(targetPath);
@@ -300,6 +326,7 @@ module.exports = {
     logControllerError,
     runExecCommand,
     runSpawnCommand,
+    executeSafeCommand,
     safeSocketEmit,
     getDataPath,
     parseShellArgs
