@@ -130,12 +130,17 @@ export class MixerModule {
         this.muteTimers = {};
 
         this._faderControllers = [];
+        this.sessionStateByName = new Map();
+        this.rowRefsBySessionId = new Map();
+        this._pendingBatchVisualUpdates = new Map();
+        this._batchVisualFramePending = false;
     }
 
     /** Register socket listeners for mixer events */
     setupSocketListeners() {
         this.socket.on('mixer_initial_state', (state) => {
             this.lastMixerState = state;
+            this._rebuildSessionStateIndex();
             if (this.panelManager.getActivePanel() === 'mixer') {
                 this.renderInitialMixer();
             }
@@ -150,8 +155,8 @@ export class MixerModule {
         });
 
         this.socket.on('session_updated', (data) => {
-            if (this.lastMixerState) {
-                const sess = this.lastMixerState.sessions.find(s => s.name === data.name);
+            if (this.lastMixerState && data?.name) {
+                const sess = this.sessionStateByName.get(data.name);
                 if (sess) {
                     if (data.type === 'volume') sess.volume = data.value;
                     if (data.type === 'mute') sess.mute = data.value;
@@ -163,14 +168,16 @@ export class MixerModule {
         this.socket.on('mixer_batch', (batch) => {
             if (!this.lastMixerState) return;
             
+            const pendingVisualUpdates = new Map();
             if (batch.master) {
                 if (batch.master.volume !== undefined) {
                     this.lastMixerState.master.volume = batch.master.volume;
-                    this.updateSliderUI('global', { type: 'volume', value: batch.master.volume });
+                    pendingVisualUpdates.set('global', { volume: batch.master.volume });
                 }
                 if (batch.master.mute !== undefined) {
                     this.lastMixerState.master.mute = batch.master.mute;
-                    this.updateSliderUI('global', { type: 'mute', value: batch.master.mute });
+                    const prev = pendingVisualUpdates.get('global') || {};
+                    pendingVisualUpdates.set('global', { ...prev, mute: batch.master.mute });
                 }
             }
 
@@ -181,9 +188,11 @@ export class MixerModule {
             if (Array.isArray(batch.sessions)) {
                 const appsContainer = document.getElementById('app-mixers');
                 batch.sessions.forEach(sessionData => {
-                    let existing = this.lastMixerState.sessions.find(s => s.name === sessionData.name);
+                    let existing = this.sessionStateByName.get(sessionData.name);
                     if (!existing) {
-                        this.lastMixerState.sessions.push({ name: sessionData.name, volume: sessionData.volume, mute: sessionData.mute });
+                        existing = { name: sessionData.name, volume: sessionData.volume, mute: sessionData.mute };
+                        this.lastMixerState.sessions.push(existing);
+                        this.sessionStateByName.set(sessionData.name, existing);
                         if (appsContainer) {
                             const sid = sanitizeId(sessionData.name);
                             if (!document.getElementById(`mixer-row-${sid}`)) {
@@ -204,10 +213,43 @@ export class MixerModule {
                     const row = document.getElementById(`mixer-row-${sid}`);
                     if (row) row.classList.remove('fade-out');
 
-                    if (sessionData.volume !== undefined) this.updateSliderUI(sid, { type: 'volume', value: sessionData.volume });
-                    if (sessionData.mute !== undefined) this.updateSliderUI(sid, { type: 'mute', value: sessionData.mute });
+                    const sessionPending = pendingVisualUpdates.get(sid) || {};
+                    if (sessionData.volume !== undefined) sessionPending.volume = sessionData.volume;
+                    if (sessionData.mute !== undefined) sessionPending.mute = sessionData.mute;
+                    if (Object.keys(sessionPending).length > 0) {
+                        pendingVisualUpdates.set(sid, sessionPending);
+                    }
                 });
             }
+
+            this._enqueueBatchVisualUpdates(pendingVisualUpdates);
+        });
+    }
+
+    _rebuildSessionStateIndex() {
+        this.sessionStateByName.clear();
+        const sessions = this.lastMixerState?.sessions || [];
+        sessions.forEach((session) => {
+            if (session?.name) this.sessionStateByName.set(session.name, session);
+        });
+    }
+
+    _enqueueBatchVisualUpdates(pendingVisualUpdates) {
+        pendingVisualUpdates.forEach((update, id) => {
+            const prev = this._pendingBatchVisualUpdates.get(id) || {};
+            this._pendingBatchVisualUpdates.set(id, { ...prev, ...update });
+        });
+
+        if (this._batchVisualFramePending) return;
+        this._batchVisualFramePending = true;
+        requestAnimationFrame(() => {
+            this._batchVisualFramePending = false;
+            const updatesToApply = this._pendingBatchVisualUpdates;
+            this._pendingBatchVisualUpdates = new Map();
+            updatesToApply.forEach((update, id) => {
+                if (update.volume !== undefined) this.updateSliderUI(id, { type: 'volume', value: update.volume });
+                if (update.mute !== undefined) this.updateSliderUI(id, { type: 'mute', value: update.mute });
+            });
         });
     }
 
@@ -215,9 +257,11 @@ export class MixerModule {
         if (this.lastMixerState) {
             this.lastMixerState.sessions = this.lastMixerState.sessions.filter(s => s.name !== name);
         }
+        this.sessionStateByName.delete(name);
         const sid = sanitizeId(name);
         // Limpiar referencias cacheadas para evitar memory leak
         delete this.mixerRefs[sid];
+        this.rowRefsBySessionId.delete(sid);
         delete this[`last_mixer_${sid}`];
         const row = document.getElementById(`mixer-row-${sid}`);
         if (row && !row.classList.contains('fade-out')) {
@@ -281,6 +325,8 @@ export class MixerModule {
             }
             this._faderControllers = [];
             this.mixerRefs = {};
+            this.rowRefsBySessionId.clear();
+            this._rebuildSessionStateIndex();
             
             // Reconstrucción atómica del DOM interno
             container.replaceChildren();
@@ -358,10 +404,10 @@ export class MixerModule {
         button.dataset.mixerApp = isMaster ? 'master' : name;
         button.dataset.mixerId = id;
 
-        const wrapper = document.createElement('span');
+            const wrapper = document.createElement('span');
         wrapper.className = `mixer-icon-wrapper${isMuted ? ' mixer-icon-wrapper--muted' : ''}`;
         wrapper.id = isMaster ? 'icon-wrapper-global' : `icon-wrapper-${id}`;
-        wrapper.innerHTML = getIconForApp(isMaster ? 'Master' : name, isMaster);
+        this._appendIconContent(wrapper, isMaster ? 'Master' : name, isMaster);
         button.appendChild(wrapper);
 
         const slider = document.createElement('div');
@@ -425,6 +471,7 @@ export class MixerModule {
         button.addEventListener('click', (e) => e.preventDefault());
 
         this.mixerRefs[id] = { wrapper, track, fill, thumb, row };
+        this.rowRefsBySessionId.set(id, this.mixerRefs[id]);
 
         const faderController = createFaderController({
             track,
@@ -452,9 +499,17 @@ export class MixerModule {
         return row;
     }
 
+    _appendIconContent(wrapper, appName, isMaster) {
+        const template = document.createElement('template');
+        template.innerHTML = getIconForApp(appName, isMaster);
+        const fragment = document.createDocumentFragment();
+        fragment.appendChild(template.content.cloneNode(true));
+        wrapper.replaceChildren(fragment);
+    }
+
     /** Incremental update of a single slider */
     updateSliderUI(id, data) {
-        const refs = this.mixerRefs[id];
+        const refs = this.rowRefsBySessionId.get(id) || this.mixerRefs[id];
         if (!refs) return;
         // If the slider is currently being dragged, update DOM immediately
         // to avoid queuing via RAF and improve perceived responsiveness.
