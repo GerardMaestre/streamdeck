@@ -826,9 +826,11 @@ io.on('connection', (socket) => {
     });
 
     socket.on('discord_initial_state', async (ack) => {
-        const ready = await ensureIntegrationCredentials('discord');
-        if (!ready.ok) {
-            if (typeof ack === 'function') ack(ready);
+        const missing = getMissingEnvKeys(REQUIRED_DISCORD_KEYS);
+        if (missing.length > 0) {
+            // No molestamos al inicio si no está configurado.
+            // Solo se pedirá cuando el usuario pulse un botón de Discord.
+            if (typeof ack === 'function') ack({ ok: false, message: 'Discord no configurado' });
             return;
         }
         await runSafely(socket, 'discord_initial_state', () => requestInitialDiscordState(socket), ack);
