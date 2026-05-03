@@ -1,101 +1,15 @@
 const path = require('path');
 const os = require('os');
+const fs = require('fs');
 const { app, Tray, Menu, shell, nativeImage, dialog, BrowserWindow, ipcMain } = require('electron');
 const { getDataPath } = require('./backend/utils/utils');
+const { loadAllEnvs, validateEnvContract } = require('./backend/core/config/bootstrap');
 
-// 1. Cargar variables de entorno según el entorno (Producción vs Desarrollo)
-const dotenv = require('dotenv');
-const fs = require('fs');
-
-const loadAllEnvs = () => {
-    const getUserDataPath = () => {
-        if (app && app.isPackaged) {
-            if (process.env.APPDATA) {
-                return path.join(process.env.APPDATA, 'mi-streamdeck');
-            }
-            try {
-                return app.getPath('userData');
-            } catch (e) {
-                return path.join(os.homedir(), 'AppData', 'Roaming', 'mi-streamdeck');
-            }
-        }
-        return __dirname;
-    };
-
-    const parseEnv = (fp) => {
-        try {
-            if (fs.existsSync(fp)) return dotenv.parse(fs.readFileSync(fp, 'utf8'));
-        } catch (e) {}
-        return {};
-    };
-
-    const applyConfigEnvFallback = (configPath) => {
-        try {
-            if (!fs.existsSync(configPath)) return;
-            const configRaw = fs.readFileSync(configPath, 'utf8');
-            const config = JSON.parse(configRaw);
-            const integrations = config?.integrations || {};
-
-            const fallbackMap = {
-                TUYA_ACCESS_KEY: integrations?.tuya?.accessKey,
-                TUYA_SECRET_KEY: integrations?.tuya?.secretKey,
-                DISCORD_CLIENT_ID: integrations?.discord?.clientId,
-                DISCORD_CLIENT_SECRET: integrations?.discord?.clientSecret,
-                DISCORD_REDIRECT_URI: integrations?.discord?.redirectUri
-            };
-
-            for (const [key, value] of Object.entries(fallbackMap)) {
-                if (!process.env[key] && typeof value === 'string' && value.trim()) {
-                    process.env[key] = value.trim();
-                }
-            }
-        } catch (error) {}
-    };
-
-    const userData = getUserDataPath();
-    const logPath = path.join(userData, 'debug.log');
-
-    if (app && app.isPackaged) {
-        const exeDir = process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(process.execPath);
-        const externalEnv = path.join(exeDir, '.env');
-        const userDataEnv = path.join(userData, '.env');
-        const resourcesEnv = path.join(process.resourcesPath, '.env');
-        const resourcesEnvExample = path.join(process.resourcesPath, '.env.example');
-
-        // Parse all env files disponibles en empaquetado
-        const resourcesObj = Object.assign({}, parseEnv(resourcesEnvExample), parseEnv(resourcesEnv));
-        const userDataObj = parseEnv(userDataEnv);
-        const externalObj = parseEnv(externalEnv);
-
-        // Merge in correct priority: resources < userData < external
-        const merged = Object.assign({}, resourcesObj, userDataObj, externalObj);
-        for (const k of Object.keys(merged)) {
-            process.env[k] = merged[k];
-        }
-
-        applyConfigEnvFallback(path.join(exeDir, 'config.json'));
-        applyConfigEnvFallback(path.join(userData, 'config.json'));
-        applyConfigEnvFallback(path.join(process.resourcesPath, 'config.json'));
-        applyConfigEnvFallback(path.join(process.resourcesPath, 'config.example.json'));
-
-        try {
-            const logContent = `[${new Date().toISOString()}] PROD ENV LOADED (main):\n` +
-                `- externalEnv: ${externalEnv} (exists: ${fs.existsSync(externalEnv)})\n` +
-                `- userDataEnv: ${userDataEnv} (exists: ${fs.existsSync(userDataEnv)})\n` +
-                `- resourcesEnv: ${resourcesEnv} (exists: ${fs.existsSync(resourcesEnv)})\n` +
-                `- Variables Merged: ${Object.keys(merged).join(', ')}\n` +
-                `- TUYA_ACCESS_KEY: ${process.env.TUYA_ACCESS_KEY ? 'Present' : 'Missing'}\n` +
-                `- DISCORD_CLIENT_ID: ${process.env.DISCORD_CLIENT_ID ? 'Present' : 'Missing'}\n`;
-            fs.appendFileSync(logPath, logContent);
-        } catch (e) {}
-    } else {
-        const result = dotenv.config({ quiet: true });
-        try {
-            fs.appendFileSync(logPath, `[${new Date().toISOString()}] DEV ENV LOADED (main): Parsed: ${JSON.stringify(result.parsed || {})}\n`);
-        } catch (e) {}
-    }
-};
-loadAllEnvs();
+loadAllEnvs({ electronApp: app, source: 'main' });
+const envContract = validateEnvContract();
+if (envContract.missingRequired.length) {
+    console.warn('[Config] Variables obligatorias faltantes:', envContract.missingRequired.join(', '));
+}
 
 /**
  * Stream Deck Pro - Tray App Wrapper
