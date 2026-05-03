@@ -8,6 +8,7 @@ const {
     getDataPath,
     parseShellArgs
 } = require('../utils/utils');
+const { withTimeout, retryWithBackoff, circuitState } = require('../utils/resilience');
 
 const baseScriptsPath = getDataPath('scripts');
 const ALLOWED_DYNAMIC_SCRIPT_FOLDERS = new Set([
@@ -23,6 +24,7 @@ const MAX_ARGS_COUNT = 16;
 const MAX_ARG_LENGTH = 256;
 const SCRIPT_MAX_RUNTIME_MS = 10 * 60 * 1000;
 const RUNNING_SCRIPTS = new Set();
+const scriptCircuit = circuitState({ failureThreshold: 5, cooldownMs: 15000 });
 
 const ensureFileExists = async (absolutePath) => {
     await fs.access(absolutePath);
@@ -127,17 +129,18 @@ const runScriptExternally = async (scriptLabel, absolutePath, args) => {
     }
 
     try {
+        if (!scriptCircuit.canRequest()) throw Object.assign(new Error('Script circuit open'), { code: 'SCRIPT_CIRCUIT_OPEN' });
         const command = buildExecutionCommand(absolutePath, args);
         if (global.appendTerminalLog) {
             global.appendTerminalLog(terminalId, `$ Ejecutando: ${command.bin} ${command.args.join(' ')}\n\n`);
         }
 
-        const child = spawn(command.bin, command.args, {
+        const child = await retryWithBackoff(async () => withTimeout(() => Promise.resolve(spawn(command.bin, command.args, {
             detached: false,
             windowsHide: true,
             shell: false,
             stdio: ['ignore', 'pipe', 'pipe']
-        });
+        })), 3000, { reasonCode: 'SCRIPT_SPAWN_TIMEOUT' }), { retries: 1, initialDelayMs: 100, shouldRetry: (e) => e?.code === 'SCRIPT_SPAWN_TIMEOUT' });
         let timeoutHandle = null;
         RUNNING_SCRIPTS.add(child);
 
@@ -162,6 +165,8 @@ const runScriptExternally = async (scriptLabel, absolutePath, args) => {
         child.on('close', (code) => {
             if (timeoutHandle) clearTimeout(timeoutHandle);
             RUNNING_SCRIPTS.delete(child);
+            scriptCircuit.recordFailure();
+            if (code === 0) scriptCircuit.recordSuccess(); else scriptCircuit.recordFailure();
             if (global.appendTerminalLog) {
                 const estado = code === 0 ? 'Exito' : 'Error';
                 global.appendTerminalLog(terminalId, `\n--- [Proceso terminado con código ${code} (${estado})] ---\n`);

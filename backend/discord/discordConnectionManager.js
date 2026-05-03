@@ -1,6 +1,7 @@
 const { exec } = require('child_process');
 const RPC = require('discord-rpc');
 const Logger = require('../core/logger/logger');
+const { withTimeout, retryWithBackoff, circuitState } = require('../utils/resilience');
 
 // Discord variables will be dynamically retrieved from process.env on demand.
 
@@ -23,8 +24,10 @@ class DiscordConnectionManager {
 
         this.connectionState = {
             status: 'disconnected',
+            reasonCode: 'INIT',
             message: 'Discord no conectado'
         };
+        this.rpcCircuit = circuitState({ failureThreshold: 4, cooldownMs: 30000 });
 
         this.onConnected = () => {};
         this.onDisconnected = () => {};
@@ -35,8 +38,8 @@ class DiscordConnectionManager {
         this.ioInstance = io;
     }
 
-    updateConnectionState(status, message) {
-        this.connectionState = { status, message };
+    updateConnectionState(status, message, reasonCode = 'UNKNOWN') {
+        this.connectionState = { status, message, reasonCode };
         try {
             if (this.ioInstance) {
                 this.ioInstance.emit('discord_connection_state', this.connectionState);
@@ -213,12 +216,7 @@ class DiscordConnectionManager {
             
             try {
                 Logger.info(`[Discord] Intentando conexion: ${attempt.label}...`);
-                const loginPromise = attemptClient.login(attempt.options);
-                const timeoutPromise = new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('TIMEOUT_EXCEEDED')), attempt.timeoutMs)
-                );
-
-                const loggedClient = await Promise.race([loginPromise, timeoutPromise]);
+                const loggedClient = await retryWithBackoff(() => withTimeout(() => attemptClient.login(attempt.options), attempt.timeoutMs, { reasonCode: 'DISCORD_LOGIN_TIMEOUT' }), { retries: 1, initialDelayMs: 300, shouldRetry: (e) => e?.code === 'DISCORD_LOGIN_TIMEOUT' });
                 
                 if (attempt.voiceCapable) {
                     try {
@@ -260,7 +258,7 @@ class DiscordConnectionManager {
         }
 
         this.isConnecting = true;
-        this.updateConnectionState('connecting', 'Conectando con Discord...');
+        this.updateConnectionState('degraded', 'Conectando con Discord...', 'CONNECTING');
 
         try {
             const { client, attemptLabel, voiceCapable } = await this.loginWithAttempts();
@@ -272,7 +270,7 @@ class DiscordConnectionManager {
 
             currentClient.on('disconnected', () => {
                 if (this.rpc !== currentClient) return;
-                this.updateConnectionState('disconnected', 'Discord desconectado. Reintentando...');
+                this.updateConnectionState('disconnected', 'Discord desconectado. Reintentando...', 'SOCKET_DISCONNECTED');
 
                 try {
                     this.onDisconnected();
@@ -289,7 +287,8 @@ class DiscordConnectionManager {
             this.fallbackMode = !voiceCapable;
 
             if (voiceCapable) {
-                this.updateConnectionState('connected', `Conectado como ${client.user?.username || 'Discord'}`);
+                this.rpcCircuit.recordSuccess();
+                this.updateConnectionState('connected', `Conectado como ${client.user?.username || 'Discord'}`, 'RPC_OK');
                 Logger.info(`[Discord] [OK] Conectado como ${client.user?.username} (${attemptLabel})`);
                 try {
                     await this.onConnected(currentClient);
@@ -297,7 +296,8 @@ class DiscordConnectionManager {
                     // Silencioso
                 }
             } else {
-                this.updateConnectionState('fallback', `Conectado básico como ${client.user?.username || 'Usuario'}`);
+                this.rpcCircuit.recordFailure();
+                this.updateConnectionState('degraded', `Conectado básico como ${client.user?.username || 'Usuario'}`, 'VOICE_UNAVAILABLE');
                 Logger.warn(`[Discord] [!] Conectado en modo básico (${attemptLabel})`);
                 try {
                     this.onFallback();
@@ -322,7 +322,7 @@ class DiscordConnectionManager {
             Logger.info('[Discord Connection] Discord no está ejecutándose. Reintentando en 60 segundos.');
             this.fallbackMode = true;
             this.voiceControlAvailable = false;
-            this.updateConnectionState('error', 'Discord cerrado. Reintentando en 60 segundos...');
+            this.updateConnectionState('disconnected', 'Discord cerrado. Reintentando en 60 segundos...', 'DISCORD_NOT_RUNNING');
             if (this.rpc) {
                 this.destroyRpcClient(this.rpc);
             }
@@ -344,8 +344,8 @@ class DiscordConnectionManager {
             this.fallbackMode = true;
             this.voiceControlAvailable = false;
             this.updateConnectionState(
-                'fallback',
-                authError ? 'Modo básico activo: auto-reconexión...' : 'Discord no responde: reconectando...'
+                'degraded',
+                authError ? 'Modo básico activo: auto-reconexión...' : 'Discord no responde: reconectando...' , authError ? 'AUTH_FAILED' : 'RPC_UNRESPONSIVE'
             );
 
             try {
@@ -363,7 +363,8 @@ class DiscordConnectionManager {
             return;
         }
 
-        this.updateConnectionState('error', message);
+        this.rpcCircuit.recordFailure();
+        this.updateConnectionState('disconnected', message, error.code || 'CONNECT_ERROR');
         this.rpc = null;
         this.scheduleReconnect(DEFAULT_RECONNECT_MS);
     }
