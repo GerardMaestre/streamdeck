@@ -1,5 +1,6 @@
 const os = require('os');
 const { getErrorMessage, runSpawnCommand } = require('../utils/utils');
+const { withTimeout, retryWithBackoff } = require('../utils/resilience');
 
 const isWindows = () => os.platform() === 'win32';
 
@@ -38,12 +39,19 @@ const executeWindowsKeypress = async (keyCodes, successMessage, errorScope) => {
 
     try {
         const script = buildKeypressPowerShellScript(keyCodes);
-        await runSpawnCommand({
-            bin: 'powershell',
-            args: ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', script],
-            options: { shell: false },
-            timeoutMs: 8000
-        });
+        await retryWithBackoff(
+            () => withTimeout(() => runSpawnCommand({
+                bin: 'powershell',
+                args: ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', script],
+                options: { shell: false },
+                timeoutMs: 8000
+            }), 4000, { reasonCode: 'MACRO_TIMEOUT' }),
+            {
+                retries: 1,
+                initialDelayMs: 120,
+                shouldRetry: (error) => error?.code === 'MACRO_TIMEOUT'
+            }
+        );
         console.log(successMessage);
     } catch (error) {
         console.error(`[Error] Error ${errorScope}:`, getErrorMessage(error));

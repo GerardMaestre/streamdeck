@@ -18,6 +18,7 @@ export class DiscordModule {
         this.discordDeaf = false;
         this.discordUsers = [];
         this.discordConnectionStatus = 'disconnected';
+        this.discordReasonCode = 'INIT';
         this.discordConnectionMessage = 'Sin conexión con Discord';
         this.discordRowRefs = new Map();
         this._userTrackHeights = new Map();
@@ -43,6 +44,7 @@ export class DiscordModule {
     setupSocketListeners() {
         this.socket.on('discord_connection_state', (state) => {
             this.discordConnectionStatus = state?.status || 'disconnected';
+            this.discordReasonCode = state?.reasonCode || 'UNKNOWN';
             this.discordConnectionMessage = state?.message || 'Sin conexión con Discord';
             this.updateConnectionUI();
             this.updateButtons();
@@ -108,7 +110,7 @@ export class DiscordModule {
     }
 
     toggleMute() {
-        if (!['connected', 'fallback'].includes(this.discordConnectionStatus)) return;
+        if (!['connected', 'degraded'].includes(this.discordConnectionStatus)) return;
         if (navigator.vibrate) navigator.vibrate(50);
 
         this.discordMute = !this.discordMute;
@@ -125,7 +127,7 @@ export class DiscordModule {
     }
 
     toggleDeaf() {
-        if (!['connected', 'fallback'].includes(this.discordConnectionStatus)) return;
+        if (!['connected', 'degraded'].includes(this.discordConnectionStatus)) return;
         if (navigator.vibrate) navigator.vibrate(50);
 
         this.discordDeaf = !this.discordDeaf;
@@ -144,7 +146,7 @@ export class DiscordModule {
     updateConnectionUI() {
         const statusEl = document.getElementById('discord-status-pill');
         if (!statusEl) return;
-        const isConnected = ['connected', 'fallback'].includes(this.discordConnectionStatus);
+        const isConnected = ['connected', 'degraded'].includes(this.discordConnectionStatus);
         statusEl.textContent = isConnected ? 'CONECTADO' : 'DESCONECTADO';
         statusEl.className = `discord-status-pill ${isConnected ? 'connected' : 'disconnected'}`;
     }
@@ -152,7 +154,7 @@ export class DiscordModule {
     updateButtons() {
         const muteBtn = document.getElementById('tactical-mute-btn');
         const deafBtn = document.getElementById('tactical-deaf-btn');
-        const isNotConnected = !['connected', 'fallback'].includes(this.discordConnectionStatus);
+        const isNotConnected = !['connected', 'degraded'].includes(this.discordConnectionStatus);
 
         if (muteBtn) {
             muteBtn.classList.toggle('active', this.discordMute);
@@ -171,8 +173,8 @@ export class DiscordModule {
 
         // Status / empty states
         if (this.discordConnectionStatus !== 'connected') {
-            const msg = this.discordConnectionStatus === 'fallback' ? 'MODO BÁSICO ACTIVADO' : 'ESPERANDO A DISCORD...';
-            const icon = this.discordConnectionStatus === 'fallback' ? '⚠️' : '📡';
+            const msg = this.discordConnectionStatus === 'degraded' ? `MODO LIMITADO (${this.discordReasonCode})` : 'ESPERANDO A DISCORD...';
+            const icon = this.discordConnectionStatus === 'degraded' ? '⚠️' : '📡';
             const emptyState = document.createElement('div');
             emptyState.className = 'discord-empty-state';
             emptyState.innerHTML = `<div class="discord-empty-icon">${icon}</div><div class="discord-empty-text">${msg}</div>`;
