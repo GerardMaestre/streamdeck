@@ -428,5 +428,16 @@
                 }
             }
         ]
+    },
+    "integrations": {
+        "tuya": {
+            "accessKey": "",
+            "secretKey": ""
+        },
+        "discord": {
+            "clientId": "",
+            "clientSecret": "",
+            "redirectUri": "http://localhost"
+        }
     }
 }

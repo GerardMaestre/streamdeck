@@ -29,6 +29,29 @@ const loadAllEnvs = () => {
         return {};
     };
 
+    const applyConfigEnvFallback = (configPath) => {
+        try {
+            if (!fs.existsSync(configPath)) return;
+            const configRaw = fs.readFileSync(configPath, 'utf8');
+            const config = JSON.parse(configRaw);
+            const integrations = config?.integrations || {};
+
+            const fallbackMap = {
+                TUYA_ACCESS_KEY: integrations?.tuya?.accessKey,
+                TUYA_SECRET_KEY: integrations?.tuya?.secretKey,
+                DISCORD_CLIENT_ID: integrations?.discord?.clientId,
+                DISCORD_CLIENT_SECRET: integrations?.discord?.clientSecret,
+                DISCORD_REDIRECT_URI: integrations?.discord?.redirectUri
+            };
+
+            for (const [key, value] of Object.entries(fallbackMap)) {
+                if (!process.env[key] && typeof value === 'string' && value.trim()) {
+                    process.env[key] = value.trim();
+                }
+            }
+        } catch (error) {}
+    };
+
     const userData = getUserDataPath();
     const logPath = path.join(userData, 'debug.log');
 
@@ -37,9 +60,10 @@ const loadAllEnvs = () => {
         const externalEnv = path.join(exeDir, '.env');
         const userDataEnv = path.join(userData, '.env');
         const resourcesEnv = path.join(process.resourcesPath, '.env');
+        const resourcesEnvExample = path.join(process.resourcesPath, '.env.example');
 
-        // Parse all 3 files
-        const resourcesObj = parseEnv(resourcesEnv);
+        // Parse all env files disponibles en empaquetado
+        const resourcesObj = Object.assign({}, parseEnv(resourcesEnvExample), parseEnv(resourcesEnv));
         const userDataObj = parseEnv(userDataEnv);
         const externalObj = parseEnv(externalEnv);
 
@@ -48,6 +72,11 @@ const loadAllEnvs = () => {
         for (const k of Object.keys(merged)) {
             process.env[k] = merged[k];
         }
+
+        applyConfigEnvFallback(path.join(exeDir, 'config.json'));
+        applyConfigEnvFallback(path.join(userData, 'config.json'));
+        applyConfigEnvFallback(path.join(process.resourcesPath, 'config.json'));
+        applyConfigEnvFallback(path.join(process.resourcesPath, 'config.example.json'));
 
         try {
             const logContent = `[${new Date().toISOString()}] PROD ENV LOADED (main):\n` +
