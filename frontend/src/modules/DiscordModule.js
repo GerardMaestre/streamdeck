@@ -25,6 +25,8 @@ export class DiscordModule {
         this.pendingVolUpdates = {};
         this.lastEmittedVol = {};
         this._faderControllers = [];
+        this._onResize = this._handleResize.bind(this);
+        this._resizeAttached = false;
         this._pendingFrameUsers = new Map();
         this._pendingSpeakingEvents = new Map();
         this._frameScheduled = false;
@@ -71,6 +73,11 @@ export class DiscordModule {
 
     /** Open the Discord panel */
     open(discordPanelEl, onBack) {
+        if (!this._resizeAttached) {
+            window.addEventListener('resize', this._onResize);
+            this._resizeAttached = true;
+        }
+
         if (!discordPanelEl.innerHTML) {
             discordPanelEl.className = 'panel-cache-node discord-sketch-match-view';
             discordPanelEl.innerHTML = `
@@ -352,6 +359,32 @@ export class DiscordModule {
         return row;
     }
 
+    _ensureRowRefs(id, row) {
+        const cached = this.discordRowRefs.get(id) || {};
+        const refs = {
+            row: cached.row || row,
+            track: cached.track || row.querySelector('.slider-container'),
+            fill: cached.fill || row.querySelector('.slider-fill'),
+            thumb: cached.thumb || row.querySelector('.fader-thumb-mixer'),
+            trackHeight: Number(cached.trackHeight) || 0
+        };
+        this.discordRowRefs.set(id, refs);
+        return refs;
+    }
+
+    _cacheRowMetrics(id, row) {
+        const refs = this._ensureRowRefs(id, row);
+        refs.trackHeight = refs.track?.getBoundingClientRect().height || 0;
+        this.discordRowRefs.set(id, refs);
+    }
+
+    _handleResize() {
+        this.discordRowRefs.forEach((_refs, id) => {
+            const row = document.querySelector(`.user-fader-row[data-user-id="${id}"]`);
+            if (row) this._cacheRowMetrics(id, row);
+        });
+    }
+
     /** Send discord volume to server (throttled) */
     updateVolumeServer(userId, value) {
         if (this.discordConnectionStatus !== 'connected') return;
@@ -372,6 +405,10 @@ export class DiscordModule {
         window.removeEventListener('resize', this._onWindowResize);
         this._faderControllers.forEach(c => c.destroy());
         this._faderControllers = [];
+        if (this._resizeAttached) {
+            window.removeEventListener('resize', this._onResize);
+            this._resizeAttached = false;
+        }
         this.discordRowRefs.clear();
         this._userTrackHeights.clear();
         this._pendingFrameUsers.clear();
