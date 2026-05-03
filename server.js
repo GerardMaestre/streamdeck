@@ -7,6 +7,14 @@ const os = require('os');
 const { app: electronApp } = require('electron');
 
 const loadAllEnvs = () => {
+    const isDebugEnvLoggingEnabled = process.env.STREAMDECK_DEBUG_ENV === 'true';
+    const debugLog = (message) => {
+        if (!isDebugEnvLoggingEnabled) return;
+        try {
+            fs.appendFileSync(logPath, `${message}\n`);
+        } catch (e) {}
+    };
+
     const getUserDataPath = () => {
         if (electronApp && electronApp.isPackaged) {
             if (process.env.APPDATA) {
@@ -77,20 +85,15 @@ const loadAllEnvs = () => {
         applyConfigEnvFallback(path.join(process.resourcesPath, 'config.json'));
         applyConfigEnvFallback(path.join(process.resourcesPath, 'config.example.json'));
 
+        debugLog(`[${new Date().toISOString()}] PROD ENV DEBUG (server): externalEnv=${externalEnv}, userDataEnv=${userDataEnv}, resourcesEnv=${resourcesEnv}, mergedKeys=${Object.keys(merged).join(', ')}`);
         try {
-            const logContent = `[${new Date().toISOString()}] PROD ENV LOADED (server):\n` +
-                `- externalEnv: ${externalEnv} (exists: ${fs.existsSync(externalEnv)})\n` +
-                `- userDataEnv: ${userDataEnv} (exists: ${fs.existsSync(userDataEnv)})\n` +
-                `- resourcesEnv: ${resourcesEnv} (exists: ${fs.existsSync(resourcesEnv)})\n` +
-                `- Variables Merged: ${Object.keys(merged).join(', ')}\n` +
-                `- TUYA_ACCESS_KEY: ${process.env.TUYA_ACCESS_KEY ? 'Present' : 'Missing'}\n` +
-                `- DISCORD_CLIENT_ID: ${process.env.DISCORD_CLIENT_ID ? 'Present' : 'Missing'}\n`;
-            fs.appendFileSync(logPath, logContent);
+            fs.appendFileSync(logPath, `[${new Date().toISOString()}] PROD ENV STATUS (server): env cargado correctamente\n`);
         } catch (e) {}
     } else {
         const result = dotenv.config({ quiet: true });
+        debugLog(`[${new Date().toISOString()}] DEV ENV DEBUG (server): Parsed keys=${Object.keys(result.parsed || {}).join(', ')}`);
         try {
-            fs.appendFileSync(logPath, `[${new Date().toISOString()}] DEV ENV LOADED (server): Parsed: ${JSON.stringify(result.parsed || {})}\n`);
+            fs.appendFileSync(logPath, `[${new Date().toISOString()}] DEV ENV STATUS (server): ${result.error ? 'error' : 'env cargado correctamente'}\n`);
         } catch (e) {}
     }
 };
