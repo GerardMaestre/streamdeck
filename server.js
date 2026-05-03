@@ -1,103 +1,14 @@
 const { emitErrorToFrontend, getErrorMessage, getDataPath } = require('./backend/utils/utils');
-// 1. Cargar variables de entorno según el entorno (Producción vs Desarrollo)
-const dotenv = require('dotenv');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const { app: electronApp } = require('electron');
+const { loadAllEnvs, validateEnvContract } = require('./backend/core/config/bootstrap');
 
-const loadAllEnvs = () => {
-    const isDebugEnvLoggingEnabled = process.env.STREAMDECK_DEBUG_ENV === 'true';
-    const debugLog = (message) => {
-        if (!isDebugEnvLoggingEnabled) return;
-        try {
-            fs.appendFileSync(logPath, `${message}\n`);
-        } catch (e) {}
-    };
-
-    const getUserDataPath = () => {
-        if (electronApp && electronApp.isPackaged) {
-            if (process.env.APPDATA) {
-                return path.join(process.env.APPDATA, 'mi-streamdeck');
-            }
-            try {
-                return electronApp.getPath('userData');
-            } catch (e) {
-                return path.join(os.homedir(), 'AppData', 'Roaming', 'mi-streamdeck');
-            }
-        }
-        return __dirname;
-    };
-
-    const parseEnv = (fp) => {
-        try {
-            if (fs.existsSync(fp)) return dotenv.parse(fs.readFileSync(fp, 'utf8'));
-        } catch (e) {}
-        return {};
-    };
-
-    const applyConfigEnvFallback = (configPath) => {
-        try {
-            if (!fs.existsSync(configPath)) return;
-            const configRaw = fs.readFileSync(configPath, 'utf8');
-            const config = JSON.parse(configRaw);
-            const integrations = config?.integrations || {};
-
-            const fallbackMap = {
-                TUYA_ACCESS_KEY: integrations?.tuya?.accessKey,
-                TUYA_SECRET_KEY: integrations?.tuya?.secretKey,
-                DISCORD_CLIENT_ID: integrations?.discord?.clientId,
-                DISCORD_CLIENT_SECRET: integrations?.discord?.clientSecret,
-                DISCORD_REDIRECT_URI: integrations?.discord?.redirectUri
-            };
-
-            for (const [key, value] of Object.entries(fallbackMap)) {
-                if (!process.env[key] && typeof value === 'string' && value.trim()) {
-                    process.env[key] = value.trim();
-                }
-            }
-        } catch (error) {}
-    };
-
-    const userData = getUserDataPath();
-    const logPath = path.join(userData, 'debug.log');
-
-    if (electronApp && electronApp.isPackaged) {
-        const exeDir = process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(process.execPath);
-        const externalEnv = path.join(exeDir, '.env');
-        const userDataEnv = path.join(userData, '.env');
-        const resourcesEnv = path.join(process.resourcesPath, '.env');
-        const resourcesEnvExample = path.join(process.resourcesPath, '.env.example');
-
-        // Parse all env files disponibles en empaquetado
-        const resourcesObj = Object.assign({}, parseEnv(resourcesEnvExample), parseEnv(resourcesEnv));
-        const userDataObj = parseEnv(userDataEnv);
-        const externalObj = parseEnv(externalEnv);
-
-        // Merge in correct priority: resources < userData < external
-        const merged = Object.assign({}, resourcesObj, userDataObj, externalObj);
-        for (const k of Object.keys(merged)) {
-            process.env[k] = merged[k];
-        }
-
-        applyConfigEnvFallback(path.join(exeDir, 'config.json'));
-        applyConfigEnvFallback(path.join(userData, 'config.json'));
-        applyConfigEnvFallback(path.join(process.resourcesPath, 'config.json'));
-        applyConfigEnvFallback(path.join(process.resourcesPath, 'config.example.json'));
-
-        debugLog(`[${new Date().toISOString()}] PROD ENV DEBUG (server): externalEnv=${externalEnv}, userDataEnv=${userDataEnv}, resourcesEnv=${resourcesEnv}, mergedKeys=${Object.keys(merged).join(', ')}`);
-        try {
-            fs.appendFileSync(logPath, `[${new Date().toISOString()}] PROD ENV STATUS (server): env cargado correctamente\n`);
-        } catch (e) {}
-    } else {
-        const result = dotenv.config({ quiet: true });
-        debugLog(`[${new Date().toISOString()}] DEV ENV DEBUG (server): Parsed keys=${Object.keys(result.parsed || {}).join(', ')}`);
-        try {
-            fs.appendFileSync(logPath, `[${new Date().toISOString()}] DEV ENV STATUS (server): ${result.error ? 'error' : 'env cargado correctamente'}\n`);
-        } catch (e) {}
-    }
-};
-loadAllEnvs();
+loadAllEnvs({ electronApp, source: 'server' });
+const envContract = validateEnvContract();
+if (envContract.missingRequired.length) {
+    console.warn('[Config] Variables obligatorias faltantes:', envContract.missingRequired.join(', '));
+}
 // 1. IMPORTS
 const express = require('express');
 const http = require('http');
