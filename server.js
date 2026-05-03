@@ -685,6 +685,52 @@ const handleSocketError = (socket, eventName, error, ack) => {
     }
 };
 
+
+const REQUIRED_TUYA_KEYS = ['TUYA_ACCESS_KEY', 'TUYA_SECRET_KEY'];
+const REQUIRED_DISCORD_KEYS = ['DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET'];
+
+const getMissingEnvKeys = (keys = []) => keys.filter((k) => !(process.env[k] || '').trim());
+
+const persistEnvValues = (values = {}) => {
+    const envPath = getDataPath('.env');
+    const current = fs.existsSync(envPath) ? dotenv.parse(fs.readFileSync(envPath, 'utf8')) : {};
+    const merged = { ...current };
+    for (const [k, v] of Object.entries(values)) {
+        if (typeof v === 'string' && v.trim()) {
+            merged[k] = v.trim();
+            process.env[k] = v.trim();
+        }
+    }
+    const lines = Object.entries(merged).map(([k, v]) => `${k}=${v}`);
+    fs.mkdirSync(path.dirname(envPath), { recursive: true });
+    fs.writeFileSync(envPath, lines.join('\n') + '\n', 'utf8');
+};
+
+const ensureIntegrationCredentials = async (type) => {
+    const required = type === 'tuya' ? REQUIRED_TUYA_KEYS : REQUIRED_DISCORD_KEYS;
+    const missing = getMissingEnvKeys(required);
+    if (!missing.length) return { ok: true };
+
+    if (!global.showPCPrompt) {
+        return { ok: false, message: `Faltan credenciales ${missing.join(', ')} y no hay panel de configuración disponible.` };
+    }
+
+    const collected = {};
+    for (const key of missing) {
+        const value = await global.showPCPrompt(`Configurar ${type.toUpperCase()} · ${key}`);
+        if (value === null) {
+            return { ok: false, message: 'Configuración cancelada por el usuario.' };
+        }
+        if (!String(value).trim()) {
+            return { ok: false, message: `El valor de ${key} no puede estar vacío.` };
+        }
+        collected[key] = String(value).trim();
+    }
+
+    persistEnvValues(collected);
+    return { ok: true };
+};
+
 const runSafely = async (socket, eventName, action, ack) => {
     try {
         return await action();
@@ -720,6 +766,11 @@ io.on('connection', (socket) => {
     });
 
     socket.on('discord_initial_state', async (ack) => {
+        const ready = await ensureIntegrationCredentials('discord');
+        if (!ready.ok) {
+            if (typeof ack === 'function') ack(ready);
+            return;
+        }
         await runSafely(socket, 'discord_initial_state', () => requestInitialDiscordState(socket), ack);
     });
 
@@ -770,12 +821,22 @@ io.on('connection', (socket) => {
 
     // Discord Sockets
     socket.on('discord_toggle_mute', async (ack) => {
+        const ready = await ensureIntegrationCredentials('discord');
+        if (!ready.ok) {
+            if (typeof ack === 'function') ack(ready);
+            return;
+        }
         const result = await runSafely(socket, 'discord_toggle_mute', () => discordToggleMute(), ack);
         if (typeof ack === 'function' && result !== null) ack(result);
     });
 
 
     socket.on('discord_toggle_deaf', async (ack) => {
+        const ready = await ensureIntegrationCredentials('discord');
+        if (!ready.ok) {
+            if (typeof ack === 'function') ack(ready);
+            return;
+        }
         const result = await runSafely(socket, 'discord_toggle_deaf', () => discordToggleDeaf(), ack);
         if (typeof ack === 'function' && result !== null) ack(result);
     });
@@ -796,6 +857,11 @@ io.on('connection', (socket) => {
 
     // --- TUYA LIGHT CONTROL ---
     socket.on('tuya_light_toggle', async (payload, ack) => {
+        const ready = await ensureIntegrationCredentials('tuya');
+        if (!ready.ok) {
+            if (typeof ack === 'function') ack(ready);
+            return;
+        }
         const { deviceId, status } = payload;
         const result = await runSafely(
             socket, 
@@ -810,6 +876,11 @@ io.on('connection', (socket) => {
     });
 
     socket.on('tuya_scene_toggle', async (payload, ack) => {
+        const ready = await ensureIntegrationCredentials('tuya');
+        if (!ready.ok) {
+            if (typeof ack === 'function') ack(ready);
+            return;
+        }
         const { deviceIds, status } = payload;
         const result = await runSafely(
             socket, 
@@ -825,6 +896,11 @@ io.on('connection', (socket) => {
 
     // Nueva ruta para comandos genericos (Ej: Cambiar de escena o brillo)
     socket.on('tuya_command', async (payload, ack) => {
+        const ready = await ensureIntegrationCredentials('tuya');
+        if (!ready.ok) {
+            if (typeof ack === 'function') ack(ready);
+            return;
+        }
         const { deviceId, deviceIds, code, value } = payload;
         
         const action = async () => {
