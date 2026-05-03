@@ -1,4 +1,4 @@
-const { exec, spawn } = require('child_process');
+const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
@@ -128,37 +128,59 @@ const emitErrorToFrontend = (socket, context, error, eventName = 'server_error')
     safeSocketEmit(socket, eventName, { context, message });
 };
 
-const runExecCommand = (command, options = {}) => {
-    return new Promise((resolve, reject) => {
-        exec(command, options, (error, stdout, stderr) => {
-            if (error) {
-                reject(error);
-                return;
-            }
-
-            resolve({ stdout, stderr });
-        });
-    });
-};
-
-const runSpawnCommand = ({
+const executeSafeCommand = ({
     bin,
     args = [],
-    options = {},
+    timeoutMs = 0,
+    stdio = ['ignore', 'pipe', 'pipe'],
+    cwd,
+    env,
+    windowsHide = true,
+    detached = false,
     onStdout,
     onStderr,
+    onSpawn,
     onClose,
     onError
-}) => {
+} = {}) => {
     return new Promise((resolve, reject) => {
+        if (!bin || typeof bin !== 'string') {
+            reject(new Error('Parametro inválido: "bin" es obligatorio'));
+            return;
+        }
+
+        if (!Array.isArray(args)) {
+            reject(new Error('Parametro inválido: "args" debe ser un array'));
+            return;
+        }
+
         let childProcess;
+        let timeoutHandle = null;
 
         try {
-            childProcess = spawn(bin, args, options);
+            childProcess = spawn(bin, args, {
+                shell: false,
+                stdio,
+                cwd,
+                env,
+                windowsHide,
+                detached
+            });
         } catch (spawnError) {
             if (typeof onError === 'function') onError(spawnError);
             reject(spawnError);
             return;
+        }
+
+        if (typeof onSpawn === 'function') onSpawn(childProcess);
+
+        if (timeoutMs > 0) {
+            timeoutHandle = setTimeout(() => {
+                if (!childProcess.killed) {
+                    childProcess.kill('SIGTERM');
+                }
+            }, timeoutMs);
+            if (typeof timeoutHandle.unref === 'function') timeoutHandle.unref();
         }
 
         if (childProcess.stdout) {
@@ -174,15 +196,17 @@ const runSpawnCommand = ({
         }
 
         childProcess.once('error', (error) => {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
             if (typeof onError === 'function') onError(error);
             reject(error);
         });
 
         childProcess.once('close', (code) => {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
             if (typeof onClose === 'function') onClose(code);
 
             if (code === 0) {
-                resolve({ code });
+                resolve({ code, childProcess });
                 return;
             }
 
@@ -219,12 +243,6 @@ const createSafeSocketHandler = (socket, eventName, handler) => {
             }
         }
     };
-};
-
-const sanitizeShellArgs = (args) => {
-    if (typeof args !== 'string') return '';
-    // Eliminar caracteres peligrosos para la shell
-    return args.replace(/[&|;<>`$()!]/g, '').trim();
 };
 
 const parseShellArgs = (args) => {
@@ -264,7 +282,7 @@ const parseShellArgs = (args) => {
     }
 
     if (current) result.push(current);
-    return result.map(arg => sanitizeShellArgs(arg)).filter(Boolean);
+    return result.filter(Boolean);
 };
 
 module.exports = {
@@ -273,8 +291,7 @@ module.exports = {
     getErrorMessage,
     isPathInsideBase,
     logControllerError,
-    runExecCommand,
-    runSpawnCommand,
+    executeSafeCommand,
     safeSocketEmit,
     getDataPath,
     parseShellArgs
