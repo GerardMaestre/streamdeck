@@ -689,6 +689,8 @@ const handleSocketError = (socket, eventName, error, ack) => {
 const REQUIRED_TUYA_KEYS = ['TUYA_ACCESS_KEY', 'TUYA_SECRET_KEY'];
 const REQUIRED_DISCORD_KEYS = ['DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'DISCORD_REDIRECT_URI'];
 
+const SKIPPED_INTEGRATIONS = new Set();
+
 const getMissingEnvKeys = (keys = []) => keys.filter((k) => !(process.env[k] || '').trim());
 
 const persistEnvValues = (values = {}) => {
@@ -707,6 +709,10 @@ const persistEnvValues = (values = {}) => {
 };
 
 const ensureIntegrationCredentials = async (type) => {
+    if (SKIPPED_INTEGRATIONS.has(type)) {
+        return { ok: false, message: `Integración ${type} saltada para esta sesión.` };
+    }
+
     const required = type === 'tuya' ? REQUIRED_TUYA_KEYS : REQUIRED_DISCORD_KEYS;
     const missing = getMissingEnvKeys(required);
     if (!missing.length) return { ok: true };
@@ -725,11 +731,14 @@ const ensureIntegrationCredentials = async (type) => {
 
     const result = await global.showPCPrompt({
         title: `Configuración ${type.toUpperCase()}`,
-        description: `Para activar ${type === 'tuya' ? 'la Domótica (Tuya)' : 'Discord'}, introduce las siguientes credenciales:`,
+        description: `Para activar ${type === 'tuya' ? 'la Domótica (Tuya)' : 'Discord'}, introduce las siguientes credenciales. Puedes cancelar para usar la app sin esta función.`,
         fields
     });
 
     if (result === null) {
+        // Marcamos como saltada para que no vuelva a molestar en esta ejecución
+        SKIPPED_INTEGRATIONS.add(type);
+        Logger.info(`[Auth] Usuario saltó la configuración de ${type}. No se volverá a preguntar en esta sesión.`);
         return { ok: false, message: 'Configuración cancelada por el usuario.' };
     }
 

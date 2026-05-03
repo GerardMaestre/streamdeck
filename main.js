@@ -239,19 +239,28 @@ app.whenReady().then(async () => {
     // --- LÓGICA DE PROMPT EN PC ---
     let promptWindow = null;
     let promptResolve = null;
+    const promptQueue = [];
+    let isProcessingPrompt = false;
     const terminalWindows = new Map();
     let nextTerminalId = 1;
 
     global.showPCPrompt = (promptConfig) => {
         return new Promise((resolve) => {
-            if (promptWindow) promptWindow.close();
+            promptQueue.push({ config: promptConfig, resolve });
+            processNextPrompt();
+        });
+    };
 
+    const processNextPrompt = async () => {
+        if (isProcessingPrompt || promptQueue.length === 0) return;
+        isProcessingPrompt = true;
+
+        const { config: promptConfig, resolve } = promptQueue.shift();
+        
+        try {
             const config = typeof promptConfig === 'string' ? { title: promptConfig } : (promptConfig || {});
             const fieldsCount = Array.isArray(config.fields) ? config.fields.length : 1;
-            
-            // Calcular altura dinámica (Base 180px + ~85px por cada campo extra después del primero)
-            // Si solo hay uno, usamos una altura base cómoda.
-            const calculatedHeight = Math.min(650, 220 + (fieldsCount > 1 ? (fieldsCount - 1) * 90 : 0));
+            const calculatedHeight = Math.min(650, 240 + (fieldsCount > 1 ? (fieldsCount - 1) * 90 : 0));
 
             promptResolve = resolve;
             promptWindow = new BrowserWindow({
@@ -274,11 +283,11 @@ app.whenReady().then(async () => {
             promptWindow.loadFile(getDataPath('frontend/prompt.html'));
 
             promptWindow.once('ready-to-show', () => {
-                promptWindow.show();
+                if (promptWindow) promptWindow.show();
             });
 
             promptWindow.webContents.once('did-finish-load', () => {
-                promptWindow.webContents.send('setup-prompt', config);
+                if (promptWindow) promptWindow.webContents.send('setup-prompt', config);
             });
 
             promptWindow.on('closed', () => {
@@ -287,8 +296,16 @@ app.whenReady().then(async () => {
                     promptResolve(null);
                     promptResolve = null;
                 }
+                isProcessingPrompt = false;
+                // Pequeño retardo para evitar que la siguiente ventana salga instantáneamente
+                setTimeout(processNextPrompt, 300);
             });
-        });
+        } catch (error) {
+            console.error('[Prompt] Error al procesar prompt:', error);
+            resolve(null);
+            isProcessingPrompt = false;
+            processNextPrompt();
+        }
     };
 
     global.showTerminal = (title) => {
