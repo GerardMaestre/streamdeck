@@ -16,22 +16,64 @@ const https = require('https');
 const { Server } = require('socket.io');
 const compression = require('compression');
 const { appStateStore } = require('./backend/data/state-store');
+const Logger = require("./backend/core/logger/logger");
 
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
+const allowedCorsOrigins = new Set([
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    process.env.LAN_FRONTEND_ORIGIN,
+    process.env.FRONTEND_ORIGIN,
+].filter(Boolean));
+
+const isAllowedOrigin = (origin) => {
+    if (!origin) return true;
+    return allowedCorsOrigins.has(origin);
+};
+
+const logRejectedOrigin = (context, origin) => {
+    const serializedOrigin = origin || '(sin origin header)';
+    Logger.warn(`[CORS] Origen rechazado en ${context}: ${serializedOrigin}`);
+};
+
+const resolveCorsOrigin = (origin, context) => {
+    if (isAllowedOrigin(origin)) {
+        return origin || null;
+    }
+    logRejectedOrigin(context, origin);
+    return null;
+};
+
 app.use((req, res, next) => {
     res.setHeader('Referrer-Policy', 'no-referrer-when-downgrade');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('X-XSS-Protection', '1; mode=block');
-    res.setHeader('Access-Control-Allow-Origin', '*');
+
+    const requestOrigin = req.headers.origin;
+    const allowedOrigin = resolveCorsOrigin(requestOrigin, `HTTP ${req.method} ${req.originalUrl || req.url}`);
+
+    if (allowedOrigin) {
+        res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+        res.setHeader('Vary', 'Origin');
+    }
+
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
     res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type,Authorization');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
+
     if (req.method === 'OPTIONS') {
-        return res.sendStatus(200);
+        return allowedOrigin ? res.sendStatus(200) : res.sendStatus(403);
     }
+
+    if (requestOrigin && !allowedOrigin) {
+        return res.status(403).json({ error: 'Origen no permitido por política CORS.' });
+    }
+
     next();
 });
 app.use(compression());
@@ -39,7 +81,6 @@ app.use(express.json({ limit: '1mb' }));
 
 
 // --- SISTEMA COMPLETO DE LOGS Y DEBUG ---
-const Logger = require("./backend/core/logger/logger");
 const initErrorTracking = require("./backend/core/logger/error-tracker");
 const startPerformanceMonitor = require("./backend/core/logger/performance");
 const initSocketMonitoring = require("./backend/core/logger/socket-monitor");
@@ -251,6 +292,16 @@ const io = new Server(server, {
   perMessageDeflate: false,
   pingInterval: 25000,
   pingTimeout: 60000,
+  cors: {
+      origin: (origin, callback) => {
+          const allowedOrigin = resolveCorsOrigin(origin, 'Socket.IO handshake');
+          if (!origin || allowedOrigin) {
+              return callback(null, allowedOrigin || true);
+          }
+          return callback(new Error('Origen no permitido por política CORS.'));
+      },
+      credentials: true,
+  },
 });
 
 io.engine.maxHttpBufferSize = 1e6;

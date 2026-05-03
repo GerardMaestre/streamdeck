@@ -1,4 +1,4 @@
-const { exec } = require('child_process');
+const { spawn } = require('child_process');
 const RPC = require('discord-rpc');
 const Logger = require('../core/logger/logger');
 
@@ -107,11 +107,45 @@ class DiscordConnectionManager {
 
         this.lastDiscordRunCheckAt = now;
         return new Promise((resolve) => {
-            exec('tasklist /FI "IMAGENAME eq Discord.exe"', (err, stdout) => {
-                if (err) {
+            const child = spawn('tasklist', ['/FI', 'IMAGENAME eq Discord.exe'], { shell: false });
+            let stdout = '';
+            let stderr = '';
+            let settled = false;
+
+            const timeout = setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                child.kill('SIGTERM');
+                this.discordRunningCache = true;
+                resolve(true);
+            }, 8000);
+
+            child.stdout.on('data', (chunk) => {
+                stdout += chunk.toString();
+            });
+
+            child.stderr.on('data', (chunk) => {
+                stderr += chunk.toString();
+            });
+
+            child.once('error', () => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeout);
+                this.discordRunningCache = true;
+                resolve(true);
+            });
+
+            child.once('close', () => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeout);
+
+                if (stderr.trim()) {
                     this.discordRunningCache = true;
                     return resolve(true);
                 }
+
                 const isRunning = stdout.toLowerCase().includes('discord.exe');
                 this.discordRunningCache = isRunning;
                 resolve(isRunning);
@@ -125,9 +159,20 @@ class DiscordConnectionManager {
         if (now - this.lastDiscordLaunchAttemptAt < 60000) return;
 
         this.lastDiscordLaunchAttemptAt = now;
-        exec('start "" "discord://"', (error) => {
-            if (error) {
-                Logger.warn(`[Discord Connection] No se pudo lanzar Discord automáticamente: ${error.message}`);
+        const child = spawn('cmd.exe', ['/c', 'start', '', 'discord://'], { shell: false });
+        const timeout = setTimeout(() => {
+            child.kill('SIGTERM');
+        }, 8000);
+
+        child.once('error', (error) => {
+            clearTimeout(timeout);
+            Logger.warn(`[Discord Connection] No se pudo lanzar Discord automáticamente: ${error.message}`);
+        });
+
+        child.once('close', (code) => {
+            clearTimeout(timeout);
+            if (code !== 0) {
+                Logger.warn(`[Discord Connection] Lanzamiento de Discord devolvió código ${code}`);
             }
         });
     }

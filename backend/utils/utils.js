@@ -1,4 +1,4 @@
-const { exec, spawn } = require('child_process');
+const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
@@ -128,23 +128,19 @@ const emitErrorToFrontend = (socket, context, error, eventName = 'server_error')
     safeSocketEmit(socket, eventName, { context, message });
 };
 
-const runExecCommand = (command, options = {}) => {
-    return new Promise((resolve, reject) => {
-        exec(command, options, (error, stdout, stderr) => {
-            if (error) {
-                reject(error);
-                return;
-            }
-
-            resolve({ stdout, stderr });
-        });
-    });
+/**
+ * @deprecated Evitar comandos shell en string; usar runSpawnCommand con bin/args separados.
+ */
+const runExecCommand = () => {
+    throw new Error('runExecCommand está deprecado. Usa runSpawnCommand con argumentos separados.');
 };
 
 const runSpawnCommand = ({
     bin,
     args = [],
     options = {},
+    timeoutMs = 0,
+    killSignal = 'SIGTERM',
     onStdout,
     onStderr,
     onClose,
@@ -173,22 +169,51 @@ const runSpawnCommand = ({
             });
         }
 
-        childProcess.once('error', (error) => {
-            if (typeof onError === 'function') onError(error);
+        let settled = false;
+        const finishReject = (error) => {
+            if (settled) return;
+            settled = true;
             reject(error);
+        };
+        const finishResolve = (value) => {
+            if (settled) return;
+            settled = true;
+            resolve(value);
+        };
+
+        let timeoutHandle = null;
+        if (timeoutMs > 0) {
+            timeoutHandle = setTimeout(() => {
+                const timeoutError = new Error(`Proceso excedio timeout de ${timeoutMs}ms`);
+                timeoutError.code = 'PROCESS_TIMEOUT';
+                try {
+                    childProcess.kill(killSignal);
+                } catch (killError) {
+                    timeoutError.killError = killError;
+                }
+                finishReject(timeoutError);
+            }, timeoutMs);
+        }
+
+        childProcess.once('error', (error) => {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
+            if (typeof onError === 'function') onError(error);
+            finishReject(error);
         });
 
-        childProcess.once('close', (code) => {
+        childProcess.once('close', (code, signal) => {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
             if (typeof onClose === 'function') onClose(code);
 
             if (code === 0) {
-                resolve({ code });
+                finishResolve({ code, signal });
                 return;
             }
 
             const closeError = new Error(`Proceso finalizo con codigo ${code}`);
             closeError.code = code;
-            reject(closeError);
+            closeError.signal = signal;
+            finishReject(closeError);
         });
     });
 };

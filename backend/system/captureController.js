@@ -2,7 +2,7 @@ const screenshot = require('screenshot-desktop');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
-const { getErrorMessage, runExecCommand } = require('../utils/utils');
+const { getErrorMessage, runSpawnCommand } = require('../utils/utils');
 
 // Intentar cargar Electron para usar el portapapeles nativo
 let electron;
@@ -71,9 +71,14 @@ const hacerCaptura = async (pantallaID) => {
             } else {
                 // MÉTODO 2: Fallback a PowerShell si Electron no está disponible
                 const escapedPath = rutaAbsoluta.replace(/'/g, "''");
-                const comandoPS = `powershell -command "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; [System.Windows.Forms.Clipboard]::SetImage([System.Drawing.Image]::FromFile('${escapedPath}'))"`;
-                
-                await runExecCommand(comandoPS);
+                const script = `Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $img = [System.Drawing.Image]::FromFile('${escapedPath}'); [System.Windows.Forms.Clipboard]::SetImage($img); $img.Dispose();`;
+
+                await runSpawnCommand({
+                    bin: 'powershell',
+                    args: ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', script],
+                    options: { shell: false },
+                    timeoutMs: 10000
+                });
                 console.log('[Capture] Portapapeles: Imagen copiada correctamente via PowerShell.');
             }
         }
