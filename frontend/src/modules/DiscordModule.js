@@ -23,6 +23,8 @@ export class DiscordModule {
         this.pendingVolUpdates = {};
         this.lastEmittedVol = {};
         this._faderControllers = [];
+        this._onResize = this._handleResize.bind(this);
+        this._resizeAttached = false;
     }
 
     setupSocketListeners() {
@@ -58,6 +60,11 @@ export class DiscordModule {
 
     /** Open the Discord panel */
     open(discordPanelEl, onBack) {
+        if (!this._resizeAttached) {
+            window.addEventListener('resize', this._onResize);
+            this._resizeAttached = true;
+        }
+
         if (!discordPanelEl.innerHTML) {
             discordPanelEl.className = 'panel-cache-node discord-sketch-match-view';
             discordPanelEl.innerHTML = `
@@ -202,6 +209,7 @@ export class DiscordModule {
             if (!row) {
                 row = this._createUserRow(user, mixerContainer);
                 mixerContainer.appendChild(row);
+                this._cacheRowMetrics(id, row);
                 
                 const ctrl = this._faderControllers[this._faderControllers.length - 1];
                 if (ctrl) {
@@ -211,15 +219,12 @@ export class DiscordModule {
             } else {
                 // Update existing row
                 if (!this.activeSliders.has('discord_' + id)) {
-                    const refs = this.discordRowRefs.get(id) || {};
-                    const fill = refs.fill || row.querySelector('.slider-fill');
-                    const thumb = refs.thumb || row.querySelector('.fader-thumb-mixer');
+                    const refsSafe = this._ensureRowRefs(id, row);
+                    const { fill, thumb } = refsSafe;
                     const h = (user.volume / 200) * 100;
                     queueUpdate(`discord_${id}_vol`, () => {
-                        const track = refs.track || row.querySelector('.slider-container');
-                        const trackHeight = track.getBoundingClientRect().height;
                         fill.style.transform = `scale3d(1, ${h / 100}, 1)`;
-                        setThumbTransform(thumb, h, trackHeight);
+                        setThumbTransform(thumb, h, refsSafe.trackHeight);
                     });
                 }
 
@@ -289,6 +294,32 @@ export class DiscordModule {
         return row;
     }
 
+    _ensureRowRefs(id, row) {
+        const cached = this.discordRowRefs.get(id) || {};
+        const refs = {
+            row: cached.row || row,
+            track: cached.track || row.querySelector('.slider-container'),
+            fill: cached.fill || row.querySelector('.slider-fill'),
+            thumb: cached.thumb || row.querySelector('.fader-thumb-mixer'),
+            trackHeight: Number(cached.trackHeight) || 0
+        };
+        this.discordRowRefs.set(id, refs);
+        return refs;
+    }
+
+    _cacheRowMetrics(id, row) {
+        const refs = this._ensureRowRefs(id, row);
+        refs.trackHeight = refs.track?.getBoundingClientRect().height || 0;
+        this.discordRowRefs.set(id, refs);
+    }
+
+    _handleResize() {
+        this.discordRowRefs.forEach((_refs, id) => {
+            const row = document.querySelector(`.user-fader-row[data-user-id="${id}"]`);
+            if (row) this._cacheRowMetrics(id, row);
+        });
+    }
+
     /** Send discord volume to server (throttled) */
     updateVolumeServer(userId, value) {
         if (this.discordConnectionStatus !== 'connected') return;
@@ -308,6 +339,10 @@ export class DiscordModule {
     destroy() {
         this._faderControllers.forEach(c => c.destroy());
         this._faderControllers = [];
+        if (this._resizeAttached) {
+            window.removeEventListener('resize', this._onResize);
+            this._resizeAttached = false;
+        }
         this.discordRowRefs.clear();
     }
 }
