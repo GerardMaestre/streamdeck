@@ -687,7 +687,7 @@ const handleSocketError = (socket, eventName, error, ack) => {
 
 
 const REQUIRED_TUYA_KEYS = ['TUYA_ACCESS_KEY', 'TUYA_SECRET_KEY'];
-const REQUIRED_DISCORD_KEYS = ['DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET'];
+const REQUIRED_DISCORD_KEYS = ['DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'DISCORD_REDIRECT_URI'];
 
 const getMissingEnvKeys = (keys = []) => keys.filter((k) => !(process.env[k] || '').trim());
 
@@ -715,24 +715,32 @@ const ensureIntegrationCredentials = async (type) => {
         return { ok: false, message: `Faltan credenciales ${missing.join(', ')} y no hay panel de configuración disponible.` };
     }
 
-    const collected = {};
-    for (const key of missing) {
-        const value = await global.showPCPrompt({
-            title: `Configuración ${type.toUpperCase()}`,
-            description: `Introduce el valor de ${key} para activar ${type === 'tuya' ? 'Domótica (Tuya)' : 'Discord'}.`,
-            placeholder: key,
-            isSecret: key.includes('SECRET')
-        });
-        if (value === null) {
-            return { ok: false, message: 'Configuración cancelada por el usuario.' };
-        }
-        if (!String(value).trim()) {
-            return { ok: false, message: `El valor de ${key} no puede estar vacío.` };
-        }
-        collected[key] = String(value).trim();
+    const fields = missing.map(key => ({
+        key,
+        label: key.replace(/_/g, ' ').replace('TUYA ', '').replace('DISCORD ', ''),
+        placeholder: key === 'DISCORD_REDIRECT_URI' ? 'http://localhost' : key,
+        isSecret: key.includes('SECRET'),
+        defaultValue: key === 'DISCORD_REDIRECT_URI' ? (process.env.DISCORD_REDIRECT_URI || 'http://localhost') : ''
+    }));
+
+    const result = await global.showPCPrompt({
+        title: `Configuración ${type.toUpperCase()}`,
+        description: `Para activar ${type === 'tuya' ? 'la Domótica (Tuya)' : 'Discord'}, introduce las siguientes credenciales:`,
+        fields
+    });
+
+    if (result === null) {
+        return { ok: false, message: 'Configuración cancelada por el usuario.' };
     }
 
-    persistEnvValues(collected);
+    // Validar que todos los campos tengan valor
+    const missingValues = Object.keys(result).filter(k => !result[k].trim());
+    if (missingValues.length > 0) {
+        return { ok: false, message: `Faltan valores para: ${missingValues.join(', ')}` };
+    }
+
+    persistEnvValues(result);
+    
     if (type === 'discord') {
         try { await forceDiscordReconnect(); } catch (e) {}
     }
