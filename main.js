@@ -246,10 +246,17 @@ app.whenReady().then(async () => {
         return new Promise((resolve) => {
             if (promptWindow) promptWindow.close();
 
+            const config = typeof promptConfig === 'string' ? { title: promptConfig } : (promptConfig || {});
+            const fieldsCount = Array.isArray(config.fields) ? config.fields.length : 1;
+            
+            // Calcular altura dinámica (Base 180px + ~85px por cada campo extra después del primero)
+            // Si solo hay uno, usamos una altura base cómoda.
+            const calculatedHeight = Math.min(650, 220 + (fieldsCount > 1 ? (fieldsCount - 1) * 90 : 0));
+
             promptResolve = resolve;
             promptWindow = new BrowserWindow({
                 width: 480,
-                height: 320,
+                height: calculatedHeight,
                 frame: false,
                 transparent: true,
                 alwaysOnTop: true,
@@ -271,14 +278,13 @@ app.whenReady().then(async () => {
             });
 
             promptWindow.webContents.once('did-finish-load', () => {
-                const payload = typeof promptConfig === 'string' ? { title: promptConfig } : (promptConfig || {});
-                promptWindow.webContents.send('setup-prompt', payload);
+                promptWindow.webContents.send('setup-prompt', config);
             });
 
             promptWindow.on('closed', () => {
                 promptWindow = null;
                 if (promptResolve) {
-                    promptResolve(null); // Retornar null si se cierra sin enviar
+                    promptResolve(null);
                     promptResolve = null;
                 }
             });
