@@ -1,5 +1,6 @@
 const { TuyaContext } = require('@tuya/tuya-connector-nodejs');
 const Logger = require('../core/logger/logger');
+const { withTimeout, retryWithBackoff, circuitState } = require('../utils/resilience');
 
 // Obtener el contexto de Tuya de forma dinámica para garantizar que usa las variables más recientes de .env
 const getTuyaContext = () => {
@@ -23,24 +24,39 @@ if (process.env.TUYA_ACCESS_KEY) {
   Logger.warn('[Tuya] TUYA_ACCESS_KEY no definido en .env. Domotica deshabilitada.');
 }
 
+const tuyaCircuit = circuitState({ failureThreshold: 4, cooldownMs: 20000 });
+
 /**
  * Envía un comando individual a un dispositivo
  */
 const sendTuyaCommand = async (deviceId, code, value) => {
+  if (!tuyaCircuit.canRequest()) {
+    const blocked = new Error('Tuya circuit open');
+    blocked.code = 'TUYA_CIRCUIT_OPEN';
+    throw blocked;
+  }
+
   try {
-    const context = getTuyaContext();
-    const res = await context.request({
-      path: `/v1.0/devices/${deviceId}/commands`,
-      method: 'POST',
-      body: { 
-          commands: [{ code: code, value: value }] 
-      },
+    const result = await retryWithBackoff(async () => {
+      const context = getTuyaContext();
+      return withTimeout(() => context.request({
+        path: `/v1.0/devices/${deviceId}/commands`,
+        method: 'POST',
+        body: { commands: [{ code: code, value: value }] },
+      }), 5000, { reasonCode: 'TUYA_TIMEOUT' });
+    }, {
+      retries: 2,
+      initialDelayMs: 250,
+      shouldRetry: (error) => error?.code === 'TUYA_TIMEOUT' || !String(error?.message || '').includes('401')
     });
-    
-    const success = res && res.success;
+
+    const success = result && result.success;
+    if (!success) throw new Error('TUYA_COMMAND_NOT_SUCCESS');
+    tuyaCircuit.recordSuccess();
     Logger.info(`[Tuya] Comando enviado a ${deviceId}: ${code}=${value} | Exito: ${success}`);
-    return success;
+    return true;
   } catch (error) {
+    tuyaCircuit.recordFailure();
     Logger.error(`[Tuya] Error enviando comando a ${deviceId}: ${error.message}`);
     throw error;
   }

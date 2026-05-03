@@ -1,13 +1,14 @@
 const fs = require('fs/promises');
 const path = require('path');
+const { spawn } = require('child_process');
 const {
     getErrorMessage,
     isPathInsideBase,
     logControllerError,
     getDataPath,
-    parseShellArgs,
-    executeSafeCommand
+    parseShellArgs
 } = require('../utils/utils');
+const { withTimeout, retryWithBackoff, circuitState } = require('../utils/resilience');
 
 const baseScriptsPath = getDataPath('scripts');
 const ALLOWED_DYNAMIC_SCRIPT_FOLDERS = new Set([
@@ -30,6 +31,7 @@ const MAX_ARGS_COUNT = 16;
 const MAX_ARG_LENGTH = 256;
 const SCRIPT_MAX_RUNTIME_MS = 10 * 60 * 1000;
 const RUNNING_SCRIPTS = new Set();
+const scriptCircuit = circuitState({ failureThreshold: 5, cooldownMs: 15000 });
 
 const ensureFileExists = async (absolutePath) => {
     await fs.access(absolutePath);
@@ -120,45 +122,62 @@ const readScriptDescription = async (absolutePath) => {
 
 const runScriptExternally = async (scriptLabel, absolutePath, args) => {
     let terminalId = null;
-    let currentChild = null;
     if (global.showTerminal) {
         terminalId = global.showTerminal(path.basename(absolutePath));
     }
 
     try {
+        if (!scriptCircuit.canRequest()) throw Object.assign(new Error('Script circuit open'), { code: 'SCRIPT_CIRCUIT_OPEN' });
         const command = buildExecutionCommand(absolutePath, args);
         if (global.appendTerminalLog) {
             global.appendTerminalLog(terminalId, `$ Ejecutando: ${command.bin} ${command.args.join(' ')}\n\n`);
         }
 
-        await executeSafeCommand({
-            bin: command.bin,
-            args: command.args,
-            timeoutMs: SCRIPT_MAX_RUNTIME_MS,
-            stdio: ['ignore', 'pipe', 'pipe'],
-            onSpawn: (child) => {
-                currentChild = child;
-                RUNNING_SCRIPTS.add(child);
-            },
-            onStdout: (data) => {
-                if (global.appendTerminalLog) global.appendTerminalLog(terminalId, data.toString());
-            },
-            onStderr: (data) => {
-                if (global.appendTerminalLog) global.appendTerminalLog(terminalId, `[ERROR] ${data.toString()}`);
-            },
-            onClose: (code) => {
+        const child = await retryWithBackoff(async () => withTimeout(() => Promise.resolve(spawn(command.bin, command.args, {
+            detached: false,
+            windowsHide: true,
+            shell: false,
+            stdio: ['ignore', 'pipe', 'pipe']
+        })), 3000, { reasonCode: 'SCRIPT_SPAWN_TIMEOUT' }), { retries: 1, initialDelayMs: 100, shouldRetry: (e) => e?.code === 'SCRIPT_SPAWN_TIMEOUT' });
+        let timeoutHandle = null;
+        RUNNING_SCRIPTS.add(child);
+
+        timeoutHandle = setTimeout(() => {
+            if (!child.killed) {
+                child.kill('SIGTERM');
                 if (global.appendTerminalLog) {
-                    const estado = code === 0 ? 'Exito' : 'Error';
-                    global.appendTerminalLog(terminalId, `\n--- [Proceso terminado con código ${code} (${estado})] ---\n`);
+                    global.appendTerminalLog(terminalId, `\n[TIMEOUT] Script finalizado tras exceder ${SCRIPT_MAX_RUNTIME_MS / 1000}s.\n`);
                 }
-            },
-            onError: (error) => {
-                if (global.appendTerminalLog) global.appendTerminalLog(terminalId, `\n[FALLO FATAL]: ${error.message}\n`);
+            }
+        }, SCRIPT_MAX_RUNTIME_MS);
+        if (typeof timeoutHandle.unref === 'function') timeoutHandle.unref();
+
+        child.stdout.on('data', (data) => {
+            if (global.appendTerminalLog) global.appendTerminalLog(terminalId, data.toString());
+        });
+
+        child.stderr.on('data', (data) => {
+            if (global.appendTerminalLog) global.appendTerminalLog(terminalId, `[ERROR] ${data.toString()}`);
+        });
+
+        child.on('close', (code) => {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
+            RUNNING_SCRIPTS.delete(child);
+            scriptCircuit.recordFailure();
+            if (code === 0) scriptCircuit.recordSuccess(); else scriptCircuit.recordFailure();
+            if (global.appendTerminalLog) {
+                const estado = code === 0 ? 'Exito' : 'Error';
+                global.appendTerminalLog(terminalId, `\n--- [Proceso terminado con código ${code} (${estado})] ---\n`);
             }
         });
-        if (currentChild) RUNNING_SCRIPTS.delete(currentChild);
+
+        child.on('error', (error) => {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
+            RUNNING_SCRIPTS.delete(child);
+            if (global.appendTerminalLog) global.appendTerminalLog(terminalId, `\n[FALLO FATAL]: ${error.message}\n`);
+            logControllerError(`script:${scriptLabel}`, error);
+        });
     } catch (error) {
-        if (currentChild) RUNNING_SCRIPTS.delete(currentChild);
         if (global.appendTerminalLog) global.appendTerminalLog(terminalId, `\n[ERROR INESPERADO]: ${error.message}\n`);
         logControllerError(`script:${scriptLabel}`, error);
     }

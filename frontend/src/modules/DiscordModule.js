@@ -18,12 +18,15 @@ export class DiscordModule {
         this.discordDeaf = false;
         this.discordUsers = [];
         this.discordConnectionStatus = 'disconnected';
+        this.discordReasonCode = 'INIT';
         this.discordConnectionMessage = 'Sin conexión con Discord';
         this.discordRowRefs = new Map();
         this._userTrackHeights = new Map();
         this.pendingVolUpdates = {};
         this.lastEmittedVol = {};
         this._faderControllers = [];
+        this._onResize = this._handleResize.bind(this);
+        this._resizeAttached = false;
         this._pendingFrameUsers = new Map();
         this._pendingSpeakingEvents = new Map();
         this._frameScheduled = false;
@@ -43,6 +46,7 @@ export class DiscordModule {
     setupSocketListeners() {
         this.socket.on('discord_connection_state', (state) => {
             this.discordConnectionStatus = state?.status || 'disconnected';
+            this.discordReasonCode = state?.reasonCode || 'UNKNOWN';
             this.discordConnectionMessage = state?.message || 'Sin conexión con Discord';
             this.updateConnectionUI();
             this.updateButtons();
@@ -69,6 +73,11 @@ export class DiscordModule {
 
     /** Open the Discord panel */
     open(discordPanelEl, onBack) {
+        if (!this._resizeAttached) {
+            window.addEventListener('resize', this._onResize);
+            this._resizeAttached = true;
+        }
+
         if (!discordPanelEl.innerHTML) {
             discordPanelEl.className = 'panel-cache-node discord-sketch-match-view';
             discordPanelEl.innerHTML = `
@@ -108,7 +117,7 @@ export class DiscordModule {
     }
 
     toggleMute() {
-        if (!['connected', 'fallback'].includes(this.discordConnectionStatus)) return;
+        if (!['connected', 'degraded'].includes(this.discordConnectionStatus)) return;
         if (navigator.vibrate) navigator.vibrate(50);
 
         this.discordMute = !this.discordMute;
@@ -125,7 +134,7 @@ export class DiscordModule {
     }
 
     toggleDeaf() {
-        if (!['connected', 'fallback'].includes(this.discordConnectionStatus)) return;
+        if (!['connected', 'degraded'].includes(this.discordConnectionStatus)) return;
         if (navigator.vibrate) navigator.vibrate(50);
 
         this.discordDeaf = !this.discordDeaf;
@@ -144,7 +153,7 @@ export class DiscordModule {
     updateConnectionUI() {
         const statusEl = document.getElementById('discord-status-pill');
         if (!statusEl) return;
-        const isConnected = ['connected', 'fallback'].includes(this.discordConnectionStatus);
+        const isConnected = ['connected', 'degraded'].includes(this.discordConnectionStatus);
         statusEl.textContent = isConnected ? 'CONECTADO' : 'DESCONECTADO';
         statusEl.className = `discord-status-pill ${isConnected ? 'connected' : 'disconnected'}`;
     }
@@ -152,7 +161,7 @@ export class DiscordModule {
     updateButtons() {
         const muteBtn = document.getElementById('tactical-mute-btn');
         const deafBtn = document.getElementById('tactical-deaf-btn');
-        const isNotConnected = !['connected', 'fallback'].includes(this.discordConnectionStatus);
+        const isNotConnected = !['connected', 'degraded'].includes(this.discordConnectionStatus);
 
         if (muteBtn) {
             muteBtn.classList.toggle('active', this.discordMute);
@@ -171,8 +180,8 @@ export class DiscordModule {
 
         // Status / empty states
         if (this.discordConnectionStatus !== 'connected') {
-            const msg = this.discordConnectionStatus === 'fallback' ? 'MODO BÁSICO ACTIVADO' : 'ESPERANDO A DISCORD...';
-            const icon = this.discordConnectionStatus === 'fallback' ? '⚠️' : '📡';
+            const msg = this.discordConnectionStatus === 'degraded' ? `MODO LIMITADO (${this.discordReasonCode})` : 'ESPERANDO A DISCORD...';
+            const icon = this.discordConnectionStatus === 'degraded' ? '⚠️' : '📡';
             const emptyState = document.createElement('div');
             emptyState.className = 'discord-empty-state';
             emptyState.innerHTML = `<div class="discord-empty-icon">${icon}</div><div class="discord-empty-text">${msg}</div>`;
@@ -350,6 +359,32 @@ export class DiscordModule {
         return row;
     }
 
+    _ensureRowRefs(id, row) {
+        const cached = this.discordRowRefs.get(id) || {};
+        const refs = {
+            row: cached.row || row,
+            track: cached.track || row.querySelector('.slider-container'),
+            fill: cached.fill || row.querySelector('.slider-fill'),
+            thumb: cached.thumb || row.querySelector('.fader-thumb-mixer'),
+            trackHeight: Number(cached.trackHeight) || 0
+        };
+        this.discordRowRefs.set(id, refs);
+        return refs;
+    }
+
+    _cacheRowMetrics(id, row) {
+        const refs = this._ensureRowRefs(id, row);
+        refs.trackHeight = refs.track?.getBoundingClientRect().height || 0;
+        this.discordRowRefs.set(id, refs);
+    }
+
+    _handleResize() {
+        this.discordRowRefs.forEach((_refs, id) => {
+            const row = document.querySelector(`.user-fader-row[data-user-id="${id}"]`);
+            if (row) this._cacheRowMetrics(id, row);
+        });
+    }
+
     /** Send discord volume to server (throttled) */
     updateVolumeServer(userId, value) {
         if (this.discordConnectionStatus !== 'connected') return;
@@ -370,6 +405,10 @@ export class DiscordModule {
         window.removeEventListener('resize', this._onWindowResize);
         this._faderControllers.forEach(c => c.destroy());
         this._faderControllers = [];
+        if (this._resizeAttached) {
+            window.removeEventListener('resize', this._onResize);
+            this._resizeAttached = false;
+        }
         this.discordRowRefs.clear();
         this._userTrackHeights.clear();
         this._pendingFrameUsers.clear();
