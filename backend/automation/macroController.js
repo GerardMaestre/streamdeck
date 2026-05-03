@@ -1,5 +1,5 @@
 const os = require('os');
-const { getErrorMessage, executeSafeCommand } = require('../utils/utils');
+const { getErrorMessage, runSpawnCommand } = require('../utils/utils');
 
 const isWindows = () => os.platform() === 'win32';
 
@@ -20,14 +20,14 @@ const MULTIMEDIA_KEY_CODES = {
     anterior: 177
 };
 
-const buildKeypressPowerShell = (keyCodes) => {
+const buildKeypressPowerShellScript = (keyCodes) => {
     const keyDown = keyCodes.map((code) => `$kb::keybd_event(${code}, 0, 0, 0);`).join(' ');
     const keyUp = [...keyCodes]
         .reverse()
         .map((code) => `$kb::keybd_event(${code}, 0, 2, 0);`)
         .join(' ');
 
-    return `$code = '[DllImport(\\"user32.dll\\")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, uint dwExtraInfo);'; $kb = Add-Type -MemberDefinition $code -Name 'Keyboard' -PassThru; ${keyDown} ${keyUp}`;
+    return `$code = '[DllImport(\"user32.dll\")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, uint dwExtraInfo);'; $kb = Add-Type -MemberDefinition $code -Name 'Keyboard' -PassThru; ${keyDown} ${keyUp}`;
 };
 
 const executeWindowsKeypress = async (keyCodes, successMessage, errorScope) => {
@@ -37,8 +37,13 @@ const executeWindowsKeypress = async (keyCodes, successMessage, errorScope) => {
     }
 
     try {
-        const command = buildKeypressPowerShell(keyCodes);
-        await executeSafeCommand({ bin: 'powershell', args: ['-WindowStyle', 'Hidden', '-Command', command], timeoutMs: 15000 });
+        const script = buildKeypressPowerShellScript(keyCodes);
+        await runSpawnCommand({
+            bin: 'powershell',
+            args: ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', script],
+            options: { shell: false },
+            timeoutMs: 8000
+        });
         console.log(successMessage);
     } catch (error) {
         console.error(`[Error] Error ${errorScope}:`, getErrorMessage(error));
