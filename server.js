@@ -694,18 +694,27 @@ const SKIPPED_INTEGRATIONS = new Set();
 const getMissingEnvKeys = (keys = []) => keys.filter((k) => !(process.env[k] || '').trim());
 
 const persistEnvValues = (values = {}) => {
+    Logger.info(`[Auth] Intentando persistir ${Object.keys(values).length} claves en .env...`);
     const envPath = getDataPath('.env');
     const current = fs.existsSync(envPath) ? dotenv.parse(fs.readFileSync(envPath, 'utf8')) : {};
     const merged = { ...current };
+    
     for (const [k, v] of Object.entries(values)) {
         if (typeof v === 'string' && v.trim()) {
             merged[k] = v.trim();
             process.env[k] = v.trim();
+            Logger.info(`[Auth] Variable actualizada en memoria: ${k}`);
         }
     }
+    
     const lines = Object.entries(merged).map(([k, v]) => `${k}=${v}`);
-    fs.mkdirSync(path.dirname(envPath), { recursive: true });
-    fs.writeFileSync(envPath, lines.join('\n') + '\n', 'utf8');
+    try {
+        fs.mkdirSync(path.dirname(envPath), { recursive: true });
+        fs.writeFileSync(envPath, lines.join('\n') + '\n', 'utf8');
+        Logger.info(`[Auth] Archivo .env guardado con éxito en: ${envPath}`);
+    } catch (error) {
+        Logger.error(`[Auth] Error crítico guardando .env: ${error.message}`);
+    }
 };
 
 const ensureIntegrationCredentials = async (type) => {

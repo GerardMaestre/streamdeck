@@ -19,10 +19,10 @@
         }
 
         .prompt-container {
-            width: 90%;
-            max-width: 450px;
-            background: rgba(13, 20, 32, 0.92);
-            padding: 30px;
+            width: 92%;
+            max-width: 480px;
+            background: rgba(13, 20, 32, 0.94);
+            padding: 20px 25px;
             border-radius: 28px;
             border: 1px solid rgba(255, 255, 255, 0.18);
             backdrop-filter: blur(35px);
@@ -33,21 +33,22 @@
             -webkit-app-region: no-drag;
             display: flex;
             flex-direction: column;
-            gap: 15px;
+            gap: 12px;
+            box-sizing: border-box;
         }
 
         @keyframes popIn {
-            from { opacity: 0; transform: scale(0.92) translateY(30px); }
+            from { opacity: 0; transform: scale(0.95) translateY(20px); }
             to { opacity: 1; transform: scale(1) translateY(0); }
         }
 
         .header {
-            margin-bottom: 5px;
+            margin-bottom: 2px;
         }
 
         h2 {
-            margin: 0 0 8px 0;
-            font-size: 1.5rem;
+            margin: 0 0 5px 0;
+            font-size: 1.4rem;
             color: var(--accent-cyan);
             text-shadow: 0 2px 10px rgba(102, 212, 255, 0.3);
         }
@@ -55,18 +56,18 @@
         p {
             margin: 0;
             color: var(--text-muted);
-            font-size: 0.95rem;
-            line-height: 1.4;
+            font-size: 0.9rem;
+            line-height: 1.3;
         }
 
         .fields-container {
             display: flex;
             flex-direction: column;
-            gap: 18px;
-            max-height: 350px;
+            gap: 14px;
+            max-height: 400px;
             overflow-y: auto;
-            padding: 5px;
-            margin: 10px 0;
+            padding: 5px 2px;
+            margin: 5px 0;
         }
 
         /* Scrollbar styling */
@@ -82,17 +83,17 @@
             display: flex;
             flex-direction: column;
             align-items: flex-start;
-            gap: 8px;
+            gap: 6px;
             width: 100%;
         }
 
         .field-label {
-            font-size: 0.85rem;
-            font-weight: 600;
-            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.4);
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-            padding-left: 5px;
+            letter-spacing: 0.8px;
+            padding-left: 2px;
         }
 
         .input-wrapper {
@@ -102,12 +103,12 @@
 
         input {
             width: 100%;
-            padding: 14px 18px;
+            padding: 12px 15px;
             background: rgba(0, 0, 0, 0.35);
             border: 1.5px solid rgba(255, 255, 255, 0.12);
-            border-radius: 14px;
+            border-radius: 12px;
             color: white;
-            font-size: 1.05rem;
+            font-size: 1rem;
             font-family: inherit;
             outline: none;
             transition: all 0.25s var(--ease-smooth);
@@ -121,21 +122,21 @@
         }
 
         input::placeholder {
-            color: rgba(255, 255, 255, 0.25);
+            color: rgba(255, 255, 255, 0.2);
         }
 
         .actions {
             display: flex;
-            gap: 15px;
-            margin-top: 10px;
+            gap: 12px;
+            margin-top: 5px;
         }
 
         .btn {
             flex: 1;
-            padding: 14px;
+            padding: 12px;
             border: none;
-            border-radius: 16px;
-            font-size: 1.05rem;
+            border-radius: 14px;
+            font-size: 1rem;
             font-weight: 700;
             cursor: pointer;
             transition: all 0.2s var(--ease-smooth);
@@ -147,23 +148,23 @@
         }
 
         .btn-cancel:hover { 
-            background: rgba(255, 255, 255, 0.15); 
+            background: rgba(255, 255, 255, 0.12); 
             color: white;
         }
 
         .btn-submit {
             background: var(--accent-cyan);
             color: #0b111a;
-            box-shadow: 0 4px 15px rgba(102, 212, 255, 0.2);
+            box-shadow: 0 4px 12px rgba(102, 212, 255, 0.15);
         }
 
         .btn-submit:hover { 
             filter: brightness(1.1);
-            box-shadow: 0 0 25px rgba(102, 212, 255, 0.45);
-            transform: translateY(-2px);
+            box-shadow: 0 0 20px rgba(102, 212, 255, 0.4);
+            transform: translateY(-1px);
         }
 
-        .btn:active { transform: scale(0.96); }
+        .btn:active { transform: scale(0.97); }
     </style>
 </head>
 <body>
@@ -195,6 +196,7 @@
             let fieldInputs = {};
 
             const onSetupPrompt = (data) => {
+                console.log('[Prompt] Configuración recibida:', data);
                 if (data?.title) titleEl.innerText = data.title;
                 if (data?.description) descEl.innerText = data.description;
                 
@@ -203,7 +205,6 @@
 
                 const fields = data?.fields || [];
                 
-                // Fallback si no hay fields pero hay compatibilidad con el formato antiguo
                 if (fields.length === 0 && data?.placeholder) {
                     fields.push({
                         key: 'value',
@@ -238,13 +239,20 @@
                     
                     fieldInputs[field.key] = input;
 
-                    if (index === 0) setTimeout(() => input.focus(), 100);
-
                     input.addEventListener('keydown', (e) => {
                         if (e.key === 'Enter') submit();
                         if (e.key === 'Escape') cancel();
                     });
                 });
+
+                // Autofocus al primer input con un ligero retraso
+                setTimeout(() => {
+                    const firstInput = fieldsContainer.querySelector('input');
+                    if (firstInput) {
+                        firstInput.focus();
+                        console.log('[Prompt] Autofocus ejecutado');
+                    }
+                }, 200);
             };
 
             if (electronPrompt && typeof electronPrompt.onSetupPrompt === 'function') {
@@ -253,23 +261,28 @@
 
             const submit = () => {
                 const results = {};
+                let hasEmpty = false;
                 Object.keys(fieldInputs).forEach(key => {
-                    results[key] = fieldInputs[key].value;
+                    results[key] = fieldInputs[key].value.trim();
+                    if (!results[key]) hasEmpty = true;
                 });
 
+                console.log('[Prompt] Intentando enviar resultados:', results);
+
                 if (electronPrompt && typeof electronPrompt.submit === 'function') {
-                    // Si solo hay un campo y la key es 'value' (fallback), devolvemos el valor directo
-                    // para mantener compatibilidad con scripts antiguos que usen showPCPrompt
                     const keys = Object.keys(results);
                     if (keys.length === 1 && keys[0] === 'value') {
                         electronPrompt.submit(results.value);
                     } else {
                         electronPrompt.submit(results);
                     }
+                } else {
+                    console.error('[Prompt] electronPrompt.submit no disponible');
                 }
             };
 
             const cancel = () => {
+                console.log('[Prompt] Usuario canceló');
                 if (electronPrompt && typeof electronPrompt.cancel === 'function') {
                     electronPrompt.cancel();
                 }

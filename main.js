@@ -260,11 +260,14 @@ app.whenReady().then(async () => {
         try {
             const config = typeof promptConfig === 'string' ? { title: promptConfig } : (promptConfig || {});
             const fieldsCount = Array.isArray(config.fields) ? config.fields.length : 1;
-            const calculatedHeight = Math.min(650, 240 + (fieldsCount > 1 ? (fieldsCount - 1) * 90 : 0));
+            
+            // Más generoso con las dimensiones para evitar cortes
+            const calculatedHeight = Math.min(750, 320 + (fieldsCount > 1 ? (fieldsCount - 1) * 100 : 0));
+            const calculatedWidth = 520;
 
             promptResolve = resolve;
             promptWindow = new BrowserWindow({
-                width: 480,
+                width: calculatedWidth,
                 height: calculatedHeight,
                 frame: false,
                 transparent: true,
@@ -377,18 +380,32 @@ app.whenReady().then(async () => {
 
     ipcMain.on('prompt-submit', (event, value) => {
         if (promptResolve) {
-            promptResolve(value);
-            promptResolve = null;
+            const resolveRef = promptResolve;
+            promptResolve = null; // Limpiar antes para evitar doble disparo
+            resolveRef(value);
         }
-        if (promptWindow) promptWindow.close();
+        if (promptWindow) {
+            promptWindow.removeAllListeners('closed');
+            promptWindow.close();
+            promptWindow = null;
+        }
+        isProcessingPrompt = false;
+        setTimeout(processNextPrompt, 300);
     });
 
     ipcMain.on('prompt-cancel', () => {
         if (promptResolve) {
-            promptResolve(null);
+            const resolveRef = promptResolve;
             promptResolve = null;
+            resolveRef(null);
         }
-        if (promptWindow) promptWindow.close();
+        if (promptWindow) {
+            promptWindow.removeAllListeners('closed');
+            promptWindow.close();
+            promptWindow = null;
+        }
+        isProcessingPrompt = false;
+        setTimeout(processNextPrompt, 300);
     });
 
     // --- POSITION PICKER (AutoClicker MULTI-MONITOR) ---
