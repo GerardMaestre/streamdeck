@@ -20,9 +20,24 @@ export class DiscordModule {
         this.discordConnectionStatus = 'disconnected';
         this.discordConnectionMessage = 'Sin conexión con Discord';
         this.discordRowRefs = new Map();
+        this._userTrackHeights = new Map();
         this.pendingVolUpdates = {};
         this.lastEmittedVol = {};
         this._faderControllers = [];
+        this._pendingFrameUsers = new Map();
+        this._pendingSpeakingEvents = new Map();
+        this._frameScheduled = false;
+
+        this._onWindowResize = () => {
+            this._userTrackHeights.clear();
+            this.discordRowRefs.forEach((refs, userId) => {
+                const track = refs?.track;
+                if (!track) return;
+                this._userTrackHeights.set(userId, track.getBoundingClientRect().height);
+            });
+        };
+
+        window.addEventListener('resize', this._onWindowResize);
     }
 
     setupSocketListeners() {
@@ -46,13 +61,9 @@ export class DiscordModule {
         });
 
         this.socket.on('discord_user_speaking', (data) => {
-            queueUpdate(`speaking_${data.userId}`, () => {
-                const row = document.querySelector(`.user-fader-row[data-user-id="${data.userId}"]`);
-                if (row) {
-                    const avatarCircle = row.querySelector('.user-avatar-circle');
-                    if (avatarCircle) avatarCircle.classList.toggle('speaking', !!data.speaking);
-                }
-            });
+            if (!data?.userId) return;
+            this._pendingSpeakingEvents.set(data.userId, !!data.speaking);
+            this._scheduleFramePatch();
         });
     }
 
@@ -180,55 +191,105 @@ export class DiscordModule {
         const existing = mixerContainer.querySelector('.discord-empty-state');
         if (existing) existing.remove();
 
+        this.renderInitialSkeleton();
+        this.patchUsers(this.discordUsers);
+    }
+
+    renderInitialSkeleton() {
+        const mixerContainer = document.getElementById('discord-mixer-container');
+        if (!mixerContainer) return;
+
         const existingUsers = Array.from(mixerContainer.querySelectorAll('.user-fader-row'));
         const existingById = new Map(existingUsers.map(el => [el.dataset.userId, el]));
         const nextIds = new Set(this.discordUsers.map(u => u.id));
 
-        // 1. Remove users no longer present
         existingUsers.forEach(el => {
             if (!nextIds.has(el.dataset.userId)) {
                 el.style.opacity = '0';
                 el.style.transform = 'scale(0.8)';
                 this.discordRowRefs.delete(el.dataset.userId);
+                this._userTrackHeights.delete(el.dataset.userId);
                 setTimeout(() => el.remove(), 400);
             }
         });
 
-        // 2. Add/Update users
         this.discordUsers.forEach(user => {
             const id = user.id;
-            let row = existingById.get(id);
+            const row = existingById.get(id);
+            if (row) return;
 
-            if (!row) {
-                row = this._createUserRow(user, mixerContainer);
-                mixerContainer.appendChild(row);
-                
-                const ctrl = this._faderControllers[this._faderControllers.length - 1];
-                if (ctrl) {
-                    const fillHeight = (user.volume / 200) * 100;
-                    requestAnimationFrame(() => ctrl.setPercent(fillHeight, true));
-                }
-            } else {
-                // Update existing row
-                if (!this.activeSliders.has('discord_' + id)) {
-                    const refs = this.discordRowRefs.get(id) || {};
-                    const fill = refs.fill || row.querySelector('.slider-fill');
-                    const thumb = refs.thumb || row.querySelector('.fader-thumb-mixer');
-                    const h = (user.volume / 200) * 100;
-                    queueUpdate(`discord_${id}_vol`, () => {
-                        const track = refs.track || row.querySelector('.slider-container');
-                        const trackHeight = track.getBoundingClientRect().height;
-                        fill.style.transform = `scale3d(1, ${h / 100}, 1)`;
-                        setThumbTransform(thumb, h, trackHeight);
-                    });
-                }
+            const newRow = this._createUserRow(user, mixerContainer);
+            mixerContainer.appendChild(newRow);
+            this._userTrackHeights.set(id, this._getTrackHeight(id));
 
-                queueUpdate(`discord_${id}_speaking`, () => {
-                    const avatarCircle = row.querySelector('.user-avatar-circle');
-                    if (avatarCircle) avatarCircle.classList.toggle('speaking', !!user.speaking);
-                });
+            const ctrl = this._faderControllers[this._faderControllers.length - 1];
+            if (ctrl) {
+                const fillHeight = (user.volume / 200) * 100;
+                requestAnimationFrame(() => ctrl.setPercent(fillHeight, true));
             }
         });
+    }
+
+    patchUsers(users) {
+        users.forEach((user) => {
+            this._pendingFrameUsers.set(user.id, user);
+        });
+        this._scheduleFramePatch();
+    }
+
+    _scheduleFramePatch() {
+        if (this._frameScheduled) return;
+        this._frameScheduled = true;
+        requestAnimationFrame(() => {
+            this._frameScheduled = false;
+            this._flushFramePatches();
+        });
+    }
+
+    _flushFramePatches() {
+        this._pendingFrameUsers.forEach((user, id) => {
+            const refs = this.discordRowRefs.get(id);
+            if (!refs) return;
+
+            if (!this.activeSliders.has('discord_' + id)) {
+                const h = (user.volume / 200) * 100;
+                const trackHeight = this._getTrackHeight(id);
+                queueUpdate(`discord_${id}_vol`, () => {
+                    refs.fill.style.transform = `scale3d(1, ${h / 100}, 1)`;
+                    setThumbTransform(refs.thumb, h, trackHeight);
+                });
+            }
+
+            const speakingState = this._pendingSpeakingEvents.has(id)
+                ? this._pendingSpeakingEvents.get(id)
+                : !!user.speaking;
+            queueUpdate(`discord_${id}_speaking`, () => {
+                const avatarCircle = refs.row.querySelector('.user-avatar-circle');
+                if (avatarCircle) avatarCircle.classList.toggle('speaking', speakingState);
+            });
+        });
+
+        this._pendingSpeakingEvents.forEach((speaking, userId) => {
+            if (this._pendingFrameUsers.has(userId)) return;
+            const refs = this.discordRowRefs.get(userId);
+            if (!refs) return;
+            queueUpdate(`discord_${userId}_speaking`, () => {
+                const avatarCircle = refs.row.querySelector('.user-avatar-circle');
+                if (avatarCircle) avatarCircle.classList.toggle('speaking', speaking);
+            });
+        });
+
+        this._pendingFrameUsers.clear();
+        this._pendingSpeakingEvents.clear();
+    }
+
+    _getTrackHeight(userId) {
+        const cachedHeight = this._userTrackHeights.get(userId);
+        if (typeof cachedHeight === 'number') return cachedHeight;
+        const refs = this.discordRowRefs.get(userId);
+        const trackHeight = refs?.track?.getBoundingClientRect().height || 0;
+        this._userTrackHeights.set(userId, trackHeight);
+        return trackHeight;
     }
 
     /** Create a new user fader row with touch handling */
@@ -306,8 +367,12 @@ export class DiscordModule {
     }
 
     destroy() {
+        window.removeEventListener('resize', this._onWindowResize);
         this._faderControllers.forEach(c => c.destroy());
         this._faderControllers = [];
         this.discordRowRefs.clear();
+        this._userTrackHeights.clear();
+        this._pendingFrameUsers.clear();
+        this._pendingSpeakingEvents.clear();
     }
 }
