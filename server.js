@@ -101,6 +101,16 @@ process.on('SIGTERM', shutdownPluginSystem);
 
 
 
+
+app.post('/api/system/plugins/reload', (_req, res) => {
+    const loaded = pluginManager.reloadAll();
+    res.json({
+        ok: true,
+        loaded,
+        summary: pluginManager.getSummary(),
+    });
+});
+
 app.get('/api/system/plugins/health', (_req, res) => {
     res.json({
         apiVersion: 1,

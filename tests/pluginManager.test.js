@@ -211,3 +211,26 @@ test('PluginManager bloquea plugin tras superar maxFailures', () => {
 
     fs.rmSync(tempDir, { recursive: true, force: true });
 });
+
+test('PluginManager reloadAll limpia health previo y recarga', () => {
+    const tempDir = makeTempDir();
+    const pluginDir = path.join(tempDir, 'reload-plugin');
+    fs.mkdirSync(pluginDir, { recursive: true });
+
+    fs.writeFileSync(path.join(pluginDir, 'manifest.json'), JSON.stringify({
+        id: 'reload-plugin',
+        apiVersion: 1,
+        entry: 'index.js',
+        capabilities: ['logging']
+    }, null, 2));
+    fs.writeFileSync(path.join(pluginDir, 'index.js'), 'module.exports = {};');
+
+    const manager = new PluginManager({ pluginsDir: tempDir });
+    manager.loadAll();
+    const reloaded = manager.reloadAll();
+
+    assert.equal(reloaded, 1);
+    assert.equal(manager.getRegistrySnapshot().length, 1);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});

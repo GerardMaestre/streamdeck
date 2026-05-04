@@ -179,6 +179,22 @@ class PluginManager {
         this.registry.clear();
     }
 
+
+    resetPluginState(pluginId) {
+        if (!pluginId) {
+            this.health.clear();
+            return;
+        }
+
+        this.health.delete(pluginId);
+    }
+
+    reloadAll() {
+        this.unloadAll();
+        this.resetPluginState();
+        return this.loadAll();
+    }
+
     getHealthSnapshot() {
         return Array.from(this.health.entries()).map(([pluginId, status]) => ({ pluginId, ...status }));
     }

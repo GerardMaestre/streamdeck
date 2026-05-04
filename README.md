@@ -135,6 +135,7 @@ plugins/
 Además, se expone un endpoint para telemetría básica:
 
 - `GET /api/system/plugins/health`
+- `POST /api/system/plugins/reload`
 
 
 ### Validación de plugins (pre-flight)
