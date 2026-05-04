@@ -7,7 +7,7 @@ const DEFAULT_HOOK_TIMEOUT_MS = 2500;
 const ALLOWED_CAPABILITIES = new Set(['logging', 'http', 'iot', 'audio', 'discord', 'automation']);
 
 class PluginManager {
-    constructor({ pluginsDir, hookTimeoutMs = DEFAULT_HOOK_TIMEOUT_MS, maxFailures = 3 }) {
+    constructor({ pluginsDir, hookTimeoutMs = DEFAULT_HOOK_TIMEOUT_MS, maxFailures = 3, healthFilePath = null }) {
         if (!pluginsDir || typeof pluginsDir !== 'string') {
             throw new Error('pluginsDir es obligatorio y debe ser string.');
         }
@@ -17,6 +17,39 @@ class PluginManager {
         this.registry = new Map();
         this.health = new Map();
         this.maxFailures = maxFailures;
+        this.healthFilePath = healthFilePath;
+    }
+
+
+    loadPersistedHealth() {
+        if (!this.healthFilePath || !fs.existsSync(this.healthFilePath)) return;
+
+        try {
+            const raw = fs.readFileSync(this.healthFilePath, 'utf8');
+            const data = JSON.parse(raw);
+            if (!Array.isArray(data)) return;
+
+            this.health.clear();
+            for (const item of data) {
+                if (!item.pluginId) continue;
+                const { pluginId, ...status } = item;
+                this.health.set(pluginId, status);
+            }
+        } catch (error) {
+            Logger.warn('[Plugins] No se pudo cargar health persistido', error.message);
+        }
+    }
+
+    persistHealth() {
+        if (!this.healthFilePath) return;
+
+        try {
+            const payload = JSON.stringify(this.getHealthSnapshot(), null, 2);
+            fs.mkdirSync(path.dirname(this.healthFilePath), { recursive: true });
+            fs.writeFileSync(this.healthFilePath, payload, 'utf8');
+        } catch (error) {
+            Logger.warn('[Plugins] No se pudo persistir health de plugins', error.message);
+        }
     }
 
     ensurePluginsDir() {
@@ -125,9 +158,11 @@ class PluginManager {
             failures,
             error: error.message,
         });
+        this.persistHealth();
     }
 
     loadAll() {
+        this.loadPersistedHealth();
         const manifests = this.discoverPluginManifests();
 
         for (const item of manifests) {
@@ -146,6 +181,7 @@ class PluginManager {
                         status: 'disabled',
                     });
                     Logger.info(`[Plugins] Plugin deshabilitado por manifest: ${manifest.id}`);
+                    this.persistHealth();
                     continue;
                 }
 
@@ -158,6 +194,7 @@ class PluginManager {
             }
         }
 
+        this.persistHealth();
         Logger.info(`[Plugins] Total cargados: ${this.registry.size}`);
         return this.registry.size;
     }
@@ -177,16 +214,19 @@ class PluginManager {
         }
 
         this.registry.clear();
+        this.persistHealth();
     }
 
 
     resetPluginState(pluginId) {
         if (!pluginId) {
             this.health.clear();
+            this.persistHealth();
             return;
         }
 
         this.health.delete(pluginId);
+        this.persistHealth();
     }
 
     reloadAll() {

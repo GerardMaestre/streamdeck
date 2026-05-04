@@ -95,6 +95,7 @@ const requireAdminToken = (req, res, next) => {
 
 const pluginManager = new PluginManager({
     pluginsDir: getDataPath('plugins'),
+    healthFilePath: getDataPath('plugins-health.json'),
 });
 pluginManager.loadAll();
 

@@ -192,3 +192,5 @@ Para endurecer seguridad, los plugins solo pueden declarar capacidades de esta a
 ### Política anti-fallos repetidos
 
 El runtime marca plugins con estado `failed` cuando fallan, y tras superar el umbral (`maxFailures`, por defecto `3`) pasan a estado `blocked` para evitar bucles de fallo continuos en cada arranque.
+
+El estado de salud de plugins se persiste en `plugins-health.json` (ruta de datos de la app) para mantener contexto de fallos entre reinicios.

@@ -234,3 +234,30 @@ test('PluginManager reloadAll limpia health previo y recarga', () => {
 
     fs.rmSync(tempDir, { recursive: true, force: true });
 });
+
+test('PluginManager persiste y recupera health state', () => {
+    const tempDir = makeTempDir();
+    const healthFile = path.join(tempDir, 'plugins-health.json');
+    const pluginDir = path.join(tempDir, 'persist-bad');
+    fs.mkdirSync(pluginDir, { recursive: true });
+
+    fs.writeFileSync(path.join(pluginDir, 'manifest.json'), JSON.stringify({
+        id: 'persist-bad',
+        apiVersion: 999,
+        entry: 'index.js'
+    }, null, 2));
+    fs.writeFileSync(path.join(pluginDir, 'index.js'), 'module.exports = {};');
+
+    const managerA = new PluginManager({ pluginsDir: tempDir, healthFilePath: healthFile, maxFailures: 2 });
+    managerA.loadAll();
+
+    const managerB = new PluginManager({ pluginsDir: tempDir, healthFilePath: healthFile, maxFailures: 2 });
+    managerB.loadAll();
+
+    const health = managerB.getHealthSnapshot();
+    assert.ok(health.length > 0);
+    assert.equal(health[0].pluginId, 'persist-bad');
+    assert.ok(['failed', 'blocked'].includes(health[0].status));
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});
