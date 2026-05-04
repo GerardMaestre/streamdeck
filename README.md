@@ -111,3 +111,27 @@ La aplicación utiliza un sistema de **Security Token** para evitar accesos no a
 
 ---
 Desarrollado por [Gerard Maestre](https://github.com/gerardmaestre)
+
+
+## Sistema de Plugins (experimental)
+
+Ahora el backend carga plugins automáticamente desde `plugins/*` al iniciar.
+
+### Estructura mínima
+
+```text
+plugins/
+  mi-plugin/
+    manifest.json
+    index.js
+```
+
+`manifest.json` requiere:
+
+- `id`
+- `apiVersion` (actual: `1`)
+- `entry` (archivo JS del plugin)
+
+Además, se expone un endpoint para telemetría básica:
+
+- `GET /api/system/plugins/health`
