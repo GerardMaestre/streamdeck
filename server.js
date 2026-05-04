@@ -93,6 +93,31 @@ const requireAdminToken = (req, res, next) => {
     next();
 };
 
+
+const adminRateWindowMs = 60 * 1000;
+const adminRateMax = 20;
+const adminRateMap = new Map();
+
+const adminRateLimit = (req, res, next) => {
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+    const now = Date.now();
+    const bucket = adminRateMap.get(ip) || { count: 0, startedAt: now };
+
+    if (now - bucket.startedAt > adminRateWindowMs) {
+        bucket.count = 0;
+        bucket.startedAt = now;
+    }
+
+    bucket.count += 1;
+    adminRateMap.set(ip, bucket);
+
+    if (bucket.count > adminRateMax) {
+        return res.status(429).json({ error: 'Demasiadas solicitudes administrativas. Intenta en 1 minuto.' });
+    }
+
+    next();
+};
+
 const pluginManager = new PluginManager({
     pluginsDir: getDataPath('plugins'),
     healthFilePath: getDataPath('plugins-health.json'),
@@ -116,7 +141,7 @@ process.on('SIGTERM', shutdownPluginSystem);
 
 
 
-app.post('/api/system/plugins/:pluginId/unblock', requireAdminToken, (req, res) => {
+app.post('/api/system/plugins/:pluginId/unblock', adminRateLimit, requireAdminToken, (req, res) => {
     const pluginId = req.params.pluginId;
     if (!pluginId) {
         return res.status(400).json({ error: 'pluginId es obligatorio' });
@@ -133,7 +158,7 @@ app.post('/api/system/plugins/:pluginId/unblock', requireAdminToken, (req, res) 
     });
 });
 
-app.post('/api/system/plugins/reload', requireAdminToken, (_req, res) => {
+app.post('/api/system/plugins/reload', adminRateLimit, requireAdminToken, (_req, res) => {
     const loaded = pluginManager.reloadAll();
     res.json({
         ok: true,
