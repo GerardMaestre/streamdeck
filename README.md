@@ -135,3 +135,12 @@ plugins/
 Además, se expone un endpoint para telemetría básica:
 
 - `GET /api/system/plugins/health`
+
+
+### Validación de plugins (pre-flight)
+
+Antes de arrancar o empaquetar, puedes validar manifests y entrypoints:
+
+```bash
+npm run plugin:validate
+```

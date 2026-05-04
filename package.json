@@ -14,7 +14,8 @@
     "pm2-restart": "pm2 restart streamdeck-pro",
     "postinstall": "patch-package",
     "check": "node --check server.js && node --check main.js",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "plugin:validate": "node tools/validate-plugins.js"
   },
   "keywords": [],
   "author": "",
