@@ -86,6 +86,19 @@ const pluginManager = new PluginManager({
 });
 pluginManager.loadAll();
 
+const shutdownPluginSystem = () => {
+    try {
+        pluginManager.unloadAll();
+    } catch (error) {
+        Logger.warn('[Plugins] Error durante unloadAll', error.message);
+    }
+};
+
+process.on('beforeExit', shutdownPluginSystem);
+process.on('SIGINT', shutdownPluginSystem);
+process.on('SIGTERM', shutdownPluginSystem);
+
+
 
 
 app.get('/api/system/plugins/health', (_req, res) => {

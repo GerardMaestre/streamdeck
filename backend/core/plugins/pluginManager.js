@@ -3,14 +3,16 @@ const path = require('path');
 const Logger = require('../logger/logger');
 
 const PLUGIN_API_VERSION = 1;
+const DEFAULT_HOOK_TIMEOUT_MS = 2500;
 
 class PluginManager {
-    constructor({ pluginsDir }) {
+    constructor({ pluginsDir, hookTimeoutMs = DEFAULT_HOOK_TIMEOUT_MS }) {
         if (!pluginsDir || typeof pluginsDir !== 'string') {
             throw new Error('pluginsDir es obligatorio y debe ser string.');
         }
 
         this.pluginsDir = pluginsDir;
+        this.hookTimeoutMs = hookTimeoutMs;
         this.registry = new Map();
         this.health = new Map();
     }
@@ -28,6 +30,7 @@ class PluginManager {
             .map((entry) => ({
                 dir: path.join(this.pluginsDir, entry.name),
                 manifestPath: path.join(this.pluginsDir, entry.name, 'manifest.json'),
+                folderId: entry.name,
             }))
             .filter(({ manifestPath }) => fs.existsSync(manifestPath));
     }
@@ -44,7 +47,24 @@ class PluginManager {
             throw new Error(`Plugin ${manifest.id} incompatible con API ${PLUGIN_API_VERSION}.`);
         }
 
+        if (manifest.enabled === false) {
+            throw new Error(`Plugin ${manifest.id} deshabilitado por manifest.`);
+        }
+
         return manifest;
+    }
+
+    invokeHook(plugin, hookName, payload) {
+        const hook = plugin.instance?.[hookName];
+        if (typeof hook !== 'function') return;
+
+        const start = Date.now();
+        hook(payload);
+        const elapsed = Date.now() - start;
+
+        if (elapsed > this.hookTimeoutMs) {
+            Logger.warn(`[Plugins] Hook ${hookName} de ${plugin.id} superó timeout`, `${elapsed}ms`);
+        }
     }
 
     registerPlugin({ dir, manifest }) {
@@ -70,31 +90,47 @@ class PluginManager {
         return plugin;
     }
 
+    markAsFailed(pluginId, error) {
+        this.health.set(pluginId, {
+            loadedAt: Date.now(),
+            status: 'failed',
+            error: error.message,
+        });
+    }
+
     loadAll() {
         const manifests = this.discoverPluginManifests();
 
         for (const item of manifests) {
+            const pluginId = item.folderId;
             try {
                 const manifest = this.loadPluginDefinition(item.manifestPath);
                 const plugin = this.registerPlugin({ dir: item.dir, manifest });
-
-                if (typeof plugin.instance.onLoad === 'function') {
-                    plugin.instance.onLoad({ logger: Logger, plugin });
-                }
-
+                this.invokeHook(plugin, 'onLoad', { logger: Logger, plugin });
                 Logger.info(`[Plugins] Plugin cargado: ${plugin.id}@${plugin.version}`);
             } catch (error) {
-                this.health.set(path.basename(path.dirname(item.manifestPath)), {
-                    loadedAt: Date.now(),
-                    status: 'failed',
-                    error: error.message,
-                });
+                this.markAsFailed(pluginId, error);
                 Logger.warn(`[Plugins] Error al cargar plugin (${item.manifestPath})`, error.message);
             }
         }
 
         Logger.info(`[Plugins] Total cargados: ${this.registry.size}`);
         return this.registry.size;
+    }
+
+    unloadAll() {
+        for (const plugin of this.registry.values()) {
+            try {
+                this.invokeHook(plugin, 'onUnload', { logger: Logger, plugin });
+                this.health.set(plugin.id, {
+                    ...this.health.get(plugin.id),
+                    unloadedAt: Date.now(),
+                    status: 'unloaded',
+                });
+            } catch (error) {
+                this.markAsFailed(plugin.id, error);
+            }
+        }
     }
 
     getHealthSnapshot() {
@@ -115,4 +151,5 @@ class PluginManager {
 module.exports = {
     PluginManager,
     PLUGIN_API_VERSION,
+    DEFAULT_HOOK_TIMEOUT_MS,
 };

@@ -58,3 +58,26 @@ test('PluginManager marca failed cuando el plugin es inválido', () => {
 
     fs.rmSync(tempDir, { recursive: true, force: true });
 });
+
+test('PluginManager soporta unload y cambia estado a unloaded', () => {
+    const tempDir = makeTempDir();
+    const pluginDir = path.join(tempDir, 'unload-plugin');
+    fs.mkdirSync(pluginDir, { recursive: true });
+
+    fs.writeFileSync(path.join(pluginDir, 'manifest.json'), JSON.stringify({
+        id: 'unload-plugin',
+        apiVersion: 1,
+        entry: 'index.js'
+    }, null, 2));
+
+    fs.writeFileSync(path.join(pluginDir, 'index.js'), 'module.exports = { onUnload() {} };');
+
+    const manager = new PluginManager({ pluginsDir: tempDir });
+    manager.loadAll();
+    manager.unloadAll();
+
+    const health = manager.getHealthSnapshot();
+    assert.equal(health[0].status, 'unloaded');
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});
