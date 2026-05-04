@@ -78,6 +78,7 @@ test('PluginManager soporta unload y cambia estado a unloaded', () => {
 
     const health = manager.getHealthSnapshot();
     assert.equal(health[0].status, 'unloaded');
+    assert.equal(manager.getRegistrySnapshot().length, 0);
 
     fs.rmSync(tempDir, { recursive: true, force: true });
 });
@@ -154,6 +155,7 @@ test('PluginManager rechaza IDs duplicados', () => {
     const health = manager.getHealthSnapshot();
     const failed = health.find((x) => x.status === 'failed');
     assert.ok(failed);
+    assert.equal(failed.pluginId, 'plugin-b');
     assert.match(failed.error, /ID duplicado/);
 
     fs.rmSync(tempDir, { recursive: true, force: true });

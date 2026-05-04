@@ -32,7 +32,8 @@ class PluginManager {
                 manifestPath: path.join(this.pluginsDir, entry.name, 'manifest.json'),
                 folderId: entry.name,
             }))
-            .filter(({ manifestPath }) => fs.existsSync(manifestPath));
+            .filter(({ manifestPath }) => fs.existsSync(manifestPath))
+            .sort((a, b) => a.folderId.localeCompare(b.folderId));
     }
 
     loadPluginDefinition(manifestPath) {
@@ -150,6 +151,8 @@ class PluginManager {
                 this.markAsFailed(plugin.id, error);
             }
         }
+
+        this.registry.clear();
     }
 
     getHealthSnapshot() {
