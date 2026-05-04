@@ -144,3 +144,14 @@ Antes de arrancar o empaquetar, puedes validar manifests y entrypoints:
 ```bash
 npm run plugin:validate
 ```
+
+
+### Quality Gates recomendados (CI)
+
+Pipeline mínimo recomendado para plugins:
+
+1. `npm run plugin:validate`
+2. `npm test`
+3. `npm run check`
+
+Este flujo está automatizado en `.github/workflows/plugin-quality.yml`.
