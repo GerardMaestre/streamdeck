@@ -50,6 +50,16 @@ class PluginManager {
         return manifest;
     }
 
+
+    validateEntrypointPath(dir, entry) {
+        const resolved = path.resolve(dir, entry);
+        const root = path.resolve(dir) + path.sep;
+        if (!resolved.startsWith(root)) {
+            throw new Error(`Entrypoint fuera del directorio del plugin: ${entry}`);
+        }
+        return resolved;
+    }
+
     invokeHook(plugin, hookName, payload) {
         const hook = plugin.instance?.[hookName];
         if (typeof hook !== 'function') return;
@@ -64,7 +74,11 @@ class PluginManager {
     }
 
     registerPlugin({ dir, manifest }) {
-        const pluginEntrypoint = path.join(dir, manifest.entry);
+        if (this.registry.has(manifest.id)) {
+            throw new Error(`ID duplicado detectado: ${manifest.id}`);
+        }
+
+        const pluginEntrypoint = this.validateEntrypointPath(dir, manifest.entry);
         if (!fs.existsSync(pluginEntrypoint)) {
             throw new Error(`No existe entrypoint: ${pluginEntrypoint}`);
         }

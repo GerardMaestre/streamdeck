@@ -106,3 +106,55 @@ test('PluginManager marca disabled cuando enabled=false en manifest', () => {
 
     fs.rmSync(tempDir, { recursive: true, force: true });
 });
+
+test('PluginManager rechaza entrypoint fuera de la carpeta del plugin', () => {
+    const tempDir = makeTempDir();
+    const pluginDir = path.join(tempDir, 'escape-plugin');
+    fs.mkdirSync(pluginDir, { recursive: true });
+
+    fs.writeFileSync(path.join(pluginDir, 'manifest.json'), JSON.stringify({
+        id: 'escape-plugin',
+        apiVersion: 1,
+        entry: '../outside.js'
+    }, null, 2));
+
+    fs.writeFileSync(path.join(tempDir, 'outside.js'), 'module.exports = {};');
+
+    const manager = new PluginManager({ pluginsDir: tempDir });
+    manager.loadAll();
+
+    const health = manager.getHealthSnapshot();
+    assert.equal(health[0].status, 'failed');
+    assert.match(health[0].error, /Entrypoint fuera del directorio/);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+test('PluginManager rechaza IDs duplicados', () => {
+    const tempDir = makeTempDir();
+    const pluginA = path.join(tempDir, 'plugin-a');
+    const pluginB = path.join(tempDir, 'plugin-b');
+    fs.mkdirSync(pluginA, { recursive: true });
+    fs.mkdirSync(pluginB, { recursive: true });
+
+    const manifest = {
+        id: 'duplicate-id',
+        apiVersion: 1,
+        entry: 'index.js'
+    };
+
+    fs.writeFileSync(path.join(pluginA, 'manifest.json'), JSON.stringify(manifest, null, 2));
+    fs.writeFileSync(path.join(pluginB, 'manifest.json'), JSON.stringify(manifest, null, 2));
+    fs.writeFileSync(path.join(pluginA, 'index.js'), 'module.exports = {};');
+    fs.writeFileSync(path.join(pluginB, 'index.js'), 'module.exports = {};');
+
+    const manager = new PluginManager({ pluginsDir: tempDir });
+    manager.loadAll();
+
+    const health = manager.getHealthSnapshot();
+    const failed = health.find((x) => x.status === 'failed');
+    assert.ok(failed);
+    assert.match(failed.error, /ID duplicado/);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});
