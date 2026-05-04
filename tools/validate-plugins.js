@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { PLUGIN_API_VERSION } = require('../backend/core/plugins/pluginManager');
+const { PLUGIN_API_VERSION, ALLOWED_CAPABILITIES } = require('../backend/core/plugins/pluginManager');
 
 const pluginsRoot = path.join(process.cwd(), 'plugins');
 
@@ -29,7 +29,19 @@ function validateManifest(manifest, folder) {
     if (typeof manifest.entry !== 'string' || manifest.entry.includes('..')) {
         fail(`${folder}: entry inválido`);
     }
+
+    const capabilities = manifest.capabilities || [];
+    if (!Array.isArray(capabilities)) {
+        fail(`${folder}: capabilities debe ser un array`);
+    }
+
+    for (const capability of capabilities) {
+        if (!ALLOWED_CAPABILITIES.has(capability)) {
+            fail(`${folder}: capability no permitida (${capability})`);
+        }
+    }
 }
+
 
 function run() {
     if (!fs.existsSync(pluginsRoot)) {

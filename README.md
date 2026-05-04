@@ -171,3 +171,15 @@ Luego valida y prueba:
 npm run plugin:validate
 npm test
 ```
+
+
+### Capabilities permitidas
+
+Para endurecer seguridad, los plugins solo pueden declarar capacidades de esta allowlist:
+
+- `logging`
+- `http`
+- `iot`
+- `audio`
+- `discord`
+- `automation`

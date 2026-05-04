@@ -18,7 +18,7 @@ test('PluginManager carga plugin válido y reporta health loaded', () => {
         apiVersion: 1,
         entry: 'index.js',
         version: '1.2.3',
-        capabilities: ['demo']
+        capabilities: ['logging']
     }, null, 2));
 
     fs.writeFileSync(path.join(pluginDir, 'index.js'), 'module.exports = { onLoad() {} };');
@@ -157,6 +157,30 @@ test('PluginManager rechaza IDs duplicados', () => {
     assert.ok(failed);
     assert.equal(failed.pluginId, 'plugin-b');
     assert.match(failed.error, /ID duplicado/);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+test('PluginManager rechaza capabilities no permitidas', () => {
+    const tempDir = makeTempDir();
+    const pluginDir = path.join(tempDir, 'bad-capability');
+    fs.mkdirSync(pluginDir, { recursive: true });
+
+    fs.writeFileSync(path.join(pluginDir, 'manifest.json'), JSON.stringify({
+        id: 'bad-capability',
+        apiVersion: 1,
+        entry: 'index.js',
+        capabilities: ['root-shell']
+    }, null, 2));
+
+    fs.writeFileSync(path.join(pluginDir, 'index.js'), 'module.exports = {};');
+
+    const manager = new PluginManager({ pluginsDir: tempDir });
+    manager.loadAll();
+
+    const health = manager.getHealthSnapshot();
+    assert.equal(health[0].status, 'failed');
+    assert.match(health[0].error, /capability no permitida/);
 
     fs.rmSync(tempDir, { recursive: true, force: true });
 });

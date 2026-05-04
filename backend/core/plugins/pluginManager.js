@@ -4,6 +4,7 @@ const Logger = require('../logger/logger');
 
 const PLUGIN_API_VERSION = 1;
 const DEFAULT_HOOK_TIMEOUT_MS = 2500;
+const ALLOWED_CAPABILITIES = new Set(['logging', 'http', 'iot', 'audio', 'discord', 'automation']);
 
 class PluginManager {
     constructor({ pluginsDir, hookTimeoutMs = DEFAULT_HOOK_TIMEOUT_MS }) {
@@ -46,6 +47,17 @@ class PluginManager {
 
         if (manifest.apiVersion !== PLUGIN_API_VERSION) {
             throw new Error(`Plugin ${manifest.id} incompatible con API ${PLUGIN_API_VERSION}.`);
+        }
+
+        const capabilities = manifest.capabilities || [];
+        if (!Array.isArray(capabilities)) {
+            throw new Error(`Plugin ${manifest.id} tiene capabilities inválidas.`);
+        }
+
+        for (const capability of capabilities) {
+            if (!ALLOWED_CAPABILITIES.has(capability)) {
+                throw new Error(`Plugin ${manifest.id} usa capability no permitida: ${capability}`);
+            }
         }
 
         return manifest;
@@ -188,4 +200,5 @@ module.exports = {
     PluginManager,
     PLUGIN_API_VERSION,
     DEFAULT_HOOK_TIMEOUT_MS,
+    ALLOWED_CAPABILITIES,
 };
