@@ -261,3 +261,28 @@ test('PluginManager persiste y recupera health state', () => {
 
     fs.rmSync(tempDir, { recursive: true, force: true });
 });
+
+test('PluginManager permite resetear estado de un plugin específico', () => {
+    const tempDir = makeTempDir();
+    const pluginDir = path.join(tempDir, 'reset-bad');
+    fs.mkdirSync(pluginDir, { recursive: true });
+
+    fs.writeFileSync(path.join(pluginDir, 'manifest.json'), JSON.stringify({
+        id: 'reset-bad',
+        apiVersion: 999,
+        entry: 'index.js'
+    }, null, 2));
+    fs.writeFileSync(path.join(pluginDir, 'index.js'), 'module.exports = {};');
+
+    const manager = new PluginManager({ pluginsDir: tempDir, maxFailures: 1 });
+    manager.loadAll();
+
+    const before = manager.getHealthSnapshot();
+    assert.equal(before[0].status, 'blocked');
+
+    manager.resetPluginState('reset-bad');
+    const after = manager.getHealthSnapshot();
+    assert.equal(after.length, 0);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});

@@ -136,6 +136,7 @@ Además, se expone un endpoint para telemetría básica:
 
 - `GET /api/system/plugins/health`
 - `POST /api/system/plugins/reload`
+- `POST /api/system/plugins/:pluginId/unblock`
 
 
 > Nota: `POST /api/system/plugins/reload` requiere header `x-security-token` cuando `SECURITY_TOKEN` está configurado en el entorno.

@@ -115,6 +115,24 @@ process.on('SIGTERM', shutdownPluginSystem);
 
 
 
+
+app.post('/api/system/plugins/:pluginId/unblock', requireAdminToken, (req, res) => {
+    const pluginId = req.params.pluginId;
+    if (!pluginId) {
+        return res.status(400).json({ error: 'pluginId es obligatorio' });
+    }
+
+    pluginManager.resetPluginState(pluginId);
+    const loaded = pluginManager.loadAll();
+
+    return res.json({
+        ok: true,
+        pluginId,
+        loaded,
+        summary: pluginManager.getSummary(),
+    });
+});
+
 app.post('/api/system/plugins/reload', requireAdminToken, (_req, res) => {
     const loaded = pluginManager.reloadAll();
     res.json({
