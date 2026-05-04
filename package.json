@@ -15,7 +15,8 @@
     "postinstall": "patch-package",
     "check": "node --check server.js && node --check main.js",
     "test": "node --test tests/*.test.js",
-    "plugin:validate": "node tools/validate-plugins.js"
+    "plugin:validate": "node tools/validate-plugins.js",
+    "plugin:create": "node tools/create-plugin.js"
   },
   "keywords": [],
   "author": "",

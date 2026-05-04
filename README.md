@@ -155,3 +155,19 @@ Pipeline mínimo recomendado para plugins:
 3. `npm run check`
 
 Este flujo está automatizado en `.github/workflows/plugin-quality.yml`.
+
+
+### Scaffolding de nuevos plugins
+
+Para crear un plugin base listo para editar:
+
+```bash
+npm run plugin:create -- mi-nuevo-plugin
+```
+
+Luego valida y prueba:
+
+```bash
+npm run plugin:validate
+npm test
+```
