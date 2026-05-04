@@ -105,6 +105,7 @@ app.get('/api/system/plugins/health', (_req, res) => {
     res.json({
         apiVersion: 1,
         plugins: pluginManager.getHealthSnapshot(),
+        summary: pluginManager.getSummary(),
         registry: pluginManager.getRegistrySnapshot(),
     });
 });

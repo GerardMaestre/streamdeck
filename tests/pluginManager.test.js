@@ -81,3 +81,28 @@ test('PluginManager soporta unload y cambia estado a unloaded', () => {
 
     fs.rmSync(tempDir, { recursive: true, force: true });
 });
+
+
+test('PluginManager marca disabled cuando enabled=false en manifest', () => {
+    const tempDir = makeTempDir();
+    const pluginDir = path.join(tempDir, 'off-plugin');
+    fs.mkdirSync(pluginDir, { recursive: true });
+
+    fs.writeFileSync(path.join(pluginDir, 'manifest.json'), JSON.stringify({
+        id: 'off-plugin',
+        apiVersion: 1,
+        entry: 'index.js',
+        enabled: false
+    }, null, 2));
+
+    fs.writeFileSync(path.join(pluginDir, 'index.js'), 'module.exports = {};');
+
+    const manager = new PluginManager({ pluginsDir: tempDir });
+    const loaded = manager.loadAll();
+
+    assert.equal(loaded, 0);
+    const health = manager.getHealthSnapshot();
+    assert.equal(health[0].status, 'disabled');
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});

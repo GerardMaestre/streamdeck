@@ -47,10 +47,6 @@ class PluginManager {
             throw new Error(`Plugin ${manifest.id} incompatible con API ${PLUGIN_API_VERSION}.`);
         }
 
-        if (manifest.enabled === false) {
-            throw new Error(`Plugin ${manifest.id} deshabilitado por manifest.`);
-        }
-
         return manifest;
     }
 
@@ -105,6 +101,15 @@ class PluginManager {
             const pluginId = item.folderId;
             try {
                 const manifest = this.loadPluginDefinition(item.manifestPath);
+                if (manifest.enabled === false) {
+                    this.health.set(manifest.id, {
+                        loadedAt: Date.now(),
+                        status: 'disabled',
+                    });
+                    Logger.info(`[Plugins] Plugin deshabilitado por manifest: ${manifest.id}`);
+                    continue;
+                }
+
                 const plugin = this.registerPlugin({ dir: item.dir, manifest });
                 this.invokeHook(plugin, 'onLoad', { logger: Logger, plugin });
                 Logger.info(`[Plugins] Plugin cargado: ${plugin.id}@${plugin.version}`);
@@ -135,6 +140,20 @@ class PluginManager {
 
     getHealthSnapshot() {
         return Array.from(this.health.entries()).map(([pluginId, status]) => ({ pluginId, ...status }));
+    }
+
+
+    getSummary() {
+        const statuses = this.getHealthSnapshot().reduce((acc, item) => {
+            acc[item.status] = (acc[item.status] || 0) + 1;
+            return acc;
+        }, {});
+
+        return {
+            totalDiscovered: this.getHealthSnapshot().length,
+            totalLoaded: this.registry.size,
+            statuses,
+        };
     }
 
     getRegistrySnapshot() {
