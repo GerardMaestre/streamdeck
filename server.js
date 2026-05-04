@@ -17,6 +17,7 @@ const { Server } = require('socket.io');
 const compression = require('compression');
 const { appStateStore } = require('./backend/data/state-store');
 const Logger = require("./backend/core/logger/logger");
+const { PluginManager } = require('./backend/core/plugins/pluginManager');
 
 const app = express();
 app.disable('x-powered-by');
@@ -80,6 +81,15 @@ app.use(compression());
 app.use(express.json({ limit: '1mb' }));
 
 
+app.get('/api/system/plugins/health', (_req, res) => {
+    res.json({
+        apiVersion: 1,
+        plugins: pluginManager.getHealthSnapshot(),
+    });
+});
+
+
+
 // --- SISTEMA COMPLETO DE LOGS Y DEBUG ---
 const initErrorTracking = require("./backend/core/logger/error-tracker");
 const startPerformanceMonitor = require("./backend/core/logger/performance");
@@ -125,6 +135,13 @@ const ensurePackagedBootstrapFiles = () => {
 };
 
 ensurePackagedBootstrapFiles();
+
+
+const pluginManager = new PluginManager({
+    pluginsDir: getDataPath('plugins'),
+});
+pluginManager.loadAll();
+
 
 // --- CACHE DE SISTEMA ---
 let configCache = null;
