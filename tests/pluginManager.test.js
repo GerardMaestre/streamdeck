@@ -184,3 +184,30 @@ test('PluginManager rechaza capabilities no permitidas', () => {
 
     fs.rmSync(tempDir, { recursive: true, force: true });
 });
+
+test('PluginManager bloquea plugin tras superar maxFailures', () => {
+    const tempDir = makeTempDir();
+    const pluginDir = path.join(tempDir, 'always-bad');
+    fs.mkdirSync(pluginDir, { recursive: true });
+
+    fs.writeFileSync(path.join(pluginDir, 'manifest.json'), JSON.stringify({
+        id: 'always-bad',
+        apiVersion: 999,
+        entry: 'index.js'
+    }, null, 2));
+    fs.writeFileSync(path.join(pluginDir, 'index.js'), 'module.exports = {};');
+
+    const manager = new PluginManager({ pluginsDir: tempDir, maxFailures: 2 });
+    manager.loadAll();
+    manager.loadAll();
+
+    const health = manager.getHealthSnapshot();
+    assert.equal(health[0].status, 'blocked');
+    assert.equal(health[0].failures, 2);
+
+    manager.loadAll();
+    const healthAfter = manager.getHealthSnapshot();
+    assert.equal(healthAfter[0].failures, 2);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});

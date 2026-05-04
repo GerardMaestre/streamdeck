@@ -183,3 +183,8 @@ Para endurecer seguridad, los plugins solo pueden declarar capacidades de esta a
 - `audio`
 - `discord`
 - `automation`
+
+
+### Política anti-fallos repetidos
+
+El runtime marca plugins con estado `failed` cuando fallan, y tras superar el umbral (`maxFailures`, por defecto `3`) pasan a estado `blocked` para evitar bucles de fallo continuos en cada arranque.

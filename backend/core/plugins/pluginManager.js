@@ -7,7 +7,7 @@ const DEFAULT_HOOK_TIMEOUT_MS = 2500;
 const ALLOWED_CAPABILITIES = new Set(['logging', 'http', 'iot', 'audio', 'discord', 'automation']);
 
 class PluginManager {
-    constructor({ pluginsDir, hookTimeoutMs = DEFAULT_HOOK_TIMEOUT_MS }) {
+    constructor({ pluginsDir, hookTimeoutMs = DEFAULT_HOOK_TIMEOUT_MS, maxFailures = 3 }) {
         if (!pluginsDir || typeof pluginsDir !== 'string') {
             throw new Error('pluginsDir es obligatorio y debe ser string.');
         }
@@ -16,6 +16,7 @@ class PluginManager {
         this.hookTimeoutMs = hookTimeoutMs;
         this.registry = new Map();
         this.health = new Map();
+        this.maxFailures = maxFailures;
     }
 
     ensurePluginsDir() {
@@ -114,9 +115,14 @@ class PluginManager {
     }
 
     markAsFailed(pluginId, error) {
+        const prev = this.health.get(pluginId) || {};
+        const failures = (prev.failures || 0) + 1;
+        const status = failures >= this.maxFailures ? 'blocked' : 'failed';
+
         this.health.set(pluginId, {
             loadedAt: Date.now(),
-            status: 'failed',
+            status,
+            failures,
             error: error.message,
         });
     }
@@ -127,6 +133,12 @@ class PluginManager {
         for (const item of manifests) {
             const pluginId = item.folderId;
             try {
+                const blockedState = this.health.get(pluginId);
+                if (blockedState && blockedState.status === 'blocked') {
+                    Logger.warn(`[Plugins] Plugin bloqueado por fallos previos: ${pluginId}`);
+                    continue;
+                }
+
                 const manifest = this.loadPluginDefinition(item.manifestPath);
                 if (manifest.enabled === false) {
                     this.health.set(manifest.id, {
