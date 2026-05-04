@@ -14,7 +14,9 @@
     "pm2-restart": "pm2 restart streamdeck-pro",
     "postinstall": "patch-package",
     "check": "node --check server.js && node --check main.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test tests/*.test.js",
+    "plugin:validate": "node tools/validate-plugins.js",
+    "plugin:create": "node tools/create-plugin.js"
   },
   "keywords": [],
   "author": "",
