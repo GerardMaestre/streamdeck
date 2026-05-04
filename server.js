@@ -81,6 +81,18 @@ app.use(compression());
 app.use(express.json({ limit: '1mb' }));
 
 
+const requireAdminToken = (req, res, next) => {
+    const configuredToken = process.env.SECURITY_TOKEN;
+    if (!configuredToken) return next();
+
+    const provided = req.headers['x-security-token'];
+    if (provided !== configuredToken) {
+        return res.status(401).json({ error: 'Token inválido para endpoint administrativo.' });
+    }
+
+    next();
+};
+
 const pluginManager = new PluginManager({
     pluginsDir: getDataPath('plugins'),
 });
@@ -102,7 +114,7 @@ process.on('SIGTERM', shutdownPluginSystem);
 
 
 
-app.post('/api/system/plugins/reload', (_req, res) => {
+app.post('/api/system/plugins/reload', requireAdminToken, (_req, res) => {
     const loaded = pluginManager.reloadAll();
     res.json({
         ok: true,

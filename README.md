@@ -138,6 +138,9 @@ Además, se expone un endpoint para telemetría básica:
 - `POST /api/system/plugins/reload`
 
 
+> Nota: `POST /api/system/plugins/reload` requiere header `x-security-token` cuando `SECURITY_TOKEN` está configurado en el entorno.
+
+
 ### Validación de plugins (pre-flight)
 
 Antes de arrancar o empaquetar, puedes validar manifests y entrypoints:
