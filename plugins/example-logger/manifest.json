@@ -1,0 +1,8 @@
+{
+  "id": "example-logger",
+  "name": "Example Logger Plugin",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "entry": "index.js",
+  "capabilities": ["logging"]
+}
