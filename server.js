@@ -18,6 +18,7 @@ const compression = require('compression');
 const { appStateStore } = require('./backend/data/state-store');
 const Logger = require("./backend/core/logger/logger");
 const { PluginManager } = require('./backend/core/plugins/pluginManager');
+const { appendAdminAudit } = require('./backend/core/plugins/adminAudit');
 
 const app = express();
 app.disable('x-powered-by');
@@ -143,12 +144,16 @@ process.on('SIGTERM', shutdownPluginSystem);
 
 app.post('/api/system/plugins/:pluginId/unblock', adminRateLimit, requireAdminToken, (req, res) => {
     const pluginId = req.params.pluginId;
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
     if (!pluginId) {
+        appendAdminAudit({ filePath: getDataPath('plugins-admin-audit.log'), action: 'unblock', ip, ok: false, detail: 'missing pluginId' });
         return res.status(400).json({ error: 'pluginId es obligatorio' });
     }
 
     pluginManager.resetPluginState(pluginId);
     const loaded = pluginManager.loadAll();
+
+    appendAdminAudit({ filePath: getDataPath('plugins-admin-audit.log'), action: 'unblock', ip, pluginId, ok: true });
 
     return res.json({
         ok: true,
@@ -158,8 +163,10 @@ app.post('/api/system/plugins/:pluginId/unblock', adminRateLimit, requireAdminTo
     });
 });
 
-app.post('/api/system/plugins/reload', adminRateLimit, requireAdminToken, (_req, res) => {
+app.post('/api/system/plugins/reload', adminRateLimit, requireAdminToken, (req, res) => {
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
     const loaded = pluginManager.reloadAll();
+    appendAdminAudit({ filePath: getDataPath('plugins-admin-audit.log'), action: 'reload', ip, ok: true, detail: `loaded=${loaded}` });
     res.json({
         ok: true,
         loaded,

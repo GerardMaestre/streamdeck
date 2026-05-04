@@ -197,3 +197,5 @@ El runtime marca plugins con estado `failed` cuando fallan, y tras superar el um
 El estado de salud de plugins se persiste en `plugins-health.json` (ruta de datos de la app) para mantener contexto de fallos entre reinicios.
 
 Los endpoints administrativos de plugins (`reload`/`unblock`) tienen rate limit básico por IP (20 req/min).
+
+Las acciones administrativas de plugins (`reload`/`unblock`) se registran en `plugins-admin-audit.log` (JSONL) para trazabilidad.
