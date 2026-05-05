@@ -1,24 +1,39 @@
 const open = require('open');
 
 const appUrls = {
-    'google-keep': 'https://keep.google.com/',
-    'google-calendar': 'https://calendar.google.com/'
+    youtube: { url: 'https://www.youtube.com', mode: 'web' },
+    twitch: { url: 'https://www.twitch.tv', mode: 'web' },
+    spotify: { url: 'spotify:', mode: 'deeplink' },
+    'google-keep': { url: 'https://keep.google.com/', mode: 'app' },
+    'google-calendar': { url: 'https://calendar.google.com/', mode: 'app' }
 };
 
 const abrirAplicacionOWeb = async (destino) => {
     try {
-        if (destino === 'youtube') await open('https://www.youtube.com');
-        if (destino === 'twitch') await open('https://www.twitch.tv');
-        if (destino === 'spotify') await open('spotify:');
+        const target = appUrls[destino];
+        if (!target) {
+            console.log(`[App] Destino no configurado: ${destino}`);
+            return;
+        }
 
-        if (appUrls[destino]) {
-            const url = appUrls[destino];
-            try {
-                await open(url, { app: { name: 'chrome', arguments: [`--app=${url}`] } });
-            } catch (err) {
-                // Fallback seguro sin shell interpolation.
-                await open(url);
-            }
+        switch (target.mode) {
+            case 'web':
+            case 'deeplink':
+                await open(target.url);
+                break;
+            case 'app':
+                try {
+                    await open(target.url, {
+                        app: { name: 'chrome', arguments: [`--app=${target.url}`] }
+                    });
+                } catch (err) {
+                    // Fallback seguro sin shell interpolation.
+                    await open(target.url);
+                }
+                break;
+            default:
+                console.warn(`[App] Modo desconocido para ${destino}: ${target.mode}`);
+                return;
         }
 
         console.log(`[App] Abriendo app/web: ${destino}`);
@@ -28,5 +43,6 @@ const abrirAplicacionOWeb = async (destino) => {
 };
 
 module.exports = {
-    abrirAplicacionOWeb
+    abrirAplicacionOWeb,
+    appUrls
 };
