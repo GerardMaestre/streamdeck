@@ -189,6 +189,12 @@ body.dragging-active .mixer-panel {
     font-style: italic;
 }
 
+.mixer-panel.mixer-initializing .slider-fill,
+.mixer-panel.mixer-initializing .fader-thumb-mixer {
+    opacity: 0;
+    transition: none !important;
+}
+
 .mixer-vertical-divider {
     width: 2px;
     height: 80vh;
