@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { Worker } = require('worker_threads');
+const crypto = require('crypto');
 const Logger = require('../logger/logger');
 
 const PLUGIN_API_VERSION = 1;
@@ -99,6 +100,18 @@ class PluginManager {
     }
 
 
+
+    verifyIntegrity(manifest, entrypoint) {
+        const expected = manifest?.integrity?.sha256;
+        if (!expected) return;
+
+        const content = fs.readFileSync(entrypoint);
+        const actual = crypto.createHash('sha256').update(content).digest('hex');
+        if (actual !== expected) {
+            throw new Error(`Plugin ${manifest.id} falló verificación SHA-256.`);
+        }
+    }
+
     validateEntrypointPath(dir, entry) {
         const resolved = path.resolve(dir, entry);
         const root = path.resolve(dir) + path.sep;
@@ -150,6 +163,8 @@ class PluginManager {
         if (!fs.existsSync(pluginEntrypoint)) {
             throw new Error(`No existe entrypoint: ${pluginEntrypoint}`);
         }
+
+        this.verifyIntegrity(manifest, pluginEntrypoint);
 
         // eslint-disable-next-line global-require, import/no-dynamic-require
         const pluginModule = require(pluginEntrypoint);

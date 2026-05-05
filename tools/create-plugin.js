@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { PLUGIN_API_VERSION } = require('../backend/core/plugins/pluginManager');
 
 const pluginName = process.argv[2];
@@ -22,16 +23,31 @@ if (fs.existsSync(dir)) {
 
 fs.mkdirSync(dir, { recursive: true });
 
+const indexContent = `module.exports = {
+  onLoad({ logger, plugin }) {
+    logger.info(\`[Plugin:${safeId}] loaded\`);
+  },
+
+  onUnload({ logger, plugin }) {
+    logger.info(\`[Plugin:${safeId}] unloaded\`);
+  }
+};
+`;
+fs.writeFileSync(path.join(dir, 'index.js'), indexContent);
+
+const sha256 = crypto.createHash('sha256').update(indexContent).digest('hex');
 const manifest = {
     id: safeId,
     name: safeId,
     version: '1.0.0',
     apiVersion: PLUGIN_API_VERSION,
     entry: 'index.js',
-    capabilities: []
+    capabilities: [],
+    integrity: {
+        sha256,
+    }
 };
 
 fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2));
-fs.writeFileSync(path.join(dir, 'index.js'), `module.exports = {\n  onLoad({ logger, plugin }) {\n    logger.info(\`[Plugin:${safeId}] loaded\`);\n  },\n\n  onUnload({ logger, plugin }) {\n    logger.info(\`[Plugin:${safeId}] unloaded\`);\n  }\n};\n`);
 
 console.log(`Plugin creado en: ${dir}`);

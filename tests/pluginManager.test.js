@@ -286,3 +286,26 @@ test('PluginManager permite resetear estado de un plugin específico', () => {
 
     fs.rmSync(tempDir, { recursive: true, force: true });
 });
+
+test('PluginManager rechaza plugin con SHA-256 inválido', () => {
+    const tempDir = makeTempDir();
+    const pluginDir = path.join(tempDir, 'bad-integrity');
+    fs.mkdirSync(pluginDir, { recursive: true });
+
+    fs.writeFileSync(path.join(pluginDir, 'index.js'), 'module.exports = {};');
+    fs.writeFileSync(path.join(pluginDir, 'manifest.json'), JSON.stringify({
+        id: 'bad-integrity',
+        apiVersion: 1,
+        entry: 'index.js',
+        integrity: { sha256: 'deadbeef' }
+    }, null, 2));
+
+    const manager = new PluginManager({ pluginsDir: tempDir });
+    manager.loadAll();
+
+    const health = manager.getHealthSnapshot();
+    assert.equal(health[0].status, 'failed');
+    assert.match(health[0].error, /SHA-256/);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});
