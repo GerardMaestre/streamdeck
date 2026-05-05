@@ -15,6 +15,19 @@ function rotateIfNeeded(filePath) {
     }
 }
 
+
+function clearAdminAudit(filePath) {
+    if (!filePath) return false;
+    try {
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        const rotatedPath = `${filePath}.1`;
+        if (fs.existsSync(rotatedPath)) fs.unlinkSync(rotatedPath);
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
 function appendAdminAudit({ filePath, action, ip, pluginId = null, ok = true, detail = null }) {
     if (!filePath) return;
 
@@ -36,4 +49,4 @@ function appendAdminAudit({ filePath, action, ip, pluginId = null, ok = true, de
     }
 }
 
-module.exports = { appendAdminAudit, rotateIfNeeded, MAX_AUDIT_SIZE_BYTES };
+module.exports = { appendAdminAudit, rotateIfNeeded, clearAdminAudit, MAX_AUDIT_SIZE_BYTES };

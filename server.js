@@ -18,7 +18,7 @@ const compression = require('compression');
 const { appStateStore } = require('./backend/data/state-store');
 const Logger = require("./backend/core/logger/logger");
 const { PluginManager } = require('./backend/core/plugins/pluginManager');
-const { appendAdminAudit } = require('./backend/core/plugins/adminAudit');
+const { appendAdminAudit, clearAdminAudit } = require('./backend/core/plugins/adminAudit');
 
 const app = express();
 app.disable('x-powered-by');
@@ -140,6 +140,31 @@ process.on('SIGTERM', shutdownPluginSystem);
 
 
 
+
+
+app.get('/api/system/plugins/:pluginId/status', adminRateLimit, requireAdminToken, (req, res) => {
+    const pluginId = req.params.pluginId;
+    const status = pluginManager.getPluginStatus(pluginId);
+
+    if (!status || (!status.health && !status.registry)) {
+        return res.status(404).json({ error: 'Plugin no encontrado' });
+    }
+
+    return res.json(status);
+});
+
+app.post('/api/system/plugins/audit/clear', adminRateLimit, requireAdminToken, (req, res) => {
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+    const filePath = getDataPath('plugins-admin-audit.log');
+    const ok = clearAdminAudit(filePath);
+    appendAdminAudit({ filePath, action: 'clear-audit', ip, ok });
+
+    if (!ok) {
+        return res.status(500).json({ ok: false, error: 'No se pudo limpiar audit log' });
+    }
+
+    return res.json({ ok: true });
+});
 
 app.post('/api/system/plugins/:pluginId/unblock', adminRateLimit, requireAdminToken, (req, res) => {
     const pluginId = req.params.pluginId;

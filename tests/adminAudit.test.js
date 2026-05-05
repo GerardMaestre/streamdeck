@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { appendAdminAudit, rotateIfNeeded, MAX_AUDIT_SIZE_BYTES } = require('../backend/core/plugins/adminAudit');
+const { appendAdminAudit, rotateIfNeeded, clearAdminAudit, MAX_AUDIT_SIZE_BYTES } = require('../backend/core/plugins/adminAudit');
 
 test('appendAdminAudit escribe línea JSONL válida', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'streamdeck-audit-test-'));
@@ -39,6 +39,21 @@ test('rotateIfNeeded rota el archivo cuando supera el tamaño máximo', () => {
     rotateIfNeeded(logPath);
 
     assert.equal(fs.existsSync(`${logPath}.1`), true);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+
+test('clearAdminAudit elimina log principal y rotado', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'streamdeck-audit-clear-'));
+    const logPath = path.join(tempDir, 'plugins-admin-audit.log');
+    fs.writeFileSync(logPath, 'a');
+    fs.writeFileSync(`${logPath}.1`, 'b');
+
+    const ok = clearAdminAudit(logPath);
+    assert.equal(ok, true);
+    assert.equal(fs.existsSync(logPath), false);
+    assert.equal(fs.existsSync(`${logPath}.1`), false);
 
     fs.rmSync(tempDir, { recursive: true, force: true });
 });

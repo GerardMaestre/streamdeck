@@ -309,3 +309,27 @@ test('PluginManager rechaza plugin con SHA-256 inválido', () => {
 
     fs.rmSync(tempDir, { recursive: true, force: true });
 });
+
+
+test('PluginManager expone estado detallado por plugin', () => {
+    const tempDir = makeTempDir();
+    const pluginDir = path.join(tempDir, 'detail-plugin');
+    fs.mkdirSync(pluginDir, { recursive: true });
+
+    fs.writeFileSync(path.join(pluginDir, 'manifest.json'), JSON.stringify({
+        id: 'detail-plugin',
+        apiVersion: 1,
+        entry: 'index.js'
+    }, null, 2));
+    fs.writeFileSync(path.join(pluginDir, 'index.js'), 'module.exports = {};');
+
+    const manager = new PluginManager({ pluginsDir: tempDir });
+    manager.loadAll();
+
+    const detail = manager.getPluginStatus('detail-plugin');
+    assert.equal(detail.pluginId, 'detail-plugin');
+    assert.equal(detail.loaded, true);
+    assert.equal(detail.registry.id, 'detail-plugin');
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});
