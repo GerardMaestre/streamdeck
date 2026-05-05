@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const Logger = require('../logger/logger');
 
 const PLUGIN_API_VERSION = 1;
+const HEALTH_SCHEMA_VERSION = 1;
 const DEFAULT_HOOK_TIMEOUT_MS = 2500;
 const ALLOWED_CAPABILITIES = new Set(['logging', 'http', 'iot', 'audio', 'discord', 'automation']);
 
@@ -29,10 +30,10 @@ class PluginManager {
         try {
             const raw = fs.readFileSync(this.healthFilePath, 'utf8');
             const data = JSON.parse(raw);
-            if (!Array.isArray(data)) return;
+            const items = Array.isArray(data) ? data : (data.items || []);
 
             this.health.clear();
-            for (const item of data) {
+            for (const item of items) {
                 if (!item.pluginId) continue;
                 const { pluginId, ...status } = item;
                 this.health.set(pluginId, status);
@@ -46,7 +47,7 @@ class PluginManager {
         if (!this.healthFilePath) return;
 
         try {
-            const payload = JSON.stringify(this.getHealthSnapshot(), null, 2);
+            const payload = JSON.stringify({ schemaVersion: HEALTH_SCHEMA_VERSION, items: this.getHealthSnapshot() }, null, 2);
             fs.mkdirSync(path.dirname(this.healthFilePath), { recursive: true });
             fs.writeFileSync(this.healthFilePath, payload, 'utf8');
         } catch (error) {
@@ -308,4 +309,5 @@ module.exports = {
     PLUGIN_API_VERSION,
     DEFAULT_HOOK_TIMEOUT_MS,
     ALLOWED_CAPABILITIES,
+    HEALTH_SCHEMA_VERSION,
 };
