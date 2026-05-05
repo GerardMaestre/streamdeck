@@ -320,6 +320,24 @@ export class DiscordModule {
         return trackHeight;
     }
 
+    _isValidAvatarUrl(url) {
+        if (typeof url !== 'string') return false;
+        const trimmedUrl = url.trim();
+        if (!trimmedUrl) return false;
+
+        try {
+            const parsedUrl = new URL(trimmedUrl);
+            const isHttps = parsedUrl.protocol === 'https:';
+            const allowedHosts = new Set([
+                'cdn.discordapp.com',
+                'media.discordapp.net'
+            ]);
+            return isHttps && allowedHosts.has(parsedUrl.hostname);
+        } catch {
+            return false;
+        }
+    }
+
     /** Create a new user fader row with touch handling */
     _createUserRow(user, mixerContainer) {
         const id = user.id;
@@ -327,26 +345,51 @@ export class DiscordModule {
         row.className = 'user-fader-row';
         row.dataset.userId = id;
 
-        const avatarHTML = user.avatar
-            ? `<img src="${user.avatar}">`
-            : `<span>${user.username.charAt(0).toUpperCase()}</span>`;
-
         const initialVol = Number(user.volume);
         const fillHeight = (initialVol / 200) * 100;
-        const isSpeaking = user.speaking ? ' speaking' : '';
 
-        row.innerHTML = `
-            <div class="user-avatar-circle${isSpeaking}">${avatarHTML}</div>
-            <div class="slider-container discord-slider-tall">
-                <div id="discord-slider-fill-${id}" class="slider-fill discord-fill-warm" style="transform: scale3d(1, ${fillHeight / 100}, 1); transform-origin: bottom;"></div>
-                <div class="fader-thumb-mixer" style="bottom: 0"></div>
-            </div>
-            <div class="discord-username-tag">${user.username}</div>
-        `;
+        const avatarCircle = document.createElement('div');
+        avatarCircle.className = 'user-avatar-circle';
+        if (user.speaking) avatarCircle.classList.add('speaking');
 
-        const track = row.querySelector('.slider-container');
-        const fill = row.querySelector('.slider-fill');
-        const thumb = row.querySelector('.fader-thumb-mixer');
+        const username = typeof user.username === 'string' ? user.username : '';
+        const fallbackInitial = (username.trim().charAt(0) || '?').toUpperCase();
+
+        if (this._isValidAvatarUrl(user.avatar)) {
+            const avatarImg = document.createElement('img');
+            avatarImg.src = user.avatar;
+            avatarImg.alt = username ? `Avatar de ${username}` : 'Avatar de usuario';
+            avatarImg.loading = 'lazy';
+            avatarImg.referrerPolicy = 'no-referrer';
+            avatarCircle.appendChild(avatarImg);
+        } else {
+            const avatarInitial = document.createElement('span');
+            avatarInitial.textContent = fallbackInitial;
+            avatarCircle.appendChild(avatarInitial);
+        }
+
+        const sliderContainer = document.createElement('div');
+        sliderContainer.className = 'slider-container discord-slider-tall';
+
+        const fill = document.createElement('div');
+        fill.id = `discord-slider-fill-${id}`;
+        fill.className = 'slider-fill discord-fill-warm';
+        fill.style.transform = `scale3d(1, ${fillHeight / 100}, 1)`;
+        fill.style.transformOrigin = 'bottom';
+
+        const thumb = document.createElement('div');
+        thumb.className = 'fader-thumb-mixer';
+        thumb.style.bottom = '0';
+
+        sliderContainer.append(fill, thumb);
+
+        const usernameTag = document.createElement('div');
+        usernameTag.className = 'discord-username-tag';
+        usernameTag.textContent = username;
+
+        row.append(avatarCircle, sliderContainer, usernameTag);
+
+        const track = sliderContainer;
         this.discordRowRefs.set(id, { row, track, fill, thumb });
 
         // Fader controller via FaderFactory
