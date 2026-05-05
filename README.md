@@ -211,3 +211,11 @@ Los plugins pueden declarar `integrity.sha256` en `manifest.json`; si existe, el
 El audit log rota automáticamente a `plugins-admin-audit.log.1` al superar ~1MB.
 
 Los plugins deshabilitados vía API se persisten en `plugins-disabled.json`.
+
+
+### SDK para terceros
+
+Se incluye un SDK base en `sdk/plugin-sdk.js` + tipos en `sdk/plugin-sdk.d.ts`.
+
+Guía de migración y versionado de API:
+- `docs-plugin-sdk-migration.md`
