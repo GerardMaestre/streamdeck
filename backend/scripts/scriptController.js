@@ -120,6 +120,12 @@ const readScriptDescription = async (absolutePath) => {
     }
 };
 
+
+const applyScriptResultToCircuit = (circuit, code) => {
+    if (code === 0) circuit.recordSuccess();
+    else circuit.recordFailure();
+};
+
 const runScriptExternally = async (scriptLabel, absolutePath, args) => {
     let terminalId = null;
     if (global.showTerminal) {
@@ -164,8 +170,7 @@ const runScriptExternally = async (scriptLabel, absolutePath, args) => {
         child.on('close', (code) => {
             if (timeoutHandle) clearTimeout(timeoutHandle);
             RUNNING_SCRIPTS.delete(child);
-            scriptCircuit.recordFailure();
-            if (code === 0) scriptCircuit.recordSuccess(); else scriptCircuit.recordFailure();
+            applyScriptResultToCircuit(scriptCircuit, code);
             if (global.appendTerminalLog) {
                 const estado = code === 0 ? 'Exito' : 'Error';
                 global.appendTerminalLog(terminalId, `\n--- [Proceso terminado con código ${code} (${estado})] ---\n`);
@@ -175,6 +180,7 @@ const runScriptExternally = async (scriptLabel, absolutePath, args) => {
         child.on('error', (error) => {
             if (timeoutHandle) clearTimeout(timeoutHandle);
             RUNNING_SCRIPTS.delete(child);
+            scriptCircuit.recordFailure();
             if (global.appendTerminalLog) global.appendTerminalLog(terminalId, `\n[FALLO FATAL]: ${error.message}\n`);
             logControllerError(`script:${scriptLabel}`, error);
         });
@@ -270,7 +276,10 @@ const ejecutarScriptDinamico = async (payload, socket) => {
 module.exports = {
     ejecutarScriptDinamico,
     listarScripts,
-    stopAllRunningScripts
+    stopAllRunningScripts,
+    __test__: {
+        applyScriptResultToCircuit
+    }
 };
 
 async function listarScripts() {
