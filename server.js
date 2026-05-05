@@ -1112,27 +1112,6 @@ server.on('error', (err) => {
             setTimeout(() => {
                 try {
                     server.listen(PORT);
-                    promptWindow = new BrowserWindow({
-                        width: calculatedWidth,
-                        height: calculatedHeight,
-                        frame: false,
-                        transparent: true,
-                        alwaysOnTop: true,
-                        skipTaskbar: true,
-                        center: true,
-                        resizable: false,
-                        hasShadow: false, // Quitar sombra para evitar bordes feos en Windows
-                        thickFrame: false,
-                        webPreferences: {
-                            preload: getDataPath('frontend/preload_prompt.js'),
-                            nodeIntegration: false,
-                            contextIsolation: true,
-                            enableRemoteModule: false
-                        }
-                    });
-
-                    // Forzar fondo transparente
-                    promptWindow.setBackgroundColor('#00000000');
                 } catch (e) {
                     console.error('[Error] Error al reintentar server.listen:', e);
                     process.exit(1);
