@@ -17,6 +17,11 @@ class DiscordVoiceService {
         };
 
         this.speakingUsers = new Set();
+        this.speakingTimeouts = new Map();
+        this.speakingMeta = new Map();
+        this.speakingInactivityMs = Number(process.env.DISCORD_SPEAKING_INACTIVITY_MS) || 2200;
+        this.explicitDominanceMs = Number(process.env.DISCORD_SPEAKING_EXPLICIT_DOMINANCE_MS) || 1200;
+        this.logger = console;
     }
 
     init(connectionManager, io) {
@@ -176,49 +181,59 @@ class DiscordVoiceService {
             await this.publishVoiceUsers();
         });
 
-        // 🛡️ GESTIÓN DE HABLA MULTI-EVENTO (Cazador de eventos)
-        const speakingTimeouts = new Map();
-
-        const setSpeakingState = (uId, isSpeaking) => {
+        const setSpeakingState = (uId, isSpeaking, source, explicit = false) => {
             if (!this.ioInstance || !uId) return;
+            const now = Date.now();
+            const previous = this.speakingMeta.get(uId);
+            const previousState = !!previous?.speaking;
+            const previousSource = previous?.source || 'none';
 
-            if (speakingTimeouts.has(uId)) {
-                clearTimeout(speakingTimeouts.get(uId));
-                speakingTimeouts.delete(uId);
+            if (!explicit && previous?.explicit && now - previous.updatedAt < this.explicitDominanceMs && previousState !== isSpeaking) {
+                this.logger.debug?.(`[Discord Voice] speaking ignored (fallback under explicit dominance) userId=${uId} source=${source} prev=${previousSource} prevState=${previousState} nextState=${isSpeaking}`);
+                return;
             }
 
-            // LOG PARA DEBUG (Lo verás en el terminal)
-            if (isSpeaking) {
-                this.speakingUsers.add(uId);
-            } else {
-                this.speakingUsers.delete(uId);
+            if (this.speakingTimeouts.has(uId)) {
+                clearTimeout(this.speakingTimeouts.get(uId));
+                this.speakingTimeouts.delete(uId);
             }
-            
-            this.ioInstance.emit('discord_user_speaking', { userId: uId, speaking: isSpeaking });
 
-            if (isSpeaking) {
+            if (isSpeaking) this.speakingUsers.add(uId);
+            else this.speakingUsers.delete(uId);
+
+            this.speakingMeta.set(uId, { speaking: isSpeaking, source, explicit, updatedAt: now });
+            this.logger.debug?.(`[Discord Voice] speaking transition userId=${uId} source=${source} ${previousState} -> ${isSpeaking}`);
+            this.ioInstance.emit('discord_user_speaking', { userId: uId, speaking: isSpeaking, source, ts: now });
+
+            if (isSpeaking && !explicit) {
                 const timeout = setTimeout(() => {
-                    this.speakingUsers.delete(uId);
-                    this.ioInstance.emit('discord_user_speaking', { userId: uId, speaking: false });
-                    speakingTimeouts.delete(uId);
-                }, 1500); 
-                speakingTimeouts.set(uId, timeout);
+                    const latest = this.speakingMeta.get(uId);
+                    if (latest?.speaking) {
+                        this.speakingUsers.delete(uId);
+                        const ts = Date.now();
+                        this.speakingMeta.set(uId, { speaking: false, source: 'timeout', explicit: false, updatedAt: ts });
+                        this.logger.debug?.(`[Discord Voice] speaking transition userId=${uId} source=timeout true -> false`);
+                        this.ioInstance.emit('discord_user_speaking', { userId: uId, speaking: false, source: 'timeout', ts });
+                    }
+                    this.speakingTimeouts.delete(uId);
+                }, this.speakingInactivityMs);
+                this.speakingTimeouts.set(uId, timeout);
             }
         };
 
-        // Escuchamos TODAS las variantes posibles
         const handleGenericSpeaking = (data) => {
             const uId = data.user_id || data.userId;
-            const state = (data.speaking_state !== undefined) ? (data.speaking_state !== 0) : true;
-            setSpeakingState(uId, state);
+            const hasState = data.speaking_state !== undefined;
+            const state = hasState ? (data.speaking_state !== 0) : true;
+            setSpeakingState(uId, state, 'SPEAKING', false);
         };
-
-        const handleStopSpeaking = (data) => setSpeakingState(data.user_id || data.userId, false);
+        const handleStartSpeaking = (data) => setSpeakingState(data.user_id || data.userId, true, 'SPEAKING_START', true);
+        const handleStopSpeaking = (data) => setSpeakingState(data.user_id || data.userId, false, 'SPEAKING_STOP', true);
 
         client.on('SPEAKING', handleGenericSpeaking);
         client.on('speaking', handleGenericSpeaking);
-        client.on('SPEAKING_START', handleGenericSpeaking);
-        client.on('speaking-start', handleGenericSpeaking);
+        client.on('SPEAKING_START', handleStartSpeaking);
+        client.on('speaking-start', handleStartSpeaking);
         client.on('SPEAKING_STOP', handleStopSpeaking);
         client.on('speaking-stop', handleStopSpeaking);
 
