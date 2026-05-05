@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { PLUGIN_API_VERSION, ALLOWED_CAPABILITIES } = require('../backend/core/plugins/pluginManager');
 
 const pluginsRoot = path.join(process.cwd(), 'plugins');
@@ -72,6 +73,15 @@ function run() {
             const entryPath = path.join(pluginsRoot, folder, manifest.entry);
             if (!fs.existsSync(entryPath)) {
                 fail(`${folder}: entry no existe (${manifest.entry})`);
+            }
+
+            const expected = manifest?.integrity?.sha256;
+            if (expected) {
+                const content = fs.readFileSync(entryPath);
+                const actual = crypto.createHash('sha256').update(content).digest('hex');
+                if (actual !== expected) {
+                    fail(`${folder}: SHA-256 inválido para entry`);
+                }
             }
         } catch (error) {
             fail(`${folder}: manifest inválido (${error.message})`);
