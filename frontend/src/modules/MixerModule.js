@@ -149,6 +149,10 @@ export class MixerModule {
         });
 
         this.socket.on('master_updated', (data) => {
+            if (!data || typeof data !== 'object') {
+                console.warn('[MixerModule] Ignorando payload inválido en master_updated:', data);
+                return;
+            }
             if (this.lastMixerState) {
                 if (data.type === 'volume') this.lastMixerState.master.volume = data.value;
                 if (data.type === 'mute') this.lastMixerState.master.mute = data.value;
@@ -157,7 +161,12 @@ export class MixerModule {
         });
 
         this.socket.on('session_updated', (data) => {
-            if (this.lastMixerState && data?.name) {
+            const isValidName = typeof data?.name === 'string' && data.name.trim();
+            if (!isValidName) {
+                console.warn('[MixerModule] Ignorando payload inválido en session_updated:', data);
+                return;
+            }
+            if (this.lastMixerState) {
                 const sess = this.sessionStateByName.get(data.name);
                 if (sess) {
                     if (data.type === 'volume') sess.volume = data.value;
@@ -168,6 +177,10 @@ export class MixerModule {
         });
 
         this.socket.on('mixer_batch', (batch) => {
+            if (!batch || typeof batch !== 'object') {
+                console.warn('[MixerModule] Ignorando payload inválido en mixer_batch:', batch);
+                return;
+            }
             if (!this.lastMixerState) return;
             
             const pendingVisualUpdates = new Map();
