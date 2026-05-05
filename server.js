@@ -1,6 +1,7 @@
 const { emitErrorToFrontend, getErrorMessage, getDataPath } = require('./backend/utils/utils');
 const fs = require('fs');
 const path = require('path');
+const { randomUUID } = require('crypto');
 const { app: electronApp } = require('electron');
 const { loadAllEnvs, validateEnvContract } = require('./backend/core/config/bootstrap');
 
@@ -82,6 +83,15 @@ app.use(compression());
 app.use(express.json({ limit: '1mb' }));
 
 
+app.use((req, res, next) => {
+    const incoming = req.headers['x-correlation-id'];
+    const correlationId = typeof incoming === 'string' && incoming.trim() ? incoming.trim() : randomUUID();
+    req.correlationId = correlationId;
+    res.setHeader('x-correlation-id', correlationId);
+    next();
+});
+
+
 const requireAdminToken = (req, res, next) => {
     const configuredToken = process.env.SECURITY_TOKEN;
     if (!configuredToken) return next();
@@ -159,13 +169,13 @@ app.post('/api/system/plugins/audit/clear', adminRateLimit, requireAdminToken, (
     const ip = req.ip || req.connection?.remoteAddress || 'unknown';
     const filePath = getDataPath('plugins-admin-audit.log');
     const ok = clearAdminAudit(filePath);
-    appendAdminAudit({ filePath, action: 'clear-audit', ip, ok });
+    appendAdminAudit({ filePath, action: 'clear-audit', ip, ok, detail: `correlationId=${req.correlationId}` });
 
     if (!ok) {
         return res.status(500).json({ ok: false, error: 'No se pudo limpiar audit log' });
     }
 
-    return res.json({ ok: true });
+    return res.json({ ok: true, correlationId: req.correlationId });
 });
 
 
@@ -176,8 +186,8 @@ app.post('/api/system/plugins/:pluginId/disable', adminRateLimit, requireAdminTo
     const done = pluginManager.disablePlugin(pluginId);
     if (!done) return res.status(422).json({ error: 'No se pudo deshabilitar plugin' });
 
-    appendAdminAudit({ filePath: getDataPath('plugins-admin-audit.log'), action: 'disable', ip: req.ip, pluginId, ok: true });
-    return res.json({ ok: true, pluginId });
+    appendAdminAudit({ filePath: getDataPath('plugins-admin-audit.log'), action: 'disable', ip: req.ip, pluginId, ok: true, detail: `correlationId=${req.correlationId}` });
+    return res.json({ ok: true, pluginId, correlationId: req.correlationId });
 });
 
 app.post('/api/system/plugins/:pluginId/enable', adminRateLimit, requireAdminToken, (req, res) => {
@@ -187,22 +197,22 @@ app.post('/api/system/plugins/:pluginId/enable', adminRateLimit, requireAdminTok
     const existed = pluginManager.enablePlugin(pluginId);
     if (!existed) return res.status(409).json({ error: 'Plugin no estaba deshabilitado' });
 
-    appendAdminAudit({ filePath: getDataPath('plugins-admin-audit.log'), action: 'enable', ip: req.ip, pluginId, ok: true });
-    return res.json({ ok: true, pluginId });
+    appendAdminAudit({ filePath: getDataPath('plugins-admin-audit.log'), action: 'enable', ip: req.ip, pluginId, ok: true, detail: `correlationId=${req.correlationId}` });
+    return res.json({ ok: true, pluginId, correlationId: req.correlationId });
 });
 
 app.post('/api/system/plugins/:pluginId/unblock', adminRateLimit, requireAdminToken, (req, res) => {
     const pluginId = req.params.pluginId;
     const ip = req.ip || req.connection?.remoteAddress || 'unknown';
     if (!pluginId) {
-        appendAdminAudit({ filePath: getDataPath('plugins-admin-audit.log'), action: 'unblock', ip, ok: false, detail: 'missing pluginId' });
+        appendAdminAudit({ filePath: getDataPath('plugins-admin-audit.log'), action: 'unblock', ip, ok: false, detail: `missing pluginId; correlationId=${req.correlationId}` });
         return res.status(400).json({ error: 'pluginId es obligatorio' });
     }
 
     pluginManager.resetPluginState(pluginId);
     const loaded = pluginManager.loadAll();
 
-    appendAdminAudit({ filePath: getDataPath('plugins-admin-audit.log'), action: 'unblock', ip, pluginId, ok: true });
+    appendAdminAudit({ filePath: getDataPath('plugins-admin-audit.log'), action: 'unblock', ip, pluginId, ok: true, detail: `correlationId=${req.correlationId}` });
 
     return res.json({
         ok: true,
@@ -215,11 +225,12 @@ app.post('/api/system/plugins/:pluginId/unblock', adminRateLimit, requireAdminTo
 app.post('/api/system/plugins/reload', adminRateLimit, requireAdminToken, (req, res) => {
     const ip = req.ip || req.connection?.remoteAddress || 'unknown';
     const loaded = pluginManager.reloadAll();
-    appendAdminAudit({ filePath: getDataPath('plugins-admin-audit.log'), action: 'reload', ip, ok: true, detail: `loaded=${loaded}` });
+    appendAdminAudit({ filePath: getDataPath('plugins-admin-audit.log'), action: 'reload', ip, ok: true, detail: `loaded=${loaded}; correlationId=${req.correlationId}` });
     res.json({
         ok: true,
         loaded,
         summary: pluginManager.getSummary(),
+        correlationId: req.correlationId,
     });
 });
 
@@ -629,7 +640,7 @@ app.post('/api/security/token', (req, res) => {
     }
 
     ACTIVE_SECURITY_TOKEN = token;
-    return res.json({ ok: true });
+    return res.json({ ok: true, correlationId: req.correlationId });
 });
 
 // Dynamic service worker route: inject build timestamp for cache busting
@@ -751,7 +762,7 @@ app.post('/api/config', async (req, res) => {
         configCache = newConfig;
         log('[Config] config.json actualizado desde la tablet');
 
-        return res.json({ ok: true });
+        return res.json({ ok: true, correlationId: req.correlationId });
     } catch (err) {
         errorLog('Error guardando config.json', err);
         return res.status(500).json({ error: 'No se pudo guardar la configuracion.' });
@@ -786,7 +797,7 @@ app.post('/api/app-state', async (req, res) => {
         }
         appStateStore.set('updatedAt', Date.now());
 
-        return res.json({ ok: true });
+        return res.json({ ok: true, correlationId: req.correlationId });
     } catch (err) {
         Logger.error('Error guardando el estado persistido', err);
         return res.status(500).json({ error: 'No se pudo guardar el estado' });
