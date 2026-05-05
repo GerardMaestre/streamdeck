@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { Worker } = require('worker_threads');
 const Logger = require('../logger/logger');
 
 const PLUGIN_API_VERSION = 1;
@@ -109,15 +110,35 @@ class PluginManager {
 
     invokeHook(plugin, hookName, payload) {
         const hook = plugin.instance?.[hookName];
-        if (typeof hook !== 'function') return;
+        if (typeof hook !== 'function') return Promise.resolve();
 
-        const start = Date.now();
-        hook(payload);
-        const elapsed = Date.now() - start;
+        return new Promise((resolve, reject) => {
+            const worker = new Worker(path.join(__dirname, 'hookWorker.js'), {
+                workerData: {
+                    pluginEntrypoint: plugin.entrypoint,
+                    hookName,
+                    payload,
+                },
+            });
 
-        if (elapsed > this.hookTimeoutMs) {
-            Logger.warn(`[Plugins] Hook ${hookName} de ${plugin.id} superó timeout`, `${elapsed}ms`);
-        }
+            const timeout = setTimeout(() => {
+                worker.terminate();
+                reject(new Error(`Hook timeout (${hookName}) en plugin ${plugin.id}`));
+            }, this.hookTimeoutMs);
+
+            worker.on('message', (msg) => {
+                clearTimeout(timeout);
+                worker.terminate();
+                if (msg.ok) return resolve();
+                return reject(new Error(msg.error || `Hook ${hookName} falló`));
+            });
+
+            worker.on('error', (err) => {
+                clearTimeout(timeout);
+                worker.terminate();
+                reject(err);
+            });
+        });
     }
 
     registerPlugin({ dir, manifest }) {
@@ -140,6 +161,7 @@ class PluginManager {
             capabilities: manifest.capabilities || [],
             instance: pluginModule,
             dir,
+            entrypoint: pluginEntrypoint,
         };
 
         this.registry.set(plugin.id, plugin);
@@ -186,7 +208,8 @@ class PluginManager {
                 }
 
                 const plugin = this.registerPlugin({ dir: item.dir, manifest });
-                this.invokeHook(plugin, 'onLoad', { logger: Logger, plugin });
+                this.invokeHook(plugin, 'onLoad', { plugin })
+                    .catch((error) => this.markAsFailed(plugin.id, error));
                 Logger.info(`[Plugins] Plugin cargado: ${plugin.id}@${plugin.version}`);
             } catch (error) {
                 this.markAsFailed(pluginId, error);
@@ -202,7 +225,8 @@ class PluginManager {
     unloadAll() {
         for (const plugin of this.registry.values()) {
             try {
-                this.invokeHook(plugin, 'onUnload', { logger: Logger, plugin });
+                this.invokeHook(plugin, 'onUnload', { plugin })
+                    .catch((error) => this.markAsFailed(plugin.id, error));
                 this.health.set(plugin.id, {
                     ...this.health.get(plugin.id),
                     unloadedAt: Date.now(),
