@@ -26,10 +26,6 @@ echo.
 :: =============================================
 ::  VALIDACIONES
 :: =============================================
-if not exist "%IMMICH_DIR%" (
-    echo  [X] No se encontro la carpeta de Immich:
-    echo      %IMMICH_DIR%
-    pause
     exit /b 1
 )
 

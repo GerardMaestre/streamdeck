@@ -39,7 +39,6 @@ if not exist "%IMMICH_DIR%" (
     echo    1. Pasa la ruta como argumento: fotos.bat "C:\ruta\immich"
     echo    2. Define la variable HORUS_IMMICH_PATH en el sistema.
     echo.
-    pause
     exit /b 1
 )
 

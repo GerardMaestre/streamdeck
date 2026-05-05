@@ -132,11 +132,12 @@ const runScriptExternally = async (scriptLabel, absolutePath, args) => {
         if (global.appendTerminalLog) {
             global.appendTerminalLog(terminalId, `$ Ejecutando: ${command.bin} ${command.args.join(' ')}\n\n`);
         }
-
+        console.log(`[Script] Spawning: ${command.bin} ${command.args.join(' ')} (Shell: ${command.bin === 'cmd.exe'})`);
+        
         const child = await retryWithBackoff(async () => withTimeout(() => Promise.resolve(spawn(command.bin, command.args, {
             detached: false,
             windowsHide: true,
-            shell: false,
+            shell: command.bin === 'cmd.exe',
             stdio: ['ignore', 'pipe', 'pipe']
         })), 3000, { reasonCode: 'SCRIPT_SPAWN_TIMEOUT' }), { retries: 1, initialDelayMs: 100, shouldRetry: (e) => e?.code === 'SCRIPT_SPAWN_TIMEOUT' });
         let timeoutHandle = null;
@@ -249,16 +250,19 @@ const resolveSafeScriptPath = (carpeta, archivo) => {
 
 const ejecutarScriptDinamico = async (payload, socket) => {
     try {
-        const { carpeta, archivo, args } = validateDynamicPayload(payload);
-        const absolutePath = resolveSafeScriptPath(carpeta, archivo);
+        console.log(`[Script] Solicitud ejecución: ${payload?.carpeta}/${payload?.archivo}`, payload?.args);
+        const { carpeta: folder, archivo: file, args: parsedArgs } = validateDynamicPayload(payload);
+        const absolutePath = resolveSafeScriptPath(folder, file);
 
         if (!getDynamicScriptRuntime(absolutePath)) {
-            throw new Error(`Tipo de script no habilitado: ${path.extname(archivo).toLowerCase() || 'sin extensión'}`);
+            throw new Error(`Tipo de script no habilitado: ${path.extname(file).toLowerCase() || 'sin extensión'}`);
         }
 
         await ensureFileExists(absolutePath);
-        await runScriptExternally(`${carpeta}/${archivo}`, absolutePath, args);
+        console.log(`[Script] Archivo verificado, iniciando ejecución externa...`);
+        await runScriptExternally(`${folder}/${file}`, absolutePath, parsedArgs);
     } catch (error) {
+        console.error(`[Script] Error ejecutando ${payload?.archivo}: ${error.message}`);
         logControllerError('script:dinamico', error);
     }
 };

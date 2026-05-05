@@ -356,6 +356,28 @@
                     "carpeta": "07_Personalizacion",
                     "archivo": "Lanzador_Cloud_Gaming.bat"
                 }
+            },
+            {
+                "label": "Abrir Fotos",
+                "icon": "📸",
+                "color": "linear-gradient(145deg, #27ae60, #2ecc71)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "07_Personalizacion",
+                    "archivo": "fotos.bat"
+                }
+            },
+            {
+                "label": "Cerrar Fotos",
+                "icon": "🚫",
+                "color": "linear-gradient(145deg, #c0392b, #e74c3c)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "07_Personalizacion",
+                    "archivo": "cerrar_fotos.bat"
+                }
             }
         ],
         "domotica": [

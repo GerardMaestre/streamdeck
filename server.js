@@ -1,6 +1,7 @@
 const { emitErrorToFrontend, getErrorMessage, getDataPath } = require('./backend/utils/utils');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { randomUUID } = require('crypto');
 const { app: electronApp } = require('electron');
 const { loadAllEnvs, validateEnvContract } = require('./backend/core/config/bootstrap');
@@ -35,6 +36,26 @@ const allowedCorsOrigins = new Set([
     process.env.LAN_FRONTEND_ORIGIN,
     process.env.FRONTEND_ORIGIN,
 ].filter(Boolean));
+
+// Autodetectar IPs locales para permitir conexiones desde tablets/móviles
+try {
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+            const isIPv4 = iface.family === 'IPv4' || iface.family === 4;
+            if (isIPv4 && !iface.internal) {
+                const origin3000 = `http://${iface.address}:3000`;
+                const origin5173 = `http://${iface.address}:5173`;
+                allowedCorsOrigins.add(origin3000);
+                allowedCorsOrigins.add(origin5173);
+                allowedCorsOrigins.add(`http://${iface.address}`);
+                console.log(`[CORS] Permitida conexión desde IP detectada: ${iface.address}`);
+            }
+        }
+    }
+} catch (e) {
+    console.warn('[CORS] No se pudieron detectar IPs locales automáticamente');
+}
 
 const isAllowedOrigin = (origin) => {
     if (!origin) return true;

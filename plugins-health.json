@@ -3,7 +3,7 @@
   "items": [
     {
       "pluginId": "example-logger",
-      "loadedAt": 1777978396703,
+      "loadedAt": 1778009923463,
       "status": "failed",
       "failures": 1,
       "error": "onLoad({ logger, plugin }) {\r\n    logger.info(`[Plugin:${plugin.id}] listo para usar.`);\r\n  } could not be cloned."
