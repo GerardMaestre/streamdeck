@@ -43,6 +43,10 @@ export class DiscordModule {
         window.addEventListener('resize', this._onWindowResize);
     }
 
+    isDiscordOperationalStatus(status = this.discordConnectionStatus) {
+        return ['connected', 'degraded'].includes(status);
+    }
+
     setupSocketListeners() {
         this.socket.on('discord_connection_state', (state) => {
             this.discordConnectionStatus = state?.status || 'disconnected';
@@ -117,7 +121,7 @@ export class DiscordModule {
     }
 
     toggleMute() {
-        if (!['connected', 'degraded'].includes(this.discordConnectionStatus)) return;
+        if (!this.isDiscordOperationalStatus()) return;
         if (navigator.vibrate) navigator.vibrate(50);
 
         this.discordMute = !this.discordMute;
@@ -134,7 +138,7 @@ export class DiscordModule {
     }
 
     toggleDeaf() {
-        if (!['connected', 'degraded'].includes(this.discordConnectionStatus)) return;
+        if (!this.isDiscordOperationalStatus()) return;
         if (navigator.vibrate) navigator.vibrate(50);
 
         this.discordDeaf = !this.discordDeaf;
@@ -153,15 +157,16 @@ export class DiscordModule {
     updateConnectionUI() {
         const statusEl = document.getElementById('discord-status-pill');
         if (!statusEl) return;
-        const isConnected = ['connected', 'degraded'].includes(this.discordConnectionStatus);
-        statusEl.textContent = isConnected ? 'CONECTADO' : 'DESCONECTADO';
-        statusEl.className = `discord-status-pill ${isConnected ? 'connected' : 'disconnected'}`;
+        const isOperational = this.isDiscordOperationalStatus();
+        const isDegraded = this.discordConnectionStatus === 'degraded';
+        statusEl.textContent = isDegraded ? 'CONECTADO (LIMITADO)' : (isOperational ? 'CONECTADO' : 'DESCONECTADO');
+        statusEl.className = `discord-status-pill ${isOperational ? 'connected' : 'disconnected'}${isDegraded ? ' degraded' : ''}`;
     }
 
     updateButtons() {
         const muteBtn = document.getElementById('tactical-mute-btn');
         const deafBtn = document.getElementById('tactical-deaf-btn');
-        const isNotConnected = !['connected', 'degraded'].includes(this.discordConnectionStatus);
+        const isNotConnected = !this.isDiscordOperationalStatus();
 
         if (muteBtn) {
             muteBtn.classList.toggle('active', this.discordMute);
@@ -179,9 +184,9 @@ export class DiscordModule {
         if (!mixerContainer) return;
 
         // Status / empty states
-        if (this.discordConnectionStatus !== 'connected') {
-            const msg = this.discordConnectionStatus === 'degraded' ? `MODO LIMITADO (${this.discordReasonCode})` : 'ESPERANDO A DISCORD...';
-            const icon = this.discordConnectionStatus === 'degraded' ? '⚠️' : '📡';
+        if (!this.isDiscordOperationalStatus()) {
+            const msg = 'ESPERANDO A DISCORD...';
+            const icon = '📡';
             const emptyState = document.createElement('div');
             emptyState.className = 'discord-empty-state';
             emptyState.innerHTML = `<div class="discord-empty-icon">${icon}</div><div class="discord-empty-text">${msg}</div>`;
@@ -387,7 +392,7 @@ export class DiscordModule {
 
     /** Send discord volume to server (throttled) */
     updateVolumeServer(userId, value) {
-        if (this.discordConnectionStatus !== 'connected') return;
+        if (!this.isDiscordOperationalStatus()) return;
         const queueKey = `discord_${userId}`;
         this.pendingVolUpdates[queueKey] = Number(value);
 
