@@ -135,3 +135,67 @@ plugins/
 Además, se expone un endpoint para telemetría básica:
 
 - `GET /api/system/plugins/health`
+- `POST /api/system/plugins/reload`
+- `POST /api/system/plugins/:pluginId/unblock`
+
+
+> Nota: `POST /api/system/plugins/reload` requiere header `x-security-token` cuando `SECURITY_TOKEN` está configurado en el entorno.
+
+
+### Validación de plugins (pre-flight)
+
+Antes de arrancar o empaquetar, puedes validar manifests y entrypoints:
+
+```bash
+npm run plugin:validate
+```
+
+
+### Quality Gates recomendados (CI)
+
+Pipeline mínimo recomendado para plugins:
+
+1. `npm run plugin:validate`
+2. `npm test`
+3. `npm run check`
+
+Este flujo está automatizado en `.github/workflows/plugin-quality.yml`.
+
+
+### Scaffolding de nuevos plugins
+
+Para crear un plugin base listo para editar:
+
+```bash
+npm run plugin:create -- mi-nuevo-plugin
+```
+
+Luego valida y prueba:
+
+```bash
+npm run plugin:validate
+npm test
+```
+
+
+### Capabilities permitidas
+
+Para endurecer seguridad, los plugins solo pueden declarar capacidades de esta allowlist:
+
+- `logging`
+- `http`
+- `iot`
+- `audio`
+- `discord`
+- `automation`
+
+
+### Política anti-fallos repetidos
+
+El runtime marca plugins con estado `failed` cuando fallan, y tras superar el umbral (`maxFailures`, por defecto `3`) pasan a estado `blocked` para evitar bucles de fallo continuos en cada arranque.
+
+El estado de salud de plugins se persiste en `plugins-health.json` (ruta de datos de la app) para mantener contexto de fallos entre reinicios.
+
+Los endpoints administrativos de plugins (`reload`/`unblock`) tienen rate limit básico por IP (20 req/min).
+
+Las acciones administrativas de plugins (`reload`/`unblock`) se registran en `plugins-admin-audit.log` (JSONL) para trazabilidad.
