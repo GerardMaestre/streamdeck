@@ -102,6 +102,9 @@ export function createFaderController(opts) {
     };
 
     const updateUI = (e) => {
+        if (isDragging && currentPointerId !== null && e && e.pointerId !== undefined && e.pointerId !== currentPointerId) {
+            return;
+        }
         updateTargetFromEvent(e);
         if (isDragging) {
             currentPercent = targetPercent;
@@ -165,6 +168,9 @@ export function createFaderController(opts) {
     };
 
     const releaseSlider = (e) => {
+        if (e && e.pointerId !== undefined && currentPointerId !== null && e.pointerId !== currentPointerId) {
+            return;
+        }
         document.body.classList.remove('dragging-active');
         isDragging = false;
         // Remove aggressive compositor hints
