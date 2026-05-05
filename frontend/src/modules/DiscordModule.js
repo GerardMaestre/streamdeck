@@ -21,10 +21,10 @@ export class DiscordModule {
         this.discordReasonCode = 'INIT';
         this.discordConnectionMessage = 'Sin conexión con Discord';
         this.discordRowRefs = new Map();
+        this.discordFaderByUserId = new Map();
         this._userTrackHeights = new Map();
         this.pendingVolUpdates = {};
         this.lastEmittedVol = {};
-        this._faderControllers = [];
         this._onResize = this._handleResize.bind(this);
         this._resizeAttached = false;
         this._pendingFrameUsers = new Map();
@@ -228,11 +228,15 @@ export class DiscordModule {
         const nextIds = new Set(this.discordUsers.map(u => u.id));
 
         existingUsers.forEach(el => {
-            if (!nextIds.has(el.dataset.userId)) {
+            const userId = el.dataset.userId;
+            if (!nextIds.has(userId)) {
                 el.style.opacity = '0';
                 el.style.transform = 'scale(0.8)';
-                this.discordRowRefs.delete(el.dataset.userId);
-                this._userTrackHeights.delete(el.dataset.userId);
+                const faderCtrl = this.discordFaderByUserId.get(userId);
+                if (faderCtrl) faderCtrl.destroy();
+                this.discordFaderByUserId.delete(userId);
+                this.discordRowRefs.delete(userId);
+                this._userTrackHeights.delete(userId);
                 setTimeout(() => el.remove(), 400);
             }
         });
@@ -246,7 +250,7 @@ export class DiscordModule {
             mixerContainer.appendChild(newRow);
             this._userTrackHeights.set(id, this._getTrackHeight(id));
 
-            const ctrl = this._faderControllers[this._faderControllers.length - 1];
+            const ctrl = this.discordFaderByUserId.get(id);
             if (ctrl) {
                 const fillHeight = (user.volume / 200) * 100;
                 requestAnimationFrame(() => ctrl.setPercent(fillHeight, true));
@@ -369,7 +373,7 @@ export class DiscordModule {
             }
         });
         // ctrl.setPercent(fillHeight, true); <-- Defer until after append in renderMixer
-        this._faderControllers.push(faderCtrl);
+        this.discordFaderByUserId.set(id, faderCtrl);
 
         return row;
     }
@@ -418,8 +422,8 @@ export class DiscordModule {
 
     destroy() {
         window.removeEventListener('resize', this._onWindowResize);
-        this._faderControllers.forEach(c => c.destroy());
-        this._faderControllers = [];
+        this.discordFaderByUserId.forEach((faderCtrl) => faderCtrl.destroy());
+        this.discordFaderByUserId.clear();
         if (this._resizeAttached) {
             window.removeEventListener('resize', this._onResize);
             this._resizeAttached = false;
