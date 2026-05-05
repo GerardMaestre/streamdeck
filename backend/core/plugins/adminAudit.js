@@ -7,11 +7,15 @@ function rotateIfNeeded(filePath) {
     try {
         if (!fs.existsSync(filePath)) return;
         const stats = fs.statSync(filePath);
-        if (stats.size > MAX_AUDIT_SIZE_BYTES) {
-            fs.renameSync(filePath, `${filePath}.1`);
+        if (stats.size < MAX_AUDIT_SIZE_BYTES) return;
+
+        const rotatedPath = `${filePath}.1`;
+        if (fs.existsSync(rotatedPath)) {
+            fs.unlinkSync(rotatedPath);
         }
+        fs.renameSync(filePath, rotatedPath);
     } catch (_) {
-        // audit best-effort
+        // best-effort
     }
 }
 

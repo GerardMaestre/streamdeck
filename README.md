@@ -137,6 +137,8 @@ Además, se expone un endpoint para telemetría básica:
 - `GET /api/system/plugins/health`
 - `POST /api/system/plugins/reload`
 - `POST /api/system/plugins/:pluginId/unblock`
+- `POST /api/system/plugins/:pluginId/enable`
+- `POST /api/system/plugins/:pluginId/disable`
 - `POST /api/system/plugins/audit/clear`
 - `GET /api/system/plugins/:pluginId/status`
 
@@ -203,3 +205,27 @@ Los endpoints administrativos de plugins (`reload`/`unblock`) tienen rate limit 
 Las acciones administrativas de plugins (`reload`/`unblock`) se registran en `plugins-admin-audit.log` (JSONL) para trazabilidad.
 
 Los plugins pueden declarar `integrity.sha256` en `manifest.json`; si existe, el runtime valida el hash del entrypoint antes de cargar.
+
+`plugins-health.json` usa `schemaVersion` para facilitar migraciones de formato futuras.
+
+El audit log rota automáticamente a `plugins-admin-audit.log.1` al superar ~5MB.
+
+Los plugins deshabilitados vía API se persisten en `plugins-disabled.json`.
+
+
+### SDK para terceros
+
+Se incluye un SDK base en `sdk/plugin-sdk.js` + tipos en `sdk/plugin-sdk.d.ts`.
+
+Guía de migración y versionado de API:
+- `docs-plugin-sdk-migration.md`
+
+`GET /api/system/plugins/health` incluye métricas por plugin (`p95`/`p99`) para `load` y hooks.
+
+Opcionalmente puedes definir `integrity.signature` + `integrity.publicKeyPem` para verificación RSA-SHA256 del entrypoint.
+
+
+Variables de hardening opcionales:
+- `PLUGIN_MAX_FAILURES` (default `3`)
+- `PLUGIN_REQUIRE_SIGNATURE=1` para exigir firma en todos los plugins
+- `PLUGIN_TRUSTED_PUBLISHERS=org-a,org-b` para allowlist de publishers

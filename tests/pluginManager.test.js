@@ -333,3 +333,117 @@ test('PluginManager expone estado detallado por plugin', () => {
 
     fs.rmSync(tempDir, { recursive: true, force: true });
 });
+
+
+test('PluginManager permite disable/enable con persistencia', () => {
+    const tempDir = makeTempDir();
+    const disabledPath = path.join(tempDir, 'plugins-disabled.json');
+    const manager = new PluginManager({ pluginsDir: tempDir, disabledFilePath: disabledPath });
+
+    assert.equal(manager.disablePlugin('p1'), true);
+    assert.equal(fs.existsSync(disabledPath), true);
+
+    const manager2 = new PluginManager({ pluginsDir: tempDir, disabledFilePath: disabledPath });
+    manager2.loadDisabledPlugins();
+    assert.equal(manager2.disabledPlugins.has('p1'), true);
+
+    assert.equal(manager2.enablePlugin('p1'), true);
+    assert.equal(manager2.disabledPlugins.has('p1'), false);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+test('PluginManager expone métricas p95/p99 por plugin', async () => {
+    const tempDir = makeTempDir();
+    const pluginDir = path.join(tempDir, 'metrics-plugin');
+    fs.mkdirSync(pluginDir, { recursive: true });
+
+    fs.writeFileSync(path.join(pluginDir, 'manifest.json'), JSON.stringify({
+        id: 'metrics-plugin',
+        apiVersion: 1,
+        entry: 'index.js'
+    }, null, 2));
+    fs.writeFileSync(path.join(pluginDir, 'index.js'), 'module.exports = { onLoad() {} };');
+
+    const manager = new PluginManager({ pluginsDir: tempDir });
+    manager.loadAll();
+
+    await new Promise((r) => setTimeout(r, 100));
+    const metrics = manager.getMetricsSnapshot();
+    const loadMetric = metrics.find((m) => m.pluginId === 'metrics-plugin' && m.metric === 'load');
+
+    assert.ok(loadMetric);
+    assert.equal(loadMetric.count > 0, true);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+test('PluginManager rechaza plugin con firma inválida', () => {
+    const tempDir = makeTempDir();
+    const pluginDir = path.join(tempDir, 'bad-signature');
+    fs.mkdirSync(pluginDir, { recursive: true });
+
+    fs.writeFileSync(path.join(pluginDir, 'index.js'), 'module.exports = {};');
+    fs.writeFileSync(path.join(pluginDir, 'manifest.json'), JSON.stringify({
+        id: 'bad-signature',
+        apiVersion: 1,
+        entry: 'index.js',
+        integrity: {
+            signature: 'ZmFrZQ==',
+            publicKeyPem: '-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArandominvalidkey\n-----END PUBLIC KEY-----'
+        }
+    }, null, 2));
+
+    const manager = new PluginManager({ pluginsDir: tempDir });
+    manager.loadAll();
+
+    const health = manager.getHealthSnapshot();
+    assert.equal(health[0].status, 'failed');
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+test('PluginManager exige firma cuando requireSignature=true', () => {
+    const tempDir = makeTempDir();
+    const pluginDir = path.join(tempDir, 'unsigned-plugin');
+    fs.mkdirSync(pluginDir, { recursive: true });
+
+    fs.writeFileSync(path.join(pluginDir, 'manifest.json'), JSON.stringify({
+        id: 'unsigned-plugin',
+        apiVersion: 1,
+        entry: 'index.js'
+    }, null, 2));
+    fs.writeFileSync(path.join(pluginDir, 'index.js'), 'module.exports = {};');
+
+    const manager = new PluginManager({ pluginsDir: tempDir, requireSignature: true });
+    manager.loadAll();
+
+    const health = manager.getHealthSnapshot();
+    assert.equal(health[0].status, 'failed');
+    assert.match(health[0].error, /firma obligatoria/);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+test('PluginManager filtra por trustedPublishers', () => {
+    const tempDir = makeTempDir();
+    const pluginDir = path.join(tempDir, 'untrusted-publisher');
+    fs.mkdirSync(pluginDir, { recursive: true });
+
+    fs.writeFileSync(path.join(pluginDir, 'manifest.json'), JSON.stringify({
+        id: 'untrusted-publisher',
+        apiVersion: 1,
+        entry: 'index.js',
+        publisher: 'unknown-org'
+    }, null, 2));
+    fs.writeFileSync(path.join(pluginDir, 'index.js'), 'module.exports = {};');
+
+    const manager = new PluginManager({ pluginsDir: tempDir, trustedPublishers: ['trusted-org'] });
+    manager.loadAll();
+
+    const health = manager.getHealthSnapshot();
+    assert.equal(health[0].status, 'failed');
+    assert.match(health[0].error, /publisher no confiable/);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});

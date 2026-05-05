@@ -10,7 +10,7 @@ const DEFAULT_HOOK_TIMEOUT_MS = 2500;
 const ALLOWED_CAPABILITIES = new Set(['logging', 'http', 'iot', 'audio', 'discord', 'automation']);
 
 class PluginManager {
-    constructor({ pluginsDir, hookTimeoutMs = DEFAULT_HOOK_TIMEOUT_MS, maxFailures = 3, healthFilePath = null }) {
+    constructor({ pluginsDir, hookTimeoutMs = DEFAULT_HOOK_TIMEOUT_MS, maxFailures = 3, healthFilePath = null, disabledFilePath = null, requireSignature = false, trustedPublishers = [] }) {
         if (!pluginsDir || typeof pluginsDir !== 'string') {
             throw new Error('pluginsDir es obligatorio y debe ser string.');
         }
@@ -21,6 +21,11 @@ class PluginManager {
         this.health = new Map();
         this.maxFailures = maxFailures;
         this.healthFilePath = healthFilePath;
+        this.disabledFilePath = disabledFilePath;
+        this.disabledPlugins = new Set();
+        this.metrics = new Map();
+        this.requireSignature = requireSignature;
+        this.trustedPublishers = new Set(trustedPublishers.filter(Boolean));
     }
 
 
@@ -55,6 +60,74 @@ class PluginManager {
         }
     }
 
+
+    loadDisabledPlugins() {
+        if (!this.disabledFilePath || !fs.existsSync(this.disabledFilePath)) return;
+        try {
+            const raw = fs.readFileSync(this.disabledFilePath, 'utf8');
+            const data = JSON.parse(raw);
+            if (!Array.isArray(data)) return;
+            this.disabledPlugins = new Set(data);
+        } catch (error) {
+            Logger.warn('[Plugins] No se pudo cargar lista de plugins deshabilitados', error.message);
+        }
+    }
+
+    persistDisabledPlugins() {
+        if (!this.disabledFilePath) return;
+        try {
+            fs.mkdirSync(path.dirname(this.disabledFilePath), { recursive: true });
+            fs.writeFileSync(this.disabledFilePath, JSON.stringify(Array.from(this.disabledPlugins), null, 2), 'utf8');
+        } catch (error) {
+            Logger.warn('[Plugins] No se pudo persistir plugins deshabilitados', error.message);
+        }
+    }
+
+    disablePlugin(pluginId) {
+        if (!pluginId) return false;
+        this.disabledPlugins.add(pluginId);
+        this.persistDisabledPlugins();
+        return true;
+    }
+
+    enablePlugin(pluginId) {
+        if (!pluginId) return false;
+        const existed = this.disabledPlugins.delete(pluginId);
+        this.persistDisabledPlugins();
+        return existed;
+    }
+
+
+    recordMetric(pluginId, metricName, valueMs) {
+        const key = `${pluginId}:${metricName}`;
+        const arr = this.metrics.get(key) || [];
+        arr.push(valueMs);
+        if (arr.length > 100) arr.shift();
+        this.metrics.set(key, arr);
+    }
+
+    percentile(values, p) {
+        if (!values.length) return 0;
+        const sorted = [...values].sort((a, b) => a - b);
+        const idx = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
+        return sorted[idx];
+    }
+
+    getMetricsSnapshot() {
+        const out = [];
+        for (const [key, values] of this.metrics.entries()) {
+            const [pluginId, metric] = key.split(':');
+            out.push({
+                pluginId,
+                metric,
+                count: values.length,
+                p95: this.percentile(values, 95),
+                p99: this.percentile(values, 99),
+            });
+        }
+        return out;
+    }
+
     ensurePluginsDir() {
         fs.mkdirSync(this.pluginsDir, { recursive: true });
     }
@@ -86,6 +159,12 @@ class PluginManager {
             throw new Error(`Plugin ${manifest.id} incompatible con API ${PLUGIN_API_VERSION}.`);
         }
 
+        if (this.trustedPublishers.size > 0) {
+            if (!manifest.publisher || !this.trustedPublishers.has(manifest.publisher)) {
+                throw new Error(`Plugin ${manifest.id} publisher no confiable.`);
+            }
+        }
+
         const capabilities = manifest.capabilities || [];
         if (!Array.isArray(capabilities)) {
             throw new Error(`Plugin ${manifest.id} tiene capabilities inválidas.`);
@@ -104,12 +183,34 @@ class PluginManager {
 
     verifyIntegrity(manifest, entrypoint) {
         const expected = manifest?.integrity?.sha256;
-        if (!expected) return;
+        const signature = manifest?.integrity?.signature;
+        const publicKeyPem = manifest?.integrity?.publicKeyPem;
 
         const content = fs.readFileSync(entrypoint);
-        const actual = crypto.createHash('sha256').update(content).digest('hex');
-        if (actual !== expected) {
-            throw new Error(`Plugin ${manifest.id} falló verificación SHA-256.`);
+
+        if (expected) {
+            const actual = crypto.createHash('sha256').update(content).digest('hex');
+            if (actual !== expected) {
+                throw new Error(`Plugin ${manifest.id} falló verificación SHA-256.`);
+            }
+        }
+
+        if (this.requireSignature && !signature) {
+            throw new Error(`Plugin ${manifest.id} requiere firma obligatoria.`);
+        }
+
+        if (signature) {
+            if (!publicKeyPem) {
+                throw new Error(`Plugin ${manifest.id} define signature sin publicKeyPem.`);
+            }
+
+            const verifier = crypto.createVerify('RSA-SHA256');
+            verifier.update(content);
+            verifier.end();
+            const ok = verifier.verify(publicKeyPem, signature, 'base64');
+            if (!ok) {
+                throw new Error(`Plugin ${manifest.id} falló verificación de firma.`);
+            }
         }
     }
 
@@ -126,6 +227,7 @@ class PluginManager {
         const hook = plugin.instance?.[hookName];
         if (typeof hook !== 'function') return Promise.resolve();
 
+        const start = Date.now();
         return new Promise((resolve, reject) => {
             const worker = new Worker(path.join(__dirname, 'hookWorker.js'), {
                 workerData: {
@@ -143,6 +245,8 @@ class PluginManager {
             worker.on('message', (msg) => {
                 clearTimeout(timeout);
                 worker.terminate();
+                const elapsed = Date.now() - start;
+                this.recordMetric(plugin.id, hookName, elapsed);
                 if (msg.ok) return resolve();
                 return reject(new Error(msg.error || `Hook ${hookName} falló`));
             });
@@ -150,6 +254,8 @@ class PluginManager {
             worker.on('error', (err) => {
                 clearTimeout(timeout);
                 worker.terminate();
+                const elapsed = Date.now() - start;
+                this.recordMetric(plugin.id, hookName, elapsed);
                 reject(err);
             });
         });
@@ -201,6 +307,7 @@ class PluginManager {
 
     loadAll() {
         this.loadPersistedHealth();
+        this.loadDisabledPlugins();
         const manifests = this.discoverPluginManifests();
 
         for (const item of manifests) {
@@ -213,7 +320,7 @@ class PluginManager {
                 }
 
                 const manifest = this.loadPluginDefinition(item.manifestPath);
-                if (manifest.enabled === false) {
+                if (manifest.enabled === false || this.disabledPlugins.has(manifest.id)) {
                     this.health.set(manifest.id, {
                         loadedAt: Date.now(),
                         status: 'disabled',
@@ -223,9 +330,11 @@ class PluginManager {
                     continue;
                 }
 
+                const loadStart = Date.now();
                 const plugin = this.registerPlugin({ dir: item.dir, manifest });
                 this.invokeHook(plugin, 'onLoad', { plugin })
                     .catch((error) => this.markAsFailed(plugin.id, error));
+                this.recordMetric(plugin.id, 'load', Date.now() - loadStart);
                 Logger.info(`[Plugins] Plugin cargado: ${plugin.id}@${plugin.version}`);
             } catch (error) {
                 this.markAsFailed(pluginId, error);
