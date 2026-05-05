@@ -17,6 +17,8 @@ const { Server } = require('socket.io');
 const compression = require('compression');
 const { appStateStore } = require('./backend/data/state-store');
 const Logger = require("./backend/core/logger/logger");
+const { PluginManager } = require('./backend/core/plugins/pluginManager');
+const { appendAdminAudit, clearAdminAudit } = require('./backend/core/plugins/adminAudit');
 
 const app = express();
 app.disable('x-powered-by');
@@ -80,6 +82,158 @@ app.use(compression());
 app.use(express.json({ limit: '1mb' }));
 
 
+const requireAdminToken = (req, res, next) => {
+    const configuredToken = process.env.SECURITY_TOKEN;
+    if (!configuredToken) return next();
+
+    const provided = req.headers['x-security-token'];
+    if (provided !== configuredToken) {
+        return res.status(401).json({ error: 'Token inválido para endpoint administrativo.' });
+    }
+
+    next();
+};
+
+
+const adminRateWindowMs = 60 * 1000;
+const adminRateMax = 20;
+const adminRateMap = new Map();
+
+const adminRateLimit = (req, res, next) => {
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+    const now = Date.now();
+    const bucket = adminRateMap.get(ip) || { count: 0, startedAt: now };
+
+    if (now - bucket.startedAt > adminRateWindowMs) {
+        bucket.count = 0;
+        bucket.startedAt = now;
+    }
+
+    bucket.count += 1;
+    adminRateMap.set(ip, bucket);
+
+    if (bucket.count > adminRateMax) {
+        return res.status(429).json({ error: 'Demasiadas solicitudes administrativas. Intenta en 1 minuto.' });
+    }
+
+    next();
+};
+
+const pluginManager = new PluginManager({
+    pluginsDir: getDataPath('plugins'),
+    healthFilePath: getDataPath('plugins-health.json'),
+    disabledFilePath: getDataPath('plugins-disabled.json'),
+});
+pluginManager.loadAll();
+
+const shutdownPluginSystem = () => {
+    try {
+        pluginManager.unloadAll();
+    } catch (error) {
+        Logger.warn('[Plugins] Error durante unloadAll', error.message);
+    }
+};
+
+process.on('beforeExit', shutdownPluginSystem);
+process.on('SIGINT', shutdownPluginSystem);
+process.on('SIGTERM', shutdownPluginSystem);
+
+
+
+
+
+
+
+app.get('/api/system/plugins/:pluginId/status', adminRateLimit, requireAdminToken, (req, res) => {
+    const pluginId = req.params.pluginId;
+    const status = pluginManager.getPluginStatus(pluginId);
+
+    if (!status || (!status.health && !status.registry)) {
+        return res.status(404).json({ error: 'Plugin no encontrado' });
+    }
+
+    return res.json(status);
+});
+
+app.post('/api/system/plugins/audit/clear', adminRateLimit, requireAdminToken, (req, res) => {
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+    const filePath = getDataPath('plugins-admin-audit.log');
+    const ok = clearAdminAudit(filePath);
+    appendAdminAudit({ filePath, action: 'clear-audit', ip, ok });
+
+    if (!ok) {
+        return res.status(500).json({ ok: false, error: 'No se pudo limpiar audit log' });
+    }
+
+    return res.json({ ok: true });
+});
+
+
+app.post('/api/system/plugins/:pluginId/disable', adminRateLimit, requireAdminToken, (req, res) => {
+    const pluginId = req.params.pluginId;
+    if (!pluginId) return res.status(400).json({ error: 'pluginId es obligatorio' });
+
+    const done = pluginManager.disablePlugin(pluginId);
+    if (!done) return res.status(422).json({ error: 'No se pudo deshabilitar plugin' });
+
+    appendAdminAudit({ filePath: getDataPath('plugins-admin-audit.log'), action: 'disable', ip: req.ip, pluginId, ok: true });
+    return res.json({ ok: true, pluginId });
+});
+
+app.post('/api/system/plugins/:pluginId/enable', adminRateLimit, requireAdminToken, (req, res) => {
+    const pluginId = req.params.pluginId;
+    if (!pluginId) return res.status(400).json({ error: 'pluginId es obligatorio' });
+
+    const existed = pluginManager.enablePlugin(pluginId);
+    if (!existed) return res.status(409).json({ error: 'Plugin no estaba deshabilitado' });
+
+    appendAdminAudit({ filePath: getDataPath('plugins-admin-audit.log'), action: 'enable', ip: req.ip, pluginId, ok: true });
+    return res.json({ ok: true, pluginId });
+});
+
+app.post('/api/system/plugins/:pluginId/unblock', adminRateLimit, requireAdminToken, (req, res) => {
+    const pluginId = req.params.pluginId;
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+    if (!pluginId) {
+        appendAdminAudit({ filePath: getDataPath('plugins-admin-audit.log'), action: 'unblock', ip, ok: false, detail: 'missing pluginId' });
+        return res.status(400).json({ error: 'pluginId es obligatorio' });
+    }
+
+    pluginManager.resetPluginState(pluginId);
+    const loaded = pluginManager.loadAll();
+
+    appendAdminAudit({ filePath: getDataPath('plugins-admin-audit.log'), action: 'unblock', ip, pluginId, ok: true });
+
+    return res.json({
+        ok: true,
+        pluginId,
+        loaded,
+        summary: pluginManager.getSummary(),
+    });
+});
+
+app.post('/api/system/plugins/reload', adminRateLimit, requireAdminToken, (req, res) => {
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+    const loaded = pluginManager.reloadAll();
+    appendAdminAudit({ filePath: getDataPath('plugins-admin-audit.log'), action: 'reload', ip, ok: true, detail: `loaded=${loaded}` });
+    res.json({
+        ok: true,
+        loaded,
+        summary: pluginManager.getSummary(),
+    });
+});
+
+app.get('/api/system/plugins/health', (_req, res) => {
+    res.json({
+        apiVersion: 1,
+        plugins: pluginManager.getHealthSnapshot(),
+        summary: pluginManager.getSummary(),
+        registry: pluginManager.getRegistrySnapshot(),
+    });
+});
+
+
+
 // --- SISTEMA COMPLETO DE LOGS Y DEBUG ---
 const initErrorTracking = require("./backend/core/logger/error-tracker");
 const startPerformanceMonitor = require("./backend/core/logger/performance");
@@ -125,6 +279,8 @@ const ensurePackagedBootstrapFiles = () => {
 };
 
 ensurePackagedBootstrapFiles();
+
+
 
 // --- CACHE DE SISTEMA ---
 let configCache = null;

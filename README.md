@@ -111,3 +111,103 @@ La aplicación utiliza un sistema de **Security Token** para evitar accesos no a
 
 ---
 Desarrollado por [Gerard Maestre](https://github.com/gerardmaestre)
+
+
+## Sistema de Plugins (experimental)
+
+Ahora el backend carga plugins automáticamente desde `plugins/*` al iniciar.
+
+### Estructura mínima
+
+```text
+plugins/
+  mi-plugin/
+    manifest.json
+    index.js
+```
+
+`manifest.json` requiere:
+
+- `id`
+- `apiVersion` (actual: `1`)
+- `entry` (archivo JS del plugin)
+
+Además, se expone un endpoint para telemetría básica:
+
+- `GET /api/system/plugins/health`
+- `POST /api/system/plugins/reload`
+- `POST /api/system/plugins/:pluginId/unblock`
+- `POST /api/system/plugins/:pluginId/enable`
+- `POST /api/system/plugins/:pluginId/disable`
+- `POST /api/system/plugins/audit/clear`
+- `GET /api/system/plugins/:pluginId/status`
+
+
+> Nota: `POST /api/system/plugins/reload` requiere header `x-security-token` cuando `SECURITY_TOKEN` está configurado en el entorno.
+
+
+### Validación de plugins (pre-flight)
+
+Antes de arrancar o empaquetar, puedes validar manifests y entrypoints:
+
+```bash
+npm run plugin:validate
+```
+
+
+### Quality Gates recomendados (CI)
+
+Pipeline mínimo recomendado para plugins:
+
+1. `npm run plugin:validate`
+2. `npm test`
+3. `npm run check`
+
+Este flujo está automatizado en `.github/workflows/plugin-quality.yml`.
+
+
+### Scaffolding de nuevos plugins
+
+Para crear un plugin base listo para editar:
+
+```bash
+npm run plugin:create -- mi-nuevo-plugin
+```
+
+Luego valida y prueba:
+
+```bash
+npm run plugin:validate
+npm test
+```
+
+
+### Capabilities permitidas
+
+Para endurecer seguridad, los plugins solo pueden declarar capacidades de esta allowlist:
+
+- `logging`
+- `http`
+- `iot`
+- `audio`
+- `discord`
+- `automation`
+
+
+### Política anti-fallos repetidos
+
+El runtime marca plugins con estado `failed` cuando fallan, y tras superar el umbral (`maxFailures`, por defecto `3`) pasan a estado `blocked` para evitar bucles de fallo continuos en cada arranque.
+
+El estado de salud de plugins se persiste en `plugins-health.json` (ruta de datos de la app) para mantener contexto de fallos entre reinicios.
+
+Los endpoints administrativos de plugins (`reload`/`unblock`) tienen rate limit básico por IP (20 req/min).
+
+Las acciones administrativas de plugins (`reload`/`unblock`) se registran en `plugins-admin-audit.log` (JSONL) para trazabilidad.
+
+Los plugins pueden declarar `integrity.sha256` en `manifest.json`; si existe, el runtime valida el hash del entrypoint antes de cargar.
+
+`plugins-health.json` usa `schemaVersion` para facilitar migraciones de formato futuras.
+
+El audit log rota automáticamente a `plugins-admin-audit.log.1` al superar ~1MB.
+
+Los plugins deshabilitados vía API se persisten en `plugins-disabled.json`.
