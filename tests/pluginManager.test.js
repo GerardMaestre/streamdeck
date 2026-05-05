@@ -376,3 +376,28 @@ test('PluginManager expone métricas p95/p99 por plugin', async () => {
 
     fs.rmSync(tempDir, { recursive: true, force: true });
 });
+
+test('PluginManager rechaza plugin con firma inválida', () => {
+    const tempDir = makeTempDir();
+    const pluginDir = path.join(tempDir, 'bad-signature');
+    fs.mkdirSync(pluginDir, { recursive: true });
+
+    fs.writeFileSync(path.join(pluginDir, 'index.js'), 'module.exports = {};');
+    fs.writeFileSync(path.join(pluginDir, 'manifest.json'), JSON.stringify({
+        id: 'bad-signature',
+        apiVersion: 1,
+        entry: 'index.js',
+        integrity: {
+            signature: 'ZmFrZQ==',
+            publicKeyPem: '-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArandominvalidkey\n-----END PUBLIC KEY-----'
+        }
+    }, null, 2));
+
+    const manager = new PluginManager({ pluginsDir: tempDir });
+    manager.loadAll();
+
+    const health = manager.getHealthSnapshot();
+    assert.equal(health[0].status, 'failed');
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});

@@ -76,11 +76,28 @@ function run() {
             }
 
             const expected = manifest?.integrity?.sha256;
+            const signature = manifest?.integrity?.signature;
+            const publicKeyPem = manifest?.integrity?.publicKeyPem;
+            const content = fs.readFileSync(entryPath);
+
             if (expected) {
-                const content = fs.readFileSync(entryPath);
                 const actual = crypto.createHash('sha256').update(content).digest('hex');
                 if (actual !== expected) {
                     fail(`${folder}: SHA-256 inválido para entry`);
+                }
+            }
+
+            if (signature) {
+                if (!publicKeyPem) {
+                    fail(`${folder}: signature requiere publicKeyPem`);
+                } else {
+                    const verifier = crypto.createVerify('RSA-SHA256');
+                    verifier.update(content);
+                    verifier.end();
+                    const ok = verifier.verify(publicKeyPem, signature, 'base64');
+                    if (!ok) {
+                        fail(`${folder}: firma inválida`);
+                    }
                 }
             }
         } catch (error) {

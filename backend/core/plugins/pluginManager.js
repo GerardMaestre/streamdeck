@@ -176,12 +176,30 @@ class PluginManager {
 
     verifyIntegrity(manifest, entrypoint) {
         const expected = manifest?.integrity?.sha256;
-        if (!expected) return;
+        const signature = manifest?.integrity?.signature;
+        const publicKeyPem = manifest?.integrity?.publicKeyPem;
 
         const content = fs.readFileSync(entrypoint);
-        const actual = crypto.createHash('sha256').update(content).digest('hex');
-        if (actual !== expected) {
-            throw new Error(`Plugin ${manifest.id} falló verificación SHA-256.`);
+
+        if (expected) {
+            const actual = crypto.createHash('sha256').update(content).digest('hex');
+            if (actual !== expected) {
+                throw new Error(`Plugin ${manifest.id} falló verificación SHA-256.`);
+            }
+        }
+
+        if (signature) {
+            if (!publicKeyPem) {
+                throw new Error(`Plugin ${manifest.id} define signature sin publicKeyPem.`);
+            }
+
+            const verifier = crypto.createVerify('RSA-SHA256');
+            verifier.update(content);
+            verifier.end();
+            const ok = verifier.verify(publicKeyPem, signature, 'base64');
+            if (!ok) {
+                throw new Error(`Plugin ${manifest.id} falló verificación de firma.`);
+            }
         }
     }
 

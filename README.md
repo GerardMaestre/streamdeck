@@ -221,3 +221,5 @@ Guía de migración y versionado de API:
 - `docs-plugin-sdk-migration.md`
 
 `GET /api/system/plugins/health` incluye métricas por plugin (`p95`/`p99`) para `load` y hooks.
+
+Opcionalmente puedes definir `integrity.signature` + `integrity.publicKeyPem` para verificación RSA-SHA256 del entrypoint.
