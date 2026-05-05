@@ -23,6 +23,7 @@ class PluginManager {
         this.healthFilePath = healthFilePath;
         this.disabledFilePath = disabledFilePath;
         this.disabledPlugins = new Set();
+        this.metrics = new Map();
     }
 
 
@@ -93,6 +94,37 @@ class PluginManager {
         const existed = this.disabledPlugins.delete(pluginId);
         this.persistDisabledPlugins();
         return existed;
+    }
+
+
+    recordMetric(pluginId, metricName, valueMs) {
+        const key = `${pluginId}:${metricName}`;
+        const arr = this.metrics.get(key) || [];
+        arr.push(valueMs);
+        if (arr.length > 100) arr.shift();
+        this.metrics.set(key, arr);
+    }
+
+    percentile(values, p) {
+        if (!values.length) return 0;
+        const sorted = [...values].sort((a, b) => a - b);
+        const idx = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
+        return sorted[idx];
+    }
+
+    getMetricsSnapshot() {
+        const out = [];
+        for (const [key, values] of this.metrics.entries()) {
+            const [pluginId, metric] = key.split(':');
+            out.push({
+                pluginId,
+                metric,
+                count: values.length,
+                p95: this.percentile(values, 95),
+                p99: this.percentile(values, 99),
+            });
+        }
+        return out;
     }
 
     ensurePluginsDir() {
@@ -166,6 +198,7 @@ class PluginManager {
         const hook = plugin.instance?.[hookName];
         if (typeof hook !== 'function') return Promise.resolve();
 
+        const start = Date.now();
         return new Promise((resolve, reject) => {
             const worker = new Worker(path.join(__dirname, 'hookWorker.js'), {
                 workerData: {
@@ -183,6 +216,8 @@ class PluginManager {
             worker.on('message', (msg) => {
                 clearTimeout(timeout);
                 worker.terminate();
+                const elapsed = Date.now() - start;
+                this.recordMetric(plugin.id, hookName, elapsed);
                 if (msg.ok) return resolve();
                 return reject(new Error(msg.error || `Hook ${hookName} falló`));
             });
@@ -190,6 +225,8 @@ class PluginManager {
             worker.on('error', (err) => {
                 clearTimeout(timeout);
                 worker.terminate();
+                const elapsed = Date.now() - start;
+                this.recordMetric(plugin.id, hookName, elapsed);
                 reject(err);
             });
         });
@@ -264,9 +301,11 @@ class PluginManager {
                     continue;
                 }
 
+                const loadStart = Date.now();
                 const plugin = this.registerPlugin({ dir: item.dir, manifest });
                 this.invokeHook(plugin, 'onLoad', { plugin })
                     .catch((error) => this.markAsFailed(plugin.id, error));
+                this.recordMetric(plugin.id, 'load', Date.now() - loadStart);
                 Logger.info(`[Plugins] Plugin cargado: ${plugin.id}@${plugin.version}`);
             } catch (error) {
                 this.markAsFailed(pluginId, error);

@@ -351,3 +351,28 @@ test('PluginManager permite disable/enable con persistencia', () => {
 
     fs.rmSync(tempDir, { recursive: true, force: true });
 });
+
+test('PluginManager expone métricas p95/p99 por plugin', async () => {
+    const tempDir = makeTempDir();
+    const pluginDir = path.join(tempDir, 'metrics-plugin');
+    fs.mkdirSync(pluginDir, { recursive: true });
+
+    fs.writeFileSync(path.join(pluginDir, 'manifest.json'), JSON.stringify({
+        id: 'metrics-plugin',
+        apiVersion: 1,
+        entry: 'index.js'
+    }, null, 2));
+    fs.writeFileSync(path.join(pluginDir, 'index.js'), 'module.exports = { onLoad() {} };');
+
+    const manager = new PluginManager({ pluginsDir: tempDir });
+    manager.loadAll();
+
+    await new Promise((r) => setTimeout(r, 100));
+    const metrics = manager.getMetricsSnapshot();
+    const loadMetric = metrics.find((m) => m.pluginId === 'metrics-plugin' && m.metric === 'load');
+
+    assert.ok(loadMetric);
+    assert.equal(loadMetric.count > 0, true);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});

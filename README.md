@@ -219,3 +219,5 @@ Se incluye un SDK base en `sdk/plugin-sdk.js` + tipos en `sdk/plugin-sdk.d.ts`.
 
 Guía de migración y versionado de API:
 - `docs-plugin-sdk-migration.md`
+
+`GET /api/system/plugins/health` incluye métricas por plugin (`p95`/`p99`) para `load` y hooks.

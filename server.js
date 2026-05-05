@@ -239,6 +239,7 @@ app.get('/api/system/plugins/health', (_req, res) => {
         apiVersion: 1,
         plugins: pluginManager.getHealthSnapshot(),
         summary: pluginManager.getSummary(),
+        metrics: pluginManager.getMetricsSnapshot(),
         registry: pluginManager.getRegistrySnapshot(),
     });
 });
