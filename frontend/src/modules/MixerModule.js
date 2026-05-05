@@ -134,6 +134,8 @@ export class MixerModule {
         this.rowRefsBySessionId = new Map();
         this._pendingBatchVisualUpdates = new Map();
         this._batchVisualFramePending = false;
+        this._lastRenderedSessionIds = [];
+        this._boundWindowResize = () => this._handleWindowResize();
     }
 
     /** Register socket listeners for mixer events */
@@ -290,6 +292,7 @@ export class MixerModule {
         document.body.appendChild(backBtn);
 
         this.panelManager.showPanel('mixer');
+        window.addEventListener('resize', this._boundWindowResize);
         // Enable aggressive low-perf mode while mixer is open on touch devices
         try {
             const isTouch = navigator.maxTouchPoints && navigator.maxTouchPoints > 0;
@@ -319,64 +322,59 @@ export class MixerModule {
             const state = this.lastMixerState;
             const sessions = Array.isArray(state.sessions) ? state.sessions : [];
             
-            // Limpiar faders anteriores y eventos huérfanos
-            if (this._faderControllers) {
-                this._faderControllers.forEach(c => { try { c.destroy(); } catch(e) {} });
-            }
-            this._faderControllers = [];
-            this.mixerRefs = {};
-            this.rowRefsBySessionId.clear();
             this._rebuildSessionStateIndex();
-            
-            // Reconstrucción atómica del DOM interno
-            container.replaceChildren();
+            container.classList.add('mixer-initializing');
 
             // 1. Master Fader (Obligatorio)
             const masterData = state.master || { name: 'Master', volume: 0, mute: false };
-            const masterRow = this.createMixerRow(masterData, true);
-            container.appendChild(masterRow);
-            
-            const masterCtrl = this._faderControllers[this._faderControllers.length - 1];
-            if (masterCtrl) {
-                requestAnimationFrame(() => masterCtrl.setPercent(masterData.volume, true));
+            let masterRow = document.getElementById('mixer-row-global');
+            if (!masterRow) {
+                container.replaceChildren();
+                masterRow = this.createMixerRow(masterData, true);
+                container.appendChild(masterRow);
+                const divider = document.createElement('div');
+                divider.className = 'mixer-vertical-divider';
+                container.appendChild(divider);
+                const appsContainer = document.createElement('div');
+                appsContainer.id = 'app-mixers';
+                appsContainer.className = 'mixer-apps-grid';
+                container.appendChild(appsContainer);
             }
 
-            // 2. Separador visual
-            const divider = document.createElement('div');
-            divider.className = 'mixer-vertical-divider';
-            container.appendChild(divider);
+            const appsContainer = document.getElementById('app-mixers');
+            if (!appsContainer) return;
 
-            // 3. Contenedor de Aplicaciones
-            const appsContainer = document.createElement('div');
-            appsContainer.id = 'app-mixers';
-            appsContainer.className = 'mixer-apps-grid';
-            container.appendChild(appsContainer);
-
+            const desiredIds = [];
+            const desiredSet = new Set();
             if (sessions.length > 0) {
                 const seen = new Set();
                 sessions.forEach(s => {
                     if (!seen.has(s.name)) {
-                        const row = this.createMixerRow(s);
-                        appsContainer.appendChild(row);
-                        seen.add(s.name);
-                        
-                        // Posicionamiento inmediato una vez en el DOM
                         const sid = sanitizeId(s.name);
-                        const controller = this._faderControllers[this._faderControllers.length - 1];
-                        if (controller) {
-                            requestAnimationFrame(() => controller.setPercent(s.volume, true));
+                        desiredIds.push(sid);
+                        desiredSet.add(sid);
+                        if (!document.getElementById(`mixer-row-${sid}`)) {
+                            const row = this.createMixerRow(s);
+                            appsContainer.appendChild(row);
                         }
+                        seen.add(s.name);
                     }
                 });
+                // Remover filas ausentes
+                Array.from(appsContainer.querySelectorAll('.mixer-row')).forEach((row) => {
+                    const rowId = row.id.replace('mixer-row-', '');
+                    if (!desiredSet.has(rowId)) row.remove();
+                });
+                // Reordenar según estado
+                desiredIds.forEach((sid) => {
+                    const row = document.getElementById(`mixer-row-${sid}`);
+                    if (row) appsContainer.appendChild(row);
+                });
             } else {
-                const empty = document.createElement('div');
-                empty.style.cssText = 'color: white; opacity: 0.3; font-size: 1.2rem; font-style: italic; margin-left: 20px;';
-                empty.innerText = 'No hay apps activas';
-                appsContainer.appendChild(empty);
+                appsContainer.replaceChildren();
             }
-
-            // Los faders ya se posicionan solos mediante el initialPercent y setPercent(v, true)
-            // en createMixerRow, eliminamos el RAF redundante para evitar parpadeos.
+            this._lastRenderedSessionIds = desiredIds;
+            this._settleAndApplyInitialPositions(masterData, sessions, container);
 
         } catch (error) {
             console.error('[Mixer] Error crítico en renderInitialMixer:', error);
@@ -494,9 +492,32 @@ export class MixerModule {
         });
 
         this._faderControllers.push(faderController);
+        this.mixerRefs[id].controller = faderController;
         // faderController.setPercent(volume, true); <-- Se llama desde fuera tras el append
 
         return row;
+    }
+
+    _nextFrame() {
+        return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+    }
+
+    async _settleAndApplyInitialPositions(masterData, sessions, container) {
+        await this._nextFrame();
+        await this._nextFrame();
+        const masterRefs = this.rowRefsBySessionId.get('global');
+        if (masterRefs?.controller) masterRefs.controller.setPercent(masterData.volume, true);
+        sessions.forEach((s) => {
+            const sid = sanitizeId(s.name);
+            const refs = this.rowRefsBySessionId.get(sid);
+            if (refs?.controller) refs.controller.setPercent(s.volume, true);
+        });
+        container.classList.remove('mixer-initializing');
+    }
+
+    _handleWindowResize() {
+        if (this.panelManager.getActivePanel() !== 'mixer') return;
+        this.renderInitialMixer();
     }
 
     _appendIconContent(wrapper, appName, isMaster) {
@@ -618,5 +639,6 @@ export class MixerModule {
     destroy() {
         this._faderControllers.forEach(c => c.destroy());
         this._faderControllers = [];
+        window.removeEventListener('resize', this._boundWindowResize);
     }
 }

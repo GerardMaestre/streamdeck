@@ -190,22 +190,43 @@ export function createFaderController(opts) {
 
     track.addEventListener('pointerdown', onPointerDown);
 
+    const ensureTrackMeasured = (onReady) => {
+        const r = track.getBoundingClientRect();
+        trackRect = r;
+        trackH = r.height;
+        if (trackH > 0) {
+            onReady();
+            return;
+        }
+        // Layout aún no asentó: esperar hasta 2 frames antes de fallback.
+        requestAnimationFrame(() => {
+            const r1 = track.getBoundingClientRect();
+            trackRect = r1;
+            trackH = r1.height;
+            if (trackH > 0) {
+                onReady();
+                return;
+            }
+            requestAnimationFrame(() => {
+                const r2 = track.getBoundingClientRect();
+                trackRect = r2;
+                trackH = r2.height || Math.max(160, Math.min(300, window.innerHeight * 0.4));
+                onReady();
+            });
+        });
+    };
+
     const setPercent = (percent, immediate = false) => {
         const p = Math.max(0, Math.min(100, percent));
         targetPercent = p;
         if (immediate) currentPercent = p;
-
-        if (trackH === 0) {
-            const r = track.getBoundingClientRect();
-            trackH = r.height || Math.max(160, Math.min(300, window.innerHeight * 0.4));
-            trackRect = r;
-        }
-
-        if (immediate) {
-            updateVisuals();
-        } else {
-            scheduleRender();
-        }
+        ensureTrackMeasured(() => {
+            if (immediate) {
+                updateVisuals();
+            } else {
+                scheduleRender();
+            }
+        });
     };
 
     const getTrackHeight = () => {
