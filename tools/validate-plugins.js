@@ -4,6 +4,8 @@ const crypto = require('crypto');
 const { PLUGIN_API_VERSION, ALLOWED_CAPABILITIES } = require('../backend/core/plugins/pluginManager');
 
 const pluginsRoot = path.join(process.cwd(), 'plugins');
+const REQUIRE_SIGNATURE = process.env.PLUGIN_REQUIRE_SIGNATURE === '1';
+const TRUSTED_PUBLISHERS = new Set((process.env.PLUGIN_TRUSTED_PUBLISHERS || '').split(',').map((s) => s.trim()).filter(Boolean));
 
 function fail(message) {
     console.error(`[plugin:validate] ${message}`);
@@ -29,6 +31,12 @@ function validateManifest(manifest, folder) {
 
     if (typeof manifest.entry !== 'string' || manifest.entry.includes('..')) {
         fail(`${folder}: entry inválido`);
+    }
+
+    if (TRUSTED_PUBLISHERS.size > 0) {
+        if (!manifest.publisher || !TRUSTED_PUBLISHERS.has(manifest.publisher)) {
+            fail(`${folder}: publisher no confiable`);
+        }
     }
 
     const capabilities = manifest.capabilities || [];
@@ -85,6 +93,10 @@ function run() {
                 if (actual !== expected) {
                     fail(`${folder}: SHA-256 inválido para entry`);
                 }
+            }
+
+            if (REQUIRE_SIGNATURE && !signature) {
+                fail(`${folder}: firma obligatoria ausente`);
             }
 
             if (signature) {

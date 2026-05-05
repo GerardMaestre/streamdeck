@@ -401,3 +401,48 @@ test('PluginManager rechaza plugin con firma inválida', () => {
 
     fs.rmSync(tempDir, { recursive: true, force: true });
 });
+
+test('PluginManager exige firma cuando requireSignature=true', () => {
+    const tempDir = makeTempDir();
+    const pluginDir = path.join(tempDir, 'unsigned-plugin');
+    fs.mkdirSync(pluginDir, { recursive: true });
+
+    fs.writeFileSync(path.join(pluginDir, 'manifest.json'), JSON.stringify({
+        id: 'unsigned-plugin',
+        apiVersion: 1,
+        entry: 'index.js'
+    }, null, 2));
+    fs.writeFileSync(path.join(pluginDir, 'index.js'), 'module.exports = {};');
+
+    const manager = new PluginManager({ pluginsDir: tempDir, requireSignature: true });
+    manager.loadAll();
+
+    const health = manager.getHealthSnapshot();
+    assert.equal(health[0].status, 'failed');
+    assert.match(health[0].error, /firma obligatoria/);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+test('PluginManager filtra por trustedPublishers', () => {
+    const tempDir = makeTempDir();
+    const pluginDir = path.join(tempDir, 'untrusted-publisher');
+    fs.mkdirSync(pluginDir, { recursive: true });
+
+    fs.writeFileSync(path.join(pluginDir, 'manifest.json'), JSON.stringify({
+        id: 'untrusted-publisher',
+        apiVersion: 1,
+        entry: 'index.js',
+        publisher: 'unknown-org'
+    }, null, 2));
+    fs.writeFileSync(path.join(pluginDir, 'index.js'), 'module.exports = {};');
+
+    const manager = new PluginManager({ pluginsDir: tempDir, trustedPublishers: ['trusted-org'] });
+    manager.loadAll();
+
+    const health = manager.getHealthSnapshot();
+    assert.equal(health[0].status, 'failed');
+    assert.match(health[0].error, /publisher no confiable/);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});

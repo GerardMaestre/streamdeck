@@ -223,3 +223,9 @@ Guía de migración y versionado de API:
 `GET /api/system/plugins/health` incluye métricas por plugin (`p95`/`p99`) para `load` y hooks.
 
 Opcionalmente puedes definir `integrity.signature` + `integrity.publicKeyPem` para verificación RSA-SHA256 del entrypoint.
+
+
+Variables de hardening opcionales:
+- `PLUGIN_MAX_FAILURES` (default `3`)
+- `PLUGIN_REQUIRE_SIGNATURE=1` para exigir firma en todos los plugins
+- `PLUGIN_TRUSTED_PUBLISHERS=org-a,org-b` para allowlist de publishers

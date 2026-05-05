@@ -133,6 +133,9 @@ const pluginManager = new PluginManager({
     pluginsDir: getDataPath('plugins'),
     healthFilePath: getDataPath('plugins-health.json'),
     disabledFilePath: getDataPath('plugins-disabled.json'),
+    maxFailures: Number(process.env.PLUGIN_MAX_FAILURES || 3),
+    requireSignature: process.env.PLUGIN_REQUIRE_SIGNATURE === '1',
+    trustedPublishers: (process.env.PLUGIN_TRUSTED_PUBLISHERS || '').split(',').map((s) => s.trim()).filter(Boolean),
 });
 pluginManager.loadAll();
 

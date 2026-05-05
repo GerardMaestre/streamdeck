@@ -10,7 +10,7 @@ const ALLOWED_CAPABILITIES = new Set(['logging', 'http', 'iot', 'audio', 'discor
 const HEALTH_SCHEMA_VERSION = 1;
 
 class PluginManager {
-    constructor({ pluginsDir, hookTimeoutMs = DEFAULT_HOOK_TIMEOUT_MS, maxFailures = 3, healthFilePath = null, disabledFilePath = null }) {
+    constructor({ pluginsDir, hookTimeoutMs = DEFAULT_HOOK_TIMEOUT_MS, maxFailures = 3, healthFilePath = null, disabledFilePath = null, requireSignature = false, trustedPublishers = [] }) {
         if (!pluginsDir || typeof pluginsDir !== 'string') {
             throw new Error('pluginsDir es obligatorio y debe ser string.');
         }
@@ -24,6 +24,8 @@ class PluginManager {
         this.disabledFilePath = disabledFilePath;
         this.disabledPlugins = new Set();
         this.metrics = new Map();
+        this.requireSignature = requireSignature;
+        this.trustedPublishers = new Set(trustedPublishers.filter(Boolean));
     }
 
 
@@ -158,6 +160,12 @@ class PluginManager {
             throw new Error(`Plugin ${manifest.id} incompatible con API ${PLUGIN_API_VERSION}.`);
         }
 
+        if (this.trustedPublishers.size > 0) {
+            if (!manifest.publisher || !this.trustedPublishers.has(manifest.publisher)) {
+                throw new Error(`Plugin ${manifest.id} publisher no confiable.`);
+            }
+        }
+
         const capabilities = manifest.capabilities || [];
         if (!Array.isArray(capabilities)) {
             throw new Error(`Plugin ${manifest.id} tiene capabilities inválidas.`);
@@ -186,6 +194,10 @@ class PluginManager {
             if (actual !== expected) {
                 throw new Error(`Plugin ${manifest.id} falló verificación SHA-256.`);
             }
+        }
+
+        if (this.requireSignature && !signature) {
+            throw new Error(`Plugin ${manifest.id} requiere firma obligatoria.`);
         }
 
         if (signature) {
