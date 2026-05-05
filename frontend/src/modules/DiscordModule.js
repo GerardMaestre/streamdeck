@@ -29,6 +29,8 @@ export class DiscordModule {
         this._resizeAttached = false;
         this._pendingFrameUsers = new Map();
         this._pendingSpeakingEvents = new Map();
+        this._speakingEventTs = new Map();
+        this._speakingPrecedenceMs = 1400;
         this._frameScheduled = false;
 
         this._onWindowResize = () => {
@@ -60,13 +62,21 @@ export class DiscordModule {
         });
 
         this.socket.on('discord_voice_users', (users) => {
-            this.discordUsers = users;
+            const now = Date.now();
+            this.discordUsers = Array.isArray(users) ? users.map((user) => {
+                const lastTs = this._speakingEventTs.get(user.id) || 0;
+                if (now - lastTs <= this._speakingPrecedenceMs && this._pendingSpeakingEvents.has(user.id)) {
+                    return { ...user, speaking: this._pendingSpeakingEvents.get(user.id) };
+                }
+                return user;
+            }) : [];
             this.renderMixer();
         });
 
         this.socket.on('discord_user_speaking', (data) => {
             if (!data?.userId) return;
             this._pendingSpeakingEvents.set(data.userId, !!data.speaking);
+            this._speakingEventTs.set(data.userId, Number(data.ts) || Date.now());
             this._scheduleFramePatch();
         });
     }
