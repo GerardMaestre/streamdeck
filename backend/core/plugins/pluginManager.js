@@ -294,6 +294,20 @@ class PluginManager {
         };
     }
 
+
+    getPluginStatus(pluginId) {
+        if (!pluginId) return null;
+        const health = this.getHealthSnapshot().find((item) => item.pluginId === pluginId) || null;
+        const registry = this.getRegistrySnapshot().find((item) => item.id === pluginId) || null;
+
+        return {
+            pluginId,
+            health,
+            registry,
+            loaded: Boolean(registry),
+        };
+    }
+
     getRegistrySnapshot() {
         return Array.from(this.registry.values()).map((plugin) => ({
             id: plugin.id,
