@@ -1,0 +1,29 @@
+# Guía breve de estilo de logs (scripts)
+
+## Formato estándar
+Usar siempre el formato:
+
+`[NIVEL] mensaje | contexto_opcional`
+
+Ejemplos:
+- `[STEP] Escaneando red local`
+- `[INFO] Base de red detectada | 192.168.1.X`
+- `[OK] Barrido completado | 4 dispositivos`
+- `[ERROR] Error leyendo tabla ARP | Access denied`
+
+## API común
+Importar desde `scripts/common/console_ui.py`:
+- `step(msg, context=None)`
+- `info(msg, context=None)`
+- `success(msg, context=None)`
+- `warn(msg, context=None)`
+- `error(msg, context=None)`
+
+Evitar `print` directo para logs funcionales; reservarlo para banners visuales o saltos de línea.
+
+## Tablas
+Para listados tabulares (ej. IP/MAC), usar utilidades comunes:
+- `table_header(columns)` para encabezado único reutilizable.
+- `table_row(values, widths)` para filas con ancho fijo.
+
+Conservar anchos consistentes por columna en todo el script.

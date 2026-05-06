@@ -22,6 +22,8 @@ import re
 import threading
 from queue import Queue
 
+from scripts.common.console_ui import error, info, step, success, table_header, table_row
+
 # Forzar codificación UTF-8 y escritura en tiempo real para la consola de HORUS
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', line_buffering=True)
@@ -29,7 +31,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 print("="*65)
 print("      ⚡ HORUS ENGINE - CAZADOR DE INTRUSOS (RADAR) ⚡      ")
 print("="*65)
-print("[*] Iniciando barrido de radar en la subred local...")
+step("Iniciando barrido de radar en la subred local...")
 
 # 1. Obtener la IP local para saber en qué red estamos
 ip_local = ""
@@ -43,13 +45,13 @@ except Exception:
     pass
 
 if not ip_local:
-    print("[X] Error: No se pudo detectar la red. ¿Estás conectado al Wi-Fi?")
+    error("No se pudo detectar la red. ¿Estás conectado al Wi-Fi?")
     sys.exit()
 
 # Extraer los 3 primeros octetos (ej: 192.168.1.X)
 base_ip = ".".join(ip_local.split('.')[:-1]) + "."
-print(f"[*] Base de red detectada: {base_ip}X")
-print("[*] Lanzando 254 sondas de reconocimiento simultáneas. Por favor espera...", flush=True)
+info("Base de red detectada", f"{base_ip}X")
+step("Lanzando 254 sondas de reconocimiento simultáneas. Por favor espera...")
 
 def ping_sweeper(ip):
     # Enviar un ping ultrarrápido a una IP para que responda y se guarde en la tabla ARP
@@ -67,9 +69,12 @@ for i in range(1, 255):
 for hilo in hilos:
     hilo.join()
 
-print("[*] Analizando respuestas de la tabla ARP...\n")
-print(f"{'DIRECCIÓN IP':<18} | {'DIRECCIÓN MAC (HUELLA)':<20} | TIPO")
-print("-" * 65)
+step("Analizando respuestas de la tabla ARP...")
+print()
+cols=[('DIRECCIÓN IP', 18), ('DIRECCIÓN MAC (HUELLA)', 20), ('TIPO', 24)]
+header, separator = table_header(cols)
+print(header)
+print(separator)
 
 # 3. Leer la tabla ARP de Windows para ver quién ha respondido
 dispositivos = 0
@@ -84,11 +89,11 @@ try:
                 
                 # Excluir la IP de broadcast (.255)
                 if not ip_encontrada.endswith(".255"):
-                    print(f" [>] {ip_encontrada:<14} | {mac_encontrada:<20} | Dispositivo Detectado", flush=True)
+                    print(table_row([ip_encontrada, mac_encontrada, 'Dispositivo Detectado'], [18, 20, 24]), flush=True)
                     dispositivos += 1
 except Exception as e:
-    print(f"[X] Error leyendo la tabla ARP: {e}")
+    error("Error leyendo la tabla ARP", str(e))
 
 print("\n" + "=" * 65)
-print(f"[OK] BARRIDO COMPLETADO. Se encontraron {dispositivos} dispositivos en tu red.")
-print("[I] Si ves más dispositivos de los que tienes en tu casa, alguien está robando tu Wi-Fi.")
+success("BARRIDO COMPLETADO", f"Se encontraron {dispositivos} dispositivos en tu red.")
+info("Si ves más dispositivos de los que tienes en tu casa, alguien está robando tu Wi-Fi.")
