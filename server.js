@@ -170,8 +170,6 @@ const shutdownPluginSystem = () => {
 };
 
 process.on('beforeExit', shutdownPluginSystem);
-process.on('SIGINT', shutdownPluginSystem);
-process.on('SIGTERM', shutdownPluginSystem);
 
 app.get('/api/system/plugins/:pluginId/status', adminRateLimit, requireAdminToken, (req, res) => {
     const pluginId = req.params.pluginId;
@@ -278,7 +276,7 @@ const { initAudioMixer, sendInitialState, handleSocketCommands } = require('./ba
 const { abrirAplicacionOWeb } = require('./backend/launcher/appController');
 const { ejecutarMacro, controlMultimedia } = require('./backend/automation/macroController');
 const { hacerCaptura } = require('./backend/system/captureController');
-const { ejecutarScript, ejecutarScriptDinamico, listarScripts, stopAllRunningScripts } = require('./backend/scripts/scriptController');
+const { ejecutarScriptDinamico, listarScripts, stopAllRunningScripts } = require('./backend/scripts/scriptController');
 const { initDiscordRPC, requestInitialDiscordState, discordToggleMute, discordToggleDeaf, discordSetUserVolume, forceDiscordReconnect } = require('./backend/discord/discordController');
 const { sendTuyaCommand, controlMultipleDevices } = require('./backend/iot/smart_home');
 const { minimizarTodo, cambiarResolucion, apagarPC, reiniciarPC } = require('./backend/system/systemController');
@@ -894,19 +892,22 @@ io.on('connection', (socket) => {
     socket.on('discord_toggle_mute', async (p, ack) => {
         const cb = getAck(p, ack);
         if (!(await ensureIntegrationCredentials('discord')).ok) return cb && cb({ ok: false });
-        runSafely(socket, 'discord_toggle_mute', () => discordToggleMute(), cb).then(res => cb && cb(res));
+        const res = await runSafely(socket, 'discord_toggle_mute', () => discordToggleMute(), cb);
+        if (res !== null && cb) cb(res);
     });
 
     socket.on('discord_toggle_deaf', async (p, ack) => {
         const cb = getAck(p, ack);
         if (!(await ensureIntegrationCredentials('discord')).ok) return cb && cb({ ok: false });
-        runSafely(socket, 'discord_toggle_deaf', () => discordToggleDeaf(), cb).then(res => cb && cb(res));
+        const res = await runSafely(socket, 'discord_toggle_deaf', () => discordToggleDeaf(), cb);
+        if (res !== null && cb) cb(res);
     });
 
     socket.on('discord_set_user_volume', async (payload, ack) => {
         if (!(await ensureIntegrationCredentials('discord')).ok) return typeof ack === 'function' && ack({ ok: false });
         const { userId, volume } = payload || {};
-        runSafely(socket, 'discord_set_user_volume', () => discordSetUserVolume(userId, volume), ack).then(res => typeof ack === 'function' && ack(res));
+        const res = await runSafely(socket, 'discord_set_user_volume', () => discordSetUserVolume(userId, volume), ack);
+        if (res !== null && typeof ack === 'function') ack(res);
     });
 
     socket.on('tuya_command', async (payload, ack) => {
@@ -929,18 +930,31 @@ io.on('connection', (socket) => {
 let PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 global.__streamdeck_port = PORT;
 
+const updateCorsForPort = (port) => {
+    try {
+        const interfaces = os.networkInterfaces();
+        for (const name of Object.keys(interfaces)) {
+            for (const iface of interfaces[name]) {
+                const isIPv4 = iface.family === 'IPv4' || iface.family === 4;
+                if (isIPv4 && !iface.internal) {
+                    allowedCorsOrigins.add(`http://${iface.address}:${port}`);
+                }
+            }
+        }
+        allowedCorsOrigins.add(`http://localhost:${port}`);
+        allowedCorsOrigins.add(`http://127.0.0.1:${port}`);
+    } catch (e) {}
+};
+
 server.on('error', (err) => {
     if (err && err.code === 'EADDRINUSE') {
         PORT++;
         global.__streamdeck_port = PORT;
+        updateCorsForPort(PORT);
         setTimeout(() => server.listen(PORT), 200);
     } else {
         process.exit(1);
     }
-});
-
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
 });
 
 app.get('/api/scripts', async (req, res) => {
@@ -952,6 +966,10 @@ app.get('/api/scripts', async (req, res) => {
         scriptsCache = data; lastScriptsUpdate = now;
         res.json(data);
     } catch (err) { res.status(500).json({ error: 'Error' }); }
+});
+
+server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
 });
 
 const gracefulShutdown = () => { try { stopAllRunningScripts(); shutdownPluginSystem(); } catch (e) {} };

@@ -1,7 +1,7 @@
 {
   "name": "mi-streamdeck",
   "version": "1.0.0",
-  "description": "",
+  "description": "Stream Deck Pro - Control remoto para PC desde tablet con integraciones Discord, Tuya y scripts personalizados",
   "main": "main.js",
   "scripts": {
     "start": "node esbuild.config.js && electron .",
