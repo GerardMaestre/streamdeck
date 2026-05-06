@@ -143,7 +143,8 @@ const runScriptExternally = async (scriptLabel, absolutePath, args) => {
         const child = await retryWithBackoff(async () => withTimeout(() => Promise.resolve(spawn(command.bin, command.args, {
             detached: false,
             windowsHide: true,
-            shell: command.bin === 'cmd.exe',
+            shell: true,
+            cwd: path.dirname(absolutePath),
             stdio: ['ignore', 'pipe', 'pipe']
         })), 3000, { reasonCode: 'SCRIPT_SPAWN_TIMEOUT' }), { retries: 1, initialDelayMs: 100, shouldRetry: (e) => e?.code === 'SCRIPT_SPAWN_TIMEOUT' });
         let timeoutHandle = null;
