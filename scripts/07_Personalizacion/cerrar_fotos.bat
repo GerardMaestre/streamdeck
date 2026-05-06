@@ -26,6 +26,9 @@ echo.
 :: =============================================
 ::  VALIDACIONES
 :: =============================================
+if not exist "%IMMICH_DIR%" (
+    echo  [X] No se encontro la carpeta de Immich:
+    echo      %IMMICH_DIR%
     exit /b 1
 )
 
@@ -69,7 +72,7 @@ if errorlevel 1 (
         echo.
         echo  [X] No se pudieron detener los contenedores.
         echo      Prueba manualmente: docker compose down
-        pause
+        timeout /t 5 >nul
         exit /b 1
     )
 )

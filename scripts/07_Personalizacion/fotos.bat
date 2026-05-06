@@ -12,8 +12,8 @@ setlocal enabledelayedexpansion
 set "IMMICH_DIR=%~1"
 if not defined IMMICH_DIR set "IMMICH_DIR=%HORUS_IMMICH_PATH%"
 if not defined IMMICH_DIR set "IMMICH_DIR=C:\immich-app"
-set "MAX_DOCKER_WAIT=24"
-set "MAX_HEALTH_WAIT=12"
+set "MAX_DOCKER_WAIT=120"
+set "MAX_HEALTH_WAIT=60"
 set "IMMICH_PORT=2283"
 
 :: =============================================
@@ -49,7 +49,7 @@ if not exist "%IMMICH_DIR%\docker-compose.yml" (
         echo      %IMMICH_DIR%
         echo.
         echo  Asegurate de que Immich esta correctamente instalado.
-        pause
+        timeout /t 5 >nul
         exit /b 1
     )
 )
@@ -79,7 +79,7 @@ if errorlevel 1 (
             echo.
             echo  [X] Docker no respondio tras 2 minutos.
             echo      Verifica que Docker Desktop este instalado y funcionando.
-            pause
+            timeout /t 5 >nul
             exit /b 1
         )
         :: Barra de progreso visual
@@ -120,7 +120,7 @@ if errorlevel 1 (
         echo.
         echo  [X] No se pudo arrancar Immich.
         echo      Revisa los logs con: docker compose logs
-        pause
+        timeout /t 5 >nul
         exit /b 1
     )
 )
