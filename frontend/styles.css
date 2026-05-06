@@ -73,8 +73,8 @@ body.animating .slide-snapshot * {
     height: 100vh;
     z-index: 10;
     pointer-events: none;
-    background: var(--bg-base);
-    will-change: transform;
+    background: transparent;
+    will-change: transform, opacity;
     contain: strict;
     transform: translate3d(0, 0, 0);
 }
@@ -642,7 +642,7 @@ body {
 }
 
 /* ============================================================ */
-/* 🎠 CARRUSEL — ANIMACIONES DE SLIDE                           */
+/* 🎠 CARRUSEL — ANIMACIONES DE SLIDE (BUTTERY SMOOTH)          */
 /* ============================================================ */
 
 .grid-container {
@@ -650,35 +650,47 @@ body {
 }
 
 .grid-container.slide-enter-right, .deck-view.slide-enter-right {
-    animation: slideFromRight 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: slideFromRight 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
     will-change: transform, opacity;
 }
 
 /* Slide entrando desde la izquierda (swipe derecha) */
 .grid-container.slide-enter-left, .deck-view.slide-enter-left {
-    animation: slideFromLeft 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: slideFromLeft 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
     will-change: transform, opacity;
 }
 
 @keyframes slideFromRight {
-    from { transform: translate3d(100%, 0, 0); }
-    to { transform: translate3d(0, 0, 0); }
+    from {
+        transform: translate3d(40px, 0, 0) scale(0.97);
+        opacity: 0;
+    }
+    to {
+        transform: translate3d(0, 0, 0) scale(1);
+        opacity: 1;
+    }
 }
 
 @keyframes slideFromLeft {
-    from { transform: translate3d(-100%, 0, 0); }
-    to { transform: translate3d(0, 0, 0); }
+    from {
+        transform: translate3d(-40px, 0, 0) scale(0.97);
+        opacity: 0;
+    }
+    to {
+        transform: translate3d(0, 0, 0) scale(1);
+        opacity: 1;
+    }
 }
 
 /* Animaciones de Salida (Desplazamiento) */
 .slide-exit-left {
-    animation: slideExitLeft 0.34s cubic-bezier(0.16, 1, 0.3, 1) both !important;
-    will-change: transform;
+    animation: slideExitLeft 0.28s cubic-bezier(0.16, 1, 0.3, 1) both !important;
+    will-change: transform, opacity;
 }
 
 .slide-exit-right {
-    animation: slideExitRight 0.34s cubic-bezier(0.16, 1, 0.3, 1) both !important;
-    will-change: transform;
+    animation: slideExitRight 0.28s cubic-bezier(0.16, 1, 0.3, 1) both !important;
+    will-change: transform, opacity;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -693,11 +705,17 @@ body {
 }
 
 @keyframes slideExitLeft {
-    to { transform: translate3d(-100%, 0, 0); }
+    to {
+        transform: translate3d(-40px, 0, 0) scale(0.97);
+        opacity: 0;
+    }
 }
 
 @keyframes slideExitRight {
-    to { transform: translate3d(100%, 0, 0); }
+    to {
+        transform: translate3d(40px, 0, 0) scale(0.97);
+        opacity: 0;
+    }
 }
 
 /* ============================================================ */

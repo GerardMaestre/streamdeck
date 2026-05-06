@@ -19,7 +19,7 @@ export class CarouselModule {
         this.editMode = false;
         this.initialLoad = true;
         this._cachedGrids = new Map();
-        this._slideDurationMs = 340;
+        this._slideDurationMs = 280;
 
         // Callbacks
         this.onPageChange = ctx.onPageChange || (() => {});
