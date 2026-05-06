@@ -371,17 +371,6 @@
                 }
             },
             {
-                "label": "SpeedTest",
-                "icon": "⚡",
-                "color": "linear-gradient(145deg, #f1c40f, #d63031)",
-                "type": "action",
-                "action": "ejecutar_script_dinamico",
-                "payload": {
-                    "carpeta": "06_Descargas",
-                    "archivo": "Speedtest_Consola.py"
-                }
-            },
-            {
                 "label": "Extractor MP3",
                 "icon": "🎵",
                 "color": "linear-gradient(145deg, #f857a6, #ff5858)",
