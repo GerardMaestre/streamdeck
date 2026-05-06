@@ -309,5 +309,33 @@ export class CarouselModule {
                 e.preventDefault();
             }
         }, { passive: false });
+
+        // --- Wheel Event for PC Navigation ---
+        let lastWheelTime = 0;
+        const WHEEL_COOLDOWN = 600; // ms to prevent scrolling multiple pages at once
+
+        const handleWheel = (e) => {
+            if (this.editMode || !this.carouselPages || this.carouselPages.length <= 1 || !this.carouselPages.includes(this.currentPage)) return;
+            
+            // Ignore scroll if we are over a scrollable element (like scrollable panels or inputs)
+            if (e.target.closest('.output-box') || e.target.closest('.scrollable') || e.target.closest('[class*="scroll"]') || e.target.closest('[class*="list"]') || e.target.closest('[class*="messages"]')) return;
+
+            const now = Date.now();
+            if (now - lastWheelTime < WHEEL_COOLDOWN) return;
+
+            // deltaY > 0 -> Scroll Down -> Next page
+            // deltaY < 0 -> Scroll Up -> Prev page
+            if (Math.abs(e.deltaY) > 5) {
+                if (e.deltaY > 0 && this.carouselIndex < this.carouselPages.length - 1) {
+                    lastWheelTime = now;
+                    this.renderSlide(this.carouselIndex + 1, 1);
+                } else if (e.deltaY < 0 && this.carouselIndex > 0) {
+                    lastWheelTime = now;
+                    this.renderSlide(this.carouselIndex - 1, -1);
+                }
+            }
+        };
+        
+        window.addEventListener('wheel', handleWheel, { passive: true });
     }
 }
