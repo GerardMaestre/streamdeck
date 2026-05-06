@@ -206,12 +206,12 @@
 
                 const fields = data?.fields || [];
                 
-                if (fields.length === 0 && data?.placeholder) {
+                if (fields.length === 0) {
                     fields.push({
                         key: 'value',
-                        label: data.title || 'Valor',
-                        placeholder: data.placeholder,
-                        isSecret: data.isSecret,
+                        label: 'Parámetros',
+                        placeholder: data?.placeholder || 'Introduce los parámetros aquí...',
+                        isSecret: data?.isSecret,
                         defaultValue: ''
                     });
                 }
