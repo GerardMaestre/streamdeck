@@ -43,6 +43,7 @@ if str(Path(__file__).resolve().parents[1]) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from common.console_io import configure_console_utf8
+from scripts.common.console_ui import error, info, step, success, table_header, table_row
 
 # Compatibilidad con lanzadores/hosts que dejan la consola en NUL o sin UTF-8.
 configure_console_utf8(line_buffering=True)
@@ -133,45 +134,48 @@ def parse_arp_table(base_ip):
 print("=" * 65)
 print("      ⚡ HORUS ENGINE - CAZADOR DE INTRUSOS (RADAR) ⚡      ")
 print("=" * 65)
-print("[*] Iniciando barrido de radar en la subred local...")
+step("Iniciando barrido de radar en la subred local...")
 
 base_ip = detect_local_network()
 if not base_ip:
-    print("[X] Error: No se pudo detectar la red. ¿Estás conectado al Wi-Fi?")
+    error("No se pudo detectar la red. ¿Estás conectado al Wi-Fi?")
     sys.exit()
 
 if not _is_valid_base_ip(base_ip):
-    print(f"[X] Error: IP base inválida detectada ({base_ip}).")
+    error(f"IP base inválida detectada ({base_ip}).")
     sys.exit()
 
 max_workers = int(os.getenv("HORUS_MAX_WORKERS", "32"))
 timeout_ms = int(os.getenv("HORUS_PING_TIMEOUT_MS", "200"))
 
-print(f"[*] Base de red detectada: {base_ip}X")
-print(f"[*] Configuración: timeout={timeout_ms}ms, max_workers={max_workers}")
-print("[*] Lanzando 254 sondas de reconocimiento simultáneas. Por favor espera...", flush=True)
+info("Base de red detectada", f"{base_ip}X")
+info("Configuración", f"timeout={timeout_ms}ms, max_workers={max_workers}")
+step("Lanzando 254 sondas de reconocimiento simultáneas. Por favor espera...", flush=True)
 
 start = time.perf_counter()
 hosts_scanned, ping_responses = sweep_subnet(base_ip, timeout_ms, max_workers)
 duration_sec = time.perf_counter() - start
 
-print("[*] Analizando respuestas de la tabla ARP...\n")
-print(f"{'DIRECCIÓN IP':<18} | {'DIRECCIÓN MAC (HUELLA)':<20} | TIPO")
-print("-" * 65)
+step("Analizando respuestas de la tabla ARP...")
+print()
+cols = [('DIRECCIÓN IP', 18), ('DIRECCIÓN MAC (HUELLA)', 20), ('TIPO', 24)]
+header, separator = table_header(cols)
+print(header)
+print(separator)
 
+dispositivos_detectados = []
 try:
-    dispositivos = parse_arp_table(base_ip)
-    for ip_encontrada, mac_encontrada in dispositivos:
-        print(f" [>] {ip_encontrada:<14} | {mac_encontrada:<20} | Dispositivo Detectado", flush=True)
+    dispositivos_detectados = parse_arp_table(base_ip)
+    for ip_encontrada, mac_encontrada in dispositivos_detectados:
+        print(table_row([ip_encontrada, mac_encontrada, 'Dispositivo Detectado'], [18, 20, 24]), flush=True)
 except Exception as e:
-    dispositivos = []
-    print(f"[X] Error leyendo la tabla ARP: {e}")
+    error("Error leyendo la tabla ARP", str(e))
 
 print("\n" + "=" * 65)
-print(f"[OK] BARRIDO COMPLETADO. Se encontraron {len(dispositivos)} dispositivos en tu red.")
-print("[I] Resumen de métricas:")
+success("BARRIDO COMPLETADO", f"Se encontraron {len(dispositivos_detectados)} dispositivos en tu red.")
+info("Resumen de métricas:")
 print(f"    - Hosts sondeados: {hosts_scanned}")
 print(f"    - Respuestas a ping: {ping_responses}")
-print(f"    - Dispositivos ARP detectados: {len(dispositivos)}")
+print(f"    - Dispositivos ARP detectados: {len(dispositivos_detectados)}")
 print(f"    - Duración total: {duration_sec:.2f} segundos")
-print("[I] Si ves más dispositivos de los que tienes en tu casa, alguien está robando tu Wi-Fi.")
+info("Si ves más dispositivos de los que tienes en tu casa, alguien está robando tu Wi-Fi.")
