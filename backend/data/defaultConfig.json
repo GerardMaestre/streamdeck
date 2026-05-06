@@ -369,6 +369,29 @@
                     "archivo": "Descargador_Maestro.py",
                     "requiresParams": true
                 }
+            },
+            {
+                "label": "SpeedTest",
+                "icon": "⚡",
+                "color": "linear-gradient(145deg, #f1c40f, #d63031)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "06_Descargas",
+                    "archivo": "Speedtest_Consola.py"
+                }
+            },
+            {
+                "label": "Extractor MP3",
+                "icon": "🎵",
+                "color": "linear-gradient(145deg, #f857a6, #ff5858)",
+                "type": "action",
+                "action": "ejecutar_script_dinamico",
+                "payload": {
+                    "carpeta": "06_Descargas",
+                    "archivo": "Extractor_Maestro_MP3.py",
+                    "requiresParams": true
+                }
             }
         ],
         "script_personalizacion": [
