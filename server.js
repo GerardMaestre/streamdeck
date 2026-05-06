@@ -301,9 +301,17 @@ const ensurePackagedBootstrapFiles = () => {
         }
     };
 
-    copyIfMissing(path.join(process.resourcesPath, '.env.example'), path.join(userDataDir, '.env'));
-    copyIfMissing(path.join(process.resourcesPath, '.env.example'), path.join(exeDir, '.env'));
-    copyIfMissing(path.join(process.resourcesPath, 'config.example.json'), path.join(userDataDir, 'config.json'));
+    const envSource = fs.existsSync(path.join(process.resourcesPath, '.env'))
+        ? path.join(process.resourcesPath, '.env')
+        : path.join(process.resourcesPath, '.env.example');
+
+    const configSource = fs.existsSync(path.join(process.resourcesPath, 'config.json'))
+        ? path.join(process.resourcesPath, 'config.json')
+        : path.join(process.resourcesPath, 'config.example.json');
+
+    copyIfMissing(envSource, path.join(userDataDir, '.env'));
+    copyIfMissing(envSource, path.join(exeDir, '.env'));
+    copyIfMissing(configSource, path.join(userDataDir, 'config.json'));
 };
 
 ensurePackagedBootstrapFiles();
@@ -371,6 +379,54 @@ try {
     }
 } catch (err) {
     Logger.warn('[Config] Error al fusionar config.json con las novedades', err.message);
+}
+
+try {
+    const packagedConfigPath = (electronApp && electronApp.isPackaged) 
+        ? path.join(process.resourcesPath, 'config.json')
+        : null;
+    
+    if (packagedConfigPath && fs.existsSync(packagedConfigPath) && fs.existsSync(CONFIG_PATH)) {
+        const packagedConfig = JSON.parse(fs.readFileSync(packagedConfigPath, 'utf8'));
+        const existingConfig = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+        let changed = false;
+
+        if (existingConfig && existingConfig.pages && packagedConfig && packagedConfig.pages) {
+            for (const pageName of Object.keys(packagedConfig.pages)) {
+                if (!existingConfig.pages[pageName]) {
+                    existingConfig.pages[pageName] = packagedConfig.pages[pageName];
+                    changed = true;
+                } else {
+                    const existingLabels = new Set(existingConfig.pages[pageName].map(b => b.label));
+                    for (const packagedBtn of packagedConfig.pages[pageName]) {
+                        if (!existingLabels.has(packagedBtn.label)) {
+                            existingConfig.pages[pageName].push(packagedBtn);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            if (Array.isArray(packagedConfig.carouselPages)) {
+                if (!Array.isArray(existingConfig.carouselPages)) {
+                    existingConfig.carouselPages = packagedConfig.carouselPages;
+                    changed = true;
+                } else {
+                    for (const cp of packagedConfig.carouselPages) {
+                        if (!existingConfig.carouselPages.includes(cp)) {
+                            existingConfig.carouselPages.push(cp);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+        if (changed) {
+            fs.writeFileSync(CONFIG_PATH, JSON.stringify(existingConfig, null, 4), 'utf8');
+            Logger.info(`[Config] config.json se ha actualizado y combinado con las novedades del config.json empaquetado`);
+        }
+    }
+} catch (err) {
+    Logger.warn('[Config] Error al fusionar config.json con las novedades empaquetadas', err.message);
 }
 
 try {
