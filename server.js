@@ -774,52 +774,65 @@ const runSafely = async (socket, eventName, action, ack) => {
     try { return await action(); } catch (error) { handleSocketError(socket, eventName, error, ack); return null; }
 };
 
+const getAck = (p, ack) => typeof ack === 'function' ? ack : (typeof p === 'function' ? p : undefined);
+
 io.on('connection', (socket) => {
     log('[Socket] Conectado');
     socket.emit('server_version', { version: SERVER_START_TS });
 
-    socket.on('mixer_initial_state', (ack) => runSafely(socket, 'mixer_initial_state', () => sendInitialState(socket), ack));
-    socket.on('mixer_bind_commands', (ack) => runSafely(socket, 'mixer_bind_commands', () => handleSocketCommands(socket), ack));
-    socket.on('discord_initial_state', (ack) => {
-        if (getMissingEnvKeys(REQUIRED_DISCORD_KEYS).length) return ack && ack({ ok: false });
-        runSafely(socket, 'discord_initial_state', () => requestInitialDiscordState(socket), ack);
+    socket.on('mixer_initial_state', (p, ack) => { const cb = getAck(p, ack); runSafely(socket, 'mixer_initial_state', () => sendInitialState(socket), cb); });
+    socket.on('mixer_bind_commands', (p, ack) => { const cb = getAck(p, ack); runSafely(socket, 'mixer_bind_commands', () => handleSocketCommands(socket), cb); });
+    socket.on('discord_initial_state', (p, ack) => {
+        const cb = getAck(p, ack);
+        if (getMissingEnvKeys(REQUIRED_DISCORD_KEYS).length) return cb && cb({ ok: false });
+        runSafely(socket, 'discord_initial_state', () => requestInitialDiscordState(socket), cb);
     });
-    socket.on('abrir', (destino, ack) => runSafely(socket, 'abrir', () => abrirAplicacionOWeb(destino), ack).then(() => ack && ack({ ok: true })));
-    socket.on('macro', (tipo, ack) => runSafely(socket, 'macro', () => ejecutarMacro(tipo), ack).then(() => ack && ack({ ok: true })));
-    socket.on('multimedia', (accion, ack) => runSafely(socket, 'multimedia', () => controlMultimedia(accion), ack).then(() => ack && ack({ ok: true })));
-    socket.on('captura', (pantalla, ack) => runSafely(socket, 'captura', () => hacerCaptura(pantalla), ack).then(() => ack && ack({ ok: true })));
+    socket.on('abrir', (destino, ack) => runSafely(socket, 'abrir', () => abrirAplicacionOWeb(destino), ack).then(() => typeof ack === 'function' && ack({ ok: true })));
+    socket.on('macro', (tipo, ack) => runSafely(socket, 'macro', () => ejecutarMacro(tipo), ack).then(() => typeof ack === 'function' && ack({ ok: true })));
+    socket.on('multimedia', (accion, ack) => runSafely(socket, 'multimedia', () => controlMultimedia(accion), ack).then(() => typeof ack === 'function' && ack({ ok: true })));
+    socket.on('captura', (pantalla, ack) => runSafely(socket, 'captura', () => hacerCaptura(pantalla), ack).then(() => typeof ack === 'function' && ack({ ok: true })));
     
     socket.on('ejecutar_script_dinamico', async (payload, ack) => {
         if (payload.requiresParams && !payload.args && global.showPCPrompt) {
             const pcArgs = await global.showPCPrompt(payload.archivo || 'Script');
-            if (!pcArgs) return ack && ack({ ok: false });
+            if (!pcArgs) return typeof ack === 'function' && ack({ ok: false });
             payload.args = pcArgs;
         }
-        runSafely(socket, 'ejecutar_script_dinamico', () => ejecutarScriptDinamico(payload, socket), ack).then(() => ack && ack({ ok: true }));
+        runSafely(socket, 'ejecutar_script_dinamico', () => ejecutarScriptDinamico(payload, socket), ack).then(() => typeof ack === 'function' && ack({ ok: true }));
     });
 
-    socket.on('discord_toggle_mute', async (ack) => {
-        if (!(await ensureIntegrationCredentials('discord')).ok) return ack && ack({ ok: false });
-        runSafely(socket, 'discord_toggle_mute', () => discordToggleMute(), ack).then(res => ack && ack(res));
+    socket.on('discord_toggle_mute', async (p, ack) => {
+        const cb = getAck(p, ack);
+        if (!(await ensureIntegrationCredentials('discord')).ok) return cb && cb({ ok: false });
+        runSafely(socket, 'discord_toggle_mute', () => discordToggleMute(), cb).then(res => cb && cb(res));
     });
 
-    socket.on('discord_toggle_deaf', async (ack) => {
-        if (!(await ensureIntegrationCredentials('discord')).ok) return ack && ack({ ok: false });
-        runSafely(socket, 'discord_toggle_deaf', () => discordToggleDeaf(), ack).then(res => ack && ack(res));
+    socket.on('discord_toggle_deaf', async (p, ack) => {
+        const cb = getAck(p, ack);
+        if (!(await ensureIntegrationCredentials('discord')).ok) return cb && cb({ ok: false });
+        runSafely(socket, 'discord_toggle_deaf', () => discordToggleDeaf(), cb).then(res => cb && cb(res));
+    });
+
+    socket.on('discord_set_user_volume', async (payload, ack) => {
+        if (!(await ensureIntegrationCredentials('discord')).ok) return typeof ack === 'function' && ack({ ok: false });
+        const { userId, volume } = payload || {};
+        runSafely(socket, 'discord_set_user_volume', () => discordSetUserVolume(userId, volume), ack).then(res => typeof ack === 'function' && ack(res));
     });
 
     socket.on('tuya_command', async (payload, ack) => {
-        if (!(await ensureIntegrationCredentials('tuya')).ok) return ack && ack({ ok: false });
+        if (!(await ensureIntegrationCredentials('tuya')).ok) return typeof ack === 'function' && ack({ ok: false });
         const { deviceId, deviceIds, code, value } = payload;
         const result = await runSafely(socket, 'tuya_command', () => deviceIds ? controlMultipleDevices(deviceIds, code, value) : sendTuyaCommand(deviceId, code, value), ack);
-        if (ack) ack({ ok: !!result });
+        if (typeof ack === 'function') ack({ ok: !!result });
     });
 
-    socket.on('minimizar_todo', (ack) => runSafely(socket, 'minimizar_todo', () => minimizarTodo(), ack).then(() => ack && ack({ ok: true })));
-    socket.on('cambiar_resolucion', (p, ack) => runSafely(socket, 'cambiar_resolucion', () => cambiarResolucion(p.width, p.height), ack).then(res => ack && ack(res)));
-    socket.on('apagar_pc', (ack) => runSafely(socket, 'apagar_pc', () => apagarPC(), ack).then(() => ack && ack({ ok: true })));
-    socket.on('reiniciar_pc', (ack) => runSafely(socket, 'reiniciar_pc', () => reiniciarPC(), ack).then(() => ack && ack({ ok: true })));
-    socket.on('ping', (ack) => ack && ack());
+    socket.on('minimizar_todo', (p, ack) => { const cb = getAck(p, ack); runSafely(socket, 'minimizar_todo', () => minimizarTodo(), cb).then(() => cb && cb({ ok: true })); });
+    socket.on('abrir_keep', (p, ack) => { const cb = getAck(p, ack); runSafely(socket, 'abrir_keep', () => abrirAplicacionOWeb('google-keep'), cb).then(() => cb && cb({ ok: true })); });
+    socket.on('abrir_calendario', (p, ack) => { const cb = getAck(p, ack); runSafely(socket, 'abrir_calendario', () => abrirAplicacionOWeb('google-calendar'), cb).then(() => cb && cb({ ok: true })); });
+    socket.on('cambiar_resolucion', (p, ack) => runSafely(socket, 'cambiar_resolucion', () => cambiarResolucion(p.width, p.height), ack).then(res => typeof ack === 'function' && ack(res)));
+    socket.on('apagar_pc', (p, ack) => { const cb = getAck(p, ack); runSafely(socket, 'apagar_pc', () => apagarPC(), cb).then(() => cb && cb({ ok: true })); });
+    socket.on('reiniciar_pc', (p, ack) => { const cb = getAck(p, ack); runSafely(socket, 'reiniciar_pc', () => reiniciarPC(), cb).then(() => cb && cb({ ok: true })); });
+    socket.on('ping', (ack) => typeof ack === 'function' && ack());
     handleAutoClickerSocket(socket, io);
 });
 

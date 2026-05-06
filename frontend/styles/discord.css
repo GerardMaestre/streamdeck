@@ -438,8 +438,31 @@ body.dragging-active .discord-card-mixer {
 /* Efecto cuando el usuario habla */
 .user-avatar-circle.speaking {
     border-color: #4ade80 !important;
-    box-shadow: 0 0 20px rgba(74, 222, 128, 0.6), inset 0 0 10px rgba(74, 222, 128, 0.4);
-    transform: scale(1.05);
+    background: linear-gradient(135deg, #4ade80, #22c55e) !important;
+    color: #06090e !important;
+    box-shadow: 0 0 30px rgba(74, 222, 128, 0.8), inset 0 0 15px rgba(74, 222, 128, 0.5);
+    transform: scale(1.08);
+    animation: pulse-speaking 1.2s infinite ease-in-out;
+}
+
+.user-avatar-circle.speaking img {
+    border: 2px solid #4ade80;
+    box-shadow: 0 0 15px rgba(74, 222, 128, 0.5);
+}
+
+@keyframes pulse-speaking {
+    0% {
+        box-shadow: 0 0 20px rgba(74, 222, 128, 0.6), inset 0 0 10px rgba(74, 222, 128, 0.4);
+        transform: scale(1.05);
+    }
+    50% {
+        box-shadow: 0 0 40px rgba(74, 222, 128, 1), inset 0 0 20px rgba(74, 222, 128, 0.7);
+        transform: scale(1.12);
+    }
+    100% {
+        box-shadow: 0 0 20px rgba(74, 222, 128, 0.6), inset 0 0 10px rgba(74, 222, 128, 0.4);
+        transform: scale(1.05);
+    }
 }
 
 
