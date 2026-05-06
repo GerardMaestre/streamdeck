@@ -745,29 +745,63 @@ const REQUIRED_DISCORD_KEYS = ['DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'DI
 const getMissingEnvKeys = (keys = []) => keys.filter((k) => !(process.env[k] || '').trim());
 
 const persistEnvValues = (values = {}) => {
-    const envPath = getDataPath('.env');
-    const current = fs.existsSync(envPath) ? dotenv.parse(fs.readFileSync(envPath, 'utf8')) : {};
-    const merged = { ...current, ...values };
-    const lines = Object.entries(merged).map(([k, v]) => `${k}=${v}`);
-    fs.writeFileSync(envPath, lines.join('\n') + '\n', 'utf8');
+    let envPath = getDataPath('.env');
+    try {
+        const current = fs.existsSync(envPath) ? dotenv.parse(fs.readFileSync(envPath, 'utf8')) : {};
+        const merged = { ...current, ...values };
+        const lines = Object.entries(merged).map(([k, v]) => `${k}=${v}`);
+        fs.writeFileSync(envPath, lines.join('\n') + '\n', 'utf8');
+    } catch (writeError) {
+        console.warn(`[Config] Falló escritura en ${envPath}, intentando en userData...`, writeError.message);
+        try {
+            const { app: electronApp } = require('electron');
+            const userDataDir = electronApp ? electronApp.getPath('userData') : null;
+            if (userDataDir) {
+                envPath = path.join(userDataDir, '.env');
+                const current = fs.existsSync(envPath) ? dotenv.parse(fs.readFileSync(envPath, 'utf8')) : {};
+                const merged = { ...current, ...values };
+                const lines = Object.entries(merged).map(([k, v]) => `${k}=${v}`);
+                fs.mkdirSync(userDataDir, { recursive: true });
+                fs.writeFileSync(envPath, lines.join('\n') + '\n', 'utf8');
+            }
+        } catch (fallbackError) {
+            console.error('[Config] Falló escritura persistente de variables de entorno:', fallbackError);
+        }
+    }
     for (const [k, v] of Object.entries(values)) process.env[k] = v;
 };
+
+const pendingPrompts = new Map();
 
 const ensureIntegrationCredentials = async (type) => {
     const required = type === 'tuya' ? REQUIRED_TUYA_KEYS : REQUIRED_DISCORD_KEYS;
     const missing = getMissingEnvKeys(required);
     if (!missing.length) return { ok: true };
-    if (!global.showPCPrompt) return { ok: false, message: 'Faltan credenciales' };
-    const fields = missing.map(key => ({
-        key,
-        label: key.replace(/_/g, ' '),
-        isSecret: key.includes('SECRET')
-    }));
-    const result = await global.showPCPrompt({ title: `Config ${type}`, fields });
-    if (!result) return { ok: false, message: 'Cancelado' };
-    persistEnvValues(result);
-    if (type === 'discord') try { await forceDiscordReconnect(); } catch (e) {}
-    return { ok: true };
+
+    if (pendingPrompts.has(type)) {
+        return pendingPrompts.get(type);
+    }
+
+    const promise = (async () => {
+        if (!global.showPCPrompt) return { ok: false, message: 'Faltan credenciales' };
+        const fields = missing.map(key => ({
+            key,
+            label: key.replace(/_/g, ' '),
+            isSecret: key.includes('SECRET')
+        }));
+        const result = await global.showPCPrompt({ title: `Config ${type}`, fields });
+        if (!result) return { ok: false, message: 'Cancelado' };
+        persistEnvValues(result);
+        if (type === 'discord') try { await forceDiscordReconnect(); } catch (e) {}
+        return { ok: true };
+    })();
+
+    pendingPrompts.set(type, promise);
+    try {
+        return await promise;
+    } finally {
+        pendingPrompts.delete(type);
+    }
 };
 
 const runSafely = async (socket, eventName, action, ack) => {
