@@ -3,6 +3,37 @@
 # RISK: medium
 # PERM: user
 # MODE: internal
+# Requisitos:
+# - Python 3.10+
+# - Permisos de usuario.
+# - Comandos externos requeridos: ninguno.
+# Compatibilidad:
+# - Windows 10/11.
+
+import platform
+import shutil as _shutil_runtime
+
+def validate_runtime():
+    if platform.system() != "Windows":
+        print("[X] Este script solo es compatible con Windows 10/11.", file=sys.stderr)
+        sys.exit(1)
+
+    required_commands = []
+    missing = [cmd for cmd in required_commands if _shutil_runtime.which(cmd) is None]
+    if missing:
+        print(f"[X] Faltan comandos requeridos en PATH: {', '.join(missing)}", file=sys.stderr)
+        sys.exit(2)
+
+    if False:
+        try:
+            import ctypes
+            is_admin = bool(ctypes.windll.shell32.IsUserAnAdmin())
+        except Exception:
+            is_admin = False
+        if not is_admin:
+            print("[X] Se requieren privilegios de Administrador para ejecutar este script.", file=sys.stderr)
+            sys.exit(3)
+
 
 import os
 import sys

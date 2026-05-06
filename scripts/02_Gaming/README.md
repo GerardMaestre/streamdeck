@@ -1,11 +1,22 @@
-# Optimización Gaming
+# Scripts 02_Gaming
 
-Herramientas diseñadas para maximizar el rendimiento de tu PC mientras juegas, reduciendo el lag y liberando recursos.
+## SO soportado
+- Windows 10/11.
 
-### Scripts Incluidos:
-- **`Game_Priority.bat`**: Asigna máxima prioridad de CPU a tus juegos.
-- **`Optimizador_Red.bat`**: Aplica configuraciones en el registro de Windows para mejorar la velocidad y estabilidad de la red.
-- **`Ping_Optimizer.py`**: Optimiza las rutas y el tráfico de internet para reducir la latencia (ping) en juegos multijugador.
-- **`Despertar_Nucleos.bat`**: Desbloquea todos los núcleos de tu procesador para que trabajen a su máxima capacidad.
-- **`Purgador_Shaders.py`**: Limpia la caché de shaders de tu tarjeta gráfica para solucionar tirones y problemas visuales.
-- **`Purgar_ram.py`**: Libera la memoria RAM, eliminando procesos inactivos para dársela a tu juego.
+## Dependencias externas
+- `ping` (Windows).
+- `imdisk` (descarga automática en `RAM_Disk_Dinamico.py` cuando aplica).
+
+## Ejemplo de uso
+```bash
+python Ping_Optimizer.py
+python Purgar_ram.py
+python RAM_Disk_Dinamico.py
+python Purgador_Shaders.py
+```
+
+## Parámetros
+- `Ping_Optimizer.py`: sin parámetros.
+- `Purgar_ram.py`: sin parámetros.
+- `RAM_Disk_Dinamico.py`: modo interactivo.
+- `Purgador_Shaders.py`: sin parámetros.

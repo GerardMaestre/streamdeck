@@ -1,7 +1,19 @@
-# Utilidades de Archivos
+# Scripts 04_Archivos
 
-Scripts creados para ayudarte a organizar tu disco, recuperar espacio y mantener el orden.
+## SO soportado
+- Windows 10/11.
 
-### Scripts Incluidos:
-- **`Duplicados.py`**: Escanea tus discos para encontrar archivos repetidos en distintas carpetas y te los lista, liberando muchísimo espacio.
-- **`Organizador.py`**: Ordena automáticamente la carpeta seleccionada (como Descargas o Escritorio), agrupando imágenes, instaladores, documentos, etc. en su propia subcarpeta correspondiente.
+## Dependencias externas
+- Sin binarios externos obligatorios.
+
+## Ejemplo de uso
+```bash
+python Organizador.py "C:\Users\TuUsuario\Downloads"
+python Duplicados.py "C:\Users\TuUsuario\Downloads" "C:\Users\TuUsuario\Desktop\Cuarentena"
+python Limpieza_Extrema_Global.py
+```
+
+## Parámetros
+- `Organizador.py <ruta_carpeta>`.
+- `Duplicados.py <ruta_escaneo> <ruta_cuarentena>`.
+- `Limpieza_Extrema_Global.py`: sin parámetros.
