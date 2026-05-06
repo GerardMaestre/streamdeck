@@ -1,7 +1,15 @@
-# Personalización
+# Scripts 07_Personalizacion
 
-Scripts divertidos y útiles para modificar la experiencia de uso de tu computadora.
+## SO soportado
+- Windows 10/11.
 
-### Scripts Incluidos:
-- **`Lanzador_Cloud_Gaming.bat`**: Configura la red y tu navegador para la menor latencia posible antes de lanzarte a servicios como Xbox Cloud o GeForce Now.
-- **`Spicetify.bat`**: Instala automáticamente Spicetify para que puedas tener temas, plugins y eliminar la publicidad en tu aplicación de Spotify de escritorio.
+## Dependencias externas
+- Librería `keyboard` (auto-instalable en `Inyector_Macros.py`).
+
+## Ejemplo de uso
+```bash
+python Inyector_Macros.py
+```
+
+## Parámetros
+- `Inyector_Macros.py`: sin parámetros.
