@@ -235,7 +235,7 @@
         outputEl.innerHTML = '<div style="opacity: 0.7">Cargando entorno...</div>';
         let logLines = [];
         let currentBuffer = '';
-        const MAX_LINES = 40;
+        const MAX_LINES = 2000;
 
         function renderLogs() {
             outputEl.innerHTML = logLines.map(line => {
