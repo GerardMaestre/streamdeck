@@ -359,17 +359,6 @@
         ],
         "script_descargas": [
             {
-                "label": "Servidor Desc.",
-                "icon": "🖥️",
-                "color": "linear-gradient(145deg, #f1c40f, #f39c12)",
-                "type": "action",
-                "action": "ejecutar_script_dinamico",
-                "payload": {
-                    "carpeta": "06_Descargas",
-                    "archivo": "Servidor_Descargar.py"
-                }
-            },
-            {
                 "label": "Descargador",
                 "icon": "📥",
                 "color": "linear-gradient(145deg, #f1c40f, #f39c12)",
