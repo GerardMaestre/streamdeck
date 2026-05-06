@@ -11,23 +11,20 @@ import secrets
 import random
 import time
 import sys
-import sys
-try:
-    if sys.stdout is None or getattr(sys.stdout, 'name', '').upper() == 'NUL':
-        sys.stdout = open('CONOUT$', 'w', encoding='utf-8')
-        sys.stderr = open('CONOUT$', 'w', encoding='utf-8')
-        sys.stdin = open('CONIN$', 'r', encoding='utf-8')
-except Exception: pass
+from pathlib import Path
 
-if hasattr(sys.stdout, 'reconfigure'):
-    try: sys.stdout.reconfigure(encoding='utf-8')
-    except Exception: pass
+if str(Path(__file__).resolve().parents[1]) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from common.console_io import configure_console_utf8
+
+# Compatibilidad con lanzadores/hosts que dejan la consola en NUL o sin UTF-8.
+configure_console_utf8(line_buffering=True)
+
 import subprocess
 import os
 
 # Forzar codificación correcta en terminales
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8', line_buffering=True)
 
 # ===== CONSTANTES ESTETICAS ANSI =====
 C_CYAN = "\x1B[36m"

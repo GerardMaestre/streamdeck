@@ -6,17 +6,16 @@
 
 import os
 import sys
-import sys
-try:
-    if sys.stdout is None or getattr(sys.stdout, 'name', '').upper() == 'NUL':
-        sys.stdout = open('CONOUT$', 'w', encoding='utf-8')
-        sys.stderr = open('CONOUT$', 'w', encoding='utf-8')
-        sys.stdin = open('CONIN$', 'r', encoding='utf-8')
-except Exception: pass
+from pathlib import Path
 
-if hasattr(sys.stdout, 'reconfigure'):
-    try: sys.stdout.reconfigure(encoding='utf-8')
-    except Exception: pass
+if str(Path(__file__).resolve().parents[1]) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from common.console_io import configure_console_utf8
+
+# Compatibilidad con lanzadores/hosts que dejan la consola en NUL o sin UTF-8.
+configure_console_utf8(line_buffering=True)
+
 import ctypes
 import shutil
 import urllib.request
@@ -24,9 +23,6 @@ import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 
-# Forzar codificación y evitar buffer
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8', line_buffering=True)
 
 confirmed = "--confirmed" in sys.argv
 if confirmed:
@@ -257,5 +253,4 @@ print("[*] Desmaterializando Disco de RAM...")
 subprocess.run(f'imdisk -D -m {UNIDAD_RAM}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 print("[+] Toda la Memoria RAM ha sido devuelta al sistema intacta.")
 print("\n[V] Misión Cumplida.")
-    pass
 

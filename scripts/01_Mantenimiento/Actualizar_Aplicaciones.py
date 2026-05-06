@@ -6,6 +6,15 @@
 
 import os
 import sys
+from pathlib import Path
+
+if str(Path(__file__).resolve().parents[1]) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from common.console_io import configure_console_utf8
+
+# Compatibilidad con lanzadores/hosts que dejan la consola en NUL o sin UTF-8.
+configure_console_utf8(line_buffering=True)
 import subprocess
 import ctypes
 import tempfile
@@ -13,17 +22,7 @@ import time
 import re
 import atexit
 
-# Forzar codificación utf-8 a la salida
-try:
-    if sys.stdout is None or getattr(sys.stdout, 'name', '').upper() == 'NUL':
-        sys.stdout = open('CONOUT$', 'w', encoding='utf-8')
-        sys.stderr = open('CONOUT$', 'w', encoding='utf-8')
-        sys.stdin = open('CONIN$', 'r', encoding='utf-8')
-except Exception: pass
 
-if hasattr(sys.stdout, 'reconfigure'):
-    try: sys.stdout.reconfigure(encoding='utf-8', line_buffering=True)
-    except Exception: pass
 
 # Colores ANSI para terminal integrada
 C_CYAN = "\033[96m"
