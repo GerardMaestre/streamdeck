@@ -6,6 +6,10 @@ dist/
 .discord_token.json
 test_output.txt
 scripts/06_Descargas/ffmpeg.exe
+scripts/06_Descargas/ffprobe.exe
+scripts/06_Descargas/yt-dlp.exe
+__pycache__/
+*.pyc
 config.json
 data/state.json
 plugins-health.json

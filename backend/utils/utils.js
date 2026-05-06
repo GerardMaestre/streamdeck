@@ -43,7 +43,8 @@ const getDataPath = (relativePath) => {
                                relativePath.startsWith('scripts') || 
                                relativePath.startsWith('logs') ||
                                relativePath.startsWith('data') ||
-                               relativePath.startsWith('.env');
+                               relativePath.startsWith('.env') ||
+                               relativePath.startsWith('plugins');
 
         if (isExternalData) {
             // Para directorios (como scripts/, logs/, data/, frontend/), evitamos copiar recursivamente
