@@ -692,6 +692,17 @@ app.get('/api/security/status', (req, res) => {
 app.post('/api/security/token', (req, res) => {
     if (!isLocalAddress(req.ip)) return res.status(403).json({ error: 'Acceso denegado' });
     if (envSecurityToken) return res.status(409).json({ error: 'SECURITY_TOKEN está fijado por entorno.' });
+
+    const sanitizedBody = Logger.sanitizeLogData({
+        token: req.body?.token,
+        length: typeof req.body?.token === 'string' ? req.body.token.length : 0
+    });
+    Logger.info('[Seguridad] Solicitud de actualización de token recibida', {
+        ip: req.ip,
+        correlationId: req.correlationId,
+        body: sanitizedBody
+    });
+
     const token = normalizeAuthToken(req.body?.token);
     if (!token || token.length < 12) return res.status(400).json({ error: 'Mínimo 12 caracteres.' });
     if (!saveTokenToFile(token)) return res.status(500).json({ error: 'No se pudo guardar.' });
