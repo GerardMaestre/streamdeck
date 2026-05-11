@@ -14,7 +14,7 @@
  */
 export function setThumbTransform(thumbEl, percent, trackH, isDomo = false) {
     if (!thumbEl) return;
-    const offset = isDomo ? 55 : 55;
+    const offset = isDomo ? 55 : 45;
     const ty = offset - (percent / 100) * trackH;
     thumbEl.style.transform = `translate3d(-50%, ${ty}px, 0)`;
 }

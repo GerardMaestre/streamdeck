@@ -28,7 +28,7 @@ let lastSliderActivity = 0;           // Timestamp de última interacción
 let visibleMixerClients = 0;
 const SLIDER_ACTIVITY_TIMEOUT = 2000; // Después de 2s sin actividad → modo idle
 const DEBOUNCE_MS = 350;       // 400→350: Ventana de protección optimizada
-const VOL_THRESHOLD = 0.5;     // Diferencia mínima para emitir cambio (evita ruido jitter)
+const VOL_THRESHOLD_RAW = 0.9; // Filtro decimal (0-100) para eliminar fluctuación matemática floating-point
 // Sesiones que siempre queremos ver si están abiertas (aunque no emitan sonido)
 const ALWAYS_SHOW_SILENT_SESSIONS = new Set(['Spotify', 'VLC Player', 'OBS Studio', 'Discord', 'Telegram', 'WhatsApp']);
 const KNOWN_VISIBLE_PROCESSES = new Map([
@@ -380,7 +380,8 @@ function pollSessions(io, deviceOverride) {
 
     // 2. Procesamiento de cambios
     for (const [label, sessions] of pollGroupedData.entries()) {
-        let maxVol = 0;
+        let maxVol = -1;
+        let minVol = 101;
         let isMuted = false;
         const sessionsSnapshot = sessions.slice();
 
@@ -388,31 +389,32 @@ function pollSessions(io, deviceOverride) {
             const s = sessionsSnapshot[j];
             const v = s.volume * 100;
             if (v > maxVol) maxVol = v;
+            if (v < minVol) minVol = v;
             if (s.mute) isMuted = true;
         }
         
         let stored = activeSessions.get(label);
 
-        // Sincronización inteligente: 
-        // 1. Si el usuario movió el slider recientemente, forzamos a todas las sesiones a ese valor.
-        // 2. Si las sesiones son inconsistentes entre sí, unificamos al último valor conocido (lastVolume)
-        //    para evitar que una nueva sesión que aparece al 100% "gane" a la configuración del usuario.
+        // Unificación Inteligente de Sesiones:
+        // Previene que subprocesos nuevos (ej: pestaña de navegador al 100%) secuestren el volumen del grupo.
         if (sessionsSnapshot.length > 0 && stored) {
             const now = Date.now();
             const isBeingDragged = (now - stored.lastUserUpdate < 1500);
-            const needsUnification = sessionsSnapshot.some(s => Math.abs(s.volume * 100 - stored.lastVolume) > 2);
+            const userSetRecently = stored.lastUserUpdate > 0 && (now - stored.lastUserUpdate < 30000);
+            
+            const isConsistent = (sessionsSnapshot.length <= 1) || (maxVol - minVol <= 3);
+            const differsFromMemory = Math.abs(maxVol - stored.lastVolume) > 2;
 
-            if (needsUnification) {
-                // Solo forzar unificación si el usuario interactuó recientemente (30s)
-                // o está arrastrando el slider activamente. Esto permite que cambios
-                // desde el mixer de Windows se reflejen después de 30s.
-                const userSetRecently = stored.lastUserUpdate > 0 && (now - stored.lastUserUpdate < 30000);
-                if (isBeingDragged || userSetRecently) {
-                    sessionsSnapshot.forEach(s => {
-                        try { s.volume = stored.lastVolume / 100; } catch (_) {}
-                    });
-                    maxVol = stored.lastVolume;
-                }
+            // Casos de forzado de consistencia:
+            // 1. Inconsistencia entre hilos (proceso nuevo detectado).
+            // 2. El usuario está arrastrando activamente en la tablet.
+            // 3. Difiere de la memoria pero se ajustó hace muy poco tiempo.
+            if (!isConsistent || isBeingDragged || (differsFromMemory && userSetRecently)) {
+                sessionsSnapshot.forEach(s => {
+                    try { s.volume = stored.lastVolume / 100; } catch (_) {}
+                });
+                maxVol = stored.lastVolume;
+                minVol = stored.lastVolume; // Normalizar extremos tras forzado
             }
         }
 
@@ -426,24 +428,25 @@ function pollSessions(io, deviceOverride) {
             stored.processOnly = false;
         }
 
-        // (Log removido para evitar saturación del terminal)
-        // if (label === 'Spotify' || sessionsSnapshot.length > 1) { ... }
-
         if (stored) {
-            // Debounce contra cambios manuales del usuario en la tablet (reducido a 600ms para mayor agilidad)
+            // Debounce contra cambios manuales del usuario en la tablet
             if (stored.lastUserUpdate && (Date.now() - stored.lastUserUpdate < DEBOUNCE_MS)) {
                 continue;
             }
 
             stored.sessions = sessionsSnapshot;
 
-            // Solo emitir si hay cambio real (usando threshold para volumen)
-            const volChanged = Math.abs(stored.lastVolume - roundedVol) >= VOL_THRESHOLD;
+            // Usamos comparación RAW FLOAT para filtrar el jitter invisible que oscila bordes .50
+            const rawBase = typeof stored.lastVolumeRaw === 'number' ? stored.lastVolumeRaw : stored.lastVolume;
+            const rawDiff = Math.abs(rawBase - maxVol);
+            
+            const volChanged = rawDiff >= VOL_THRESHOLD_RAW;
             const muteChanged = stored.lastMute !== isMuted;
 
             if (volChanged || muteChanged) {
                 const sessionUpdate = { name: label };
                 if (volChanged) {
+                    stored.lastVolumeRaw = maxVol;
                     stored.lastVolume = roundedVol;
                     sessionUpdate.volume = roundedVol;
                 }
@@ -454,10 +457,11 @@ function pollSessions(io, deviceOverride) {
                 batchUpdates.sessions.push(sessionUpdate);
             }
         } else {
-            // Nueva sesión
+            // Nueva sesión capturada por primera vez
             activeSessions.set(label, {
                 sessions: sessionsSnapshot,
                 lastVolume: roundedVol,
+                lastVolumeRaw: maxVol,
                 lastMute: isMuted,
                 lastUserUpdate: 0
             });
@@ -486,6 +490,7 @@ function pollSessions(io, deviceOverride) {
             activeSessions.set(label, {
                 sessions: [],
                 lastVolume: volume,
+                lastVolumeRaw: volume,
                 lastMute: mute,
                 lastUserUpdate: 0,
                 processOnly: true
@@ -615,6 +620,7 @@ function handleSocketCommands(socket) {
                     return;
                 }
                 stored.lastVolume = targetVolume;
+                stored.lastVolumeRaw = targetVolume;
                 stored.lastUserUpdate = Date.now();
             }
 

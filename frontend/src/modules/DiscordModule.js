@@ -312,11 +312,18 @@ export class DiscordModule {
     }
 
     _getTrackHeight(userId) {
-        const cachedHeight = this._userTrackHeights.get(userId);
-        if (typeof cachedHeight === 'number') return cachedHeight;
+        let cachedHeight = this._userTrackHeights.get(userId);
+        if (typeof cachedHeight === 'number' && cachedHeight > 0) return cachedHeight;
+
         const refs = this.discordRowRefs.get(userId);
-        const trackHeight = refs?.track?.getBoundingClientRect().height || 0;
-        this._userTrackHeights.set(userId, trackHeight);
+        let trackHeight = refs?.track?.getBoundingClientRect().height || 0;
+        
+        if (trackHeight === 0) {
+            const dvh = window.innerHeight * 0.45; // 45dvh de fallback coincidente con el CSS
+            trackHeight = Math.max(160, Math.min(300, dvh));
+        } else {
+            this._userTrackHeights.set(userId, trackHeight);
+        }
         return trackHeight;
     }
 
@@ -398,7 +405,6 @@ export class DiscordModule {
             fill,
             thumb,
             initialPercent: fillHeight,
-            captureTarget: thumb,
             onDragStart: () => {
                 this.activeSliders.add('discord_' + id);
                 row.classList.add('dragging');
