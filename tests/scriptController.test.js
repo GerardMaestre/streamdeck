@@ -4,7 +4,8 @@ const assert = require('node:assert/strict');
 const { circuitState } = require('../backend/utils/resilience');
 const { __test__ } = require('../backend/scripts/scriptController');
 
-const { applyScriptResultToCircuit } = __test__;
+const { applyScriptResultToCircuit, getDynamicScriptRuntime } = __test__;
+const { listarScripts } = require('../backend/scripts/scriptController');
 
 test('applyScriptResultToCircuit registra success cuando code=0', () => {
     const circuit = circuitState({ failureThreshold: 2, cooldownMs: 1000 });
@@ -31,4 +32,15 @@ test('applyScriptResultToCircuit registra failure cuando code!=0', () => {
     snapshot = circuit.snapshot();
     assert.equal(snapshot.failures, 2);
     assert.equal(snapshot.isOpen, true);
+});
+
+test('listarScripts solo devuelve archivos ejecutables por getDynamicScriptRuntime', async () => {
+    const scriptsByFolder = await listarScripts();
+
+    for (const folderData of Object.values(scriptsByFolder)) {
+        for (const fileData of folderData.archivos) {
+            const runtime = getDynamicScriptRuntime(fileData.archivo);
+            assert.ok(runtime, `El archivo listado no es ejecutable: ${fileData.archivo}`);
+        }
+    }
 });
