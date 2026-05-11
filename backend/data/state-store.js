@@ -91,8 +91,15 @@ class StateStore {
         return this.save();
     }
 
+    static _isPlainObject(value) {
+        return !!value && typeof value === 'object' && !Array.isArray(value);
+    }
+
     merge(key, value) {
-        if (!this.state[key] || typeof this.state[key] !== 'object') {
+        if (!StateStore._isPlainObject(value)) {
+            throw new TypeError(`[StateStore] merge("${key}") requiere un objeto plano.`);
+        }
+        if (!StateStore._isPlainObject(this.state[key])) {
             this.state[key] = {};
         }
         this.state[key] = {
