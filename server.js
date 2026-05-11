@@ -13,6 +13,67 @@ if (envContract.missingRequired.length) {
     console.warn('[Config] Variables obligatorias faltantes:', envContract.missingRequired.join(', '));
 }
 
+const copyDirRecursive = (src, dest) => {
+    try {
+        if (!fs.existsSync(src)) return;
+        if (!fs.existsSync(dest)) {
+            fs.mkdirSync(dest, { recursive: true });
+        }
+        const entries = fs.readdirSync(src, { withFileTypes: true });
+        for (const entry of entries) {
+            const srcPath = path.join(src, entry.name);
+            const destPath = path.join(dest, entry.name);
+            if (entry.isDirectory()) {
+                copyDirRecursive(srcPath, destPath);
+            } else {
+                if (!fs.existsSync(destPath)) {
+                    fs.copyFileSync(srcPath, destPath);
+                    console.log(`[Bootstrap] Copiado archivo faltante: ${destPath}`);
+                }
+            }
+        }
+    } catch (error) {
+        console.warn(`[Bootstrap] Error al copiar de ${src} a ${dest}:`, error.message);
+    }
+};
+
+const ensurePackagedBootstrapFiles = () => {
+    if (!(electronApp && electronApp.isPackaged)) return;
+
+    const exeDir = process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(process.execPath);
+    const userDataDir = electronApp.getPath('userData');
+
+    const copyIfMissing = (fromPath, toPath) => {
+        try {
+            if (!fs.existsSync(fromPath) || fs.existsSync(toPath)) return;
+            fs.mkdirSync(path.dirname(toPath), { recursive: true });
+            fs.copyFileSync(fromPath, toPath);
+            console.log(`[Bootstrap] Archivo inicial creado: ${toPath}`);
+        } catch (error) {
+            console.warn(`[Bootstrap] No se pudo preparar ${toPath}`, error.message);
+        }
+    };
+
+    const envSource = fs.existsSync(path.join(process.resourcesPath, '.env'))
+        ? path.join(process.resourcesPath, '.env')
+        : path.join(process.resourcesPath, '.env.example');
+
+    const configSource = fs.existsSync(path.join(process.resourcesPath, 'config.json'))
+        ? path.join(process.resourcesPath, 'config.json')
+        : path.join(process.resourcesPath, 'config.example.json');
+
+    copyIfMissing(envSource, path.join(userDataDir, '.env'));
+    copyIfMissing(envSource, path.join(exeDir, '.env'));
+    copyIfMissing(configSource, path.join(userDataDir, 'config.json'));
+
+    // Copiar directorios completos de forma recursiva si faltan archivos
+    const scriptsSource = path.join(process.resourcesPath, 'scripts');
+    const scriptsDest = path.join(userDataDir, 'scripts');
+    copyDirRecursive(scriptsSource, scriptsDest);
+};
+
+ensurePackagedBootstrapFiles();
+
 // 1. IMPORTS
 const express = require('express');
 const http = require('http');
@@ -281,38 +342,6 @@ const { initDiscordRPC, requestInitialDiscordState, discordToggleMute, discordTo
 const { sendTuyaCommand, controlMultipleDevices } = require('./backend/iot/smart_home');
 const { minimizarTodo, cambiarResolucion, apagarPC, reiniciarPC } = require('./backend/system/systemController');
 const { handleAutoClickerSocket } = require('./backend/automation/autoClickerController');
-
-const ensurePackagedBootstrapFiles = () => {
-    if (!(electronApp && electronApp.isPackaged)) return;
-
-    const exeDir = process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(process.execPath);
-    const userDataDir = electronApp.getPath('userData');
-
-    const copyIfMissing = (fromPath, toPath) => {
-        try {
-            if (!fs.existsSync(fromPath) || fs.existsSync(toPath)) return;
-            fs.mkdirSync(path.dirname(toPath), { recursive: true });
-            fs.copyFileSync(fromPath, toPath);
-            Logger.info(`[Bootstrap] Archivo inicial creado: ${toPath}`);
-        } catch (error) {
-            Logger.warn(`[Bootstrap] No se pudo preparar ${toPath}`, error.message);
-        }
-    };
-
-    const envSource = fs.existsSync(path.join(process.resourcesPath, '.env'))
-        ? path.join(process.resourcesPath, '.env')
-        : path.join(process.resourcesPath, '.env.example');
-
-    const configSource = fs.existsSync(path.join(process.resourcesPath, 'config.json'))
-        ? path.join(process.resourcesPath, 'config.json')
-        : path.join(process.resourcesPath, 'config.example.json');
-
-    copyIfMissing(envSource, path.join(userDataDir, '.env'));
-    copyIfMissing(envSource, path.join(exeDir, '.env'));
-    copyIfMissing(configSource, path.join(userDataDir, 'config.json'));
-};
-
-ensurePackagedBootstrapFiles();
 
 // --- CACHE DE SISTEMA ---
 let configCache = null;
@@ -788,7 +817,7 @@ initAudioMixer(io);
 initDiscordRPC(io);
 
 const handleSocketError = (socket, eventName, error, ack) => {
-    errorLog(`[Error] Socket [${eventName}]:`, error);
+    Logger.error(`Socket [${eventName}]`, error);
     emitErrorToFrontend(socket, eventName, error);
     if (typeof ack === 'function') ack({ ok: false, message: getErrorMessage(error) });
 };

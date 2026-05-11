@@ -3,6 +3,7 @@ const os = require('os');
 const fs = require('fs');
 const { app, Tray, Menu, shell, nativeImage, dialog, BrowserWindow, ipcMain } = require('electron');
 const { getDataPath } = require('./backend/utils/utils');
+const Logger = require('./backend/core/logger/logger');
 const { loadAllEnvs, validateEnvContract } = require('./backend/core/config/bootstrap');
 
 loadAllEnvs({ electronApp: app, source: 'main' });
@@ -223,7 +224,7 @@ app.whenReady().then(async () => {
                 setTimeout(processNextPrompt, 300);
             });
         } catch (error) {
-            console.error('[Prompt] Error al procesar prompt:', error);
+            Logger.error('[Prompt] Error al procesar prompt', error);
             resolve(null);
             isProcessingPrompt = false;
             processNextPrompt();
@@ -231,48 +232,60 @@ app.whenReady().then(async () => {
     };
 
     global.showTerminal = (title) => {
-        const terminalId = `terminal-${nextTerminalId++}`;
+        try {
+            Logger.info(`[showTerminal] Solicitando abrir ventana para: ${title}`);
+            const terminalId = `terminal-${nextTerminalId++}`;
 
-        const terminalWindow = new BrowserWindow({
-            width: 920,
-            height: 700,
-            frame: false,
-            transparent: true,
-            alwaysOnTop: true,
-            skipTaskbar: false,
-            center: true,
-            resizable: true,
-            movable: true,
-            webPreferences: {
-                preload: getDataPath('frontend/preload_terminal.js'),
-                nodeIntegration: false,
-                contextIsolation: true
-            }
-        });
+            const preloadPath = getDataPath('frontend/preload_terminal.js');
+            const htmlPath = getDataPath('frontend/terminal.html');
+            Logger.info(`[showTerminal] Preload: ${preloadPath} | HTML: ${htmlPath}`);
 
-        const terminalState = {
-            window: terminalWindow,
-            ready: false,
-            queue: []
-        };
+            const terminalWindow = new BrowserWindow({
+                width: 920,
+                height: 700,
+                frame: false,
+                transparent: true,
+                alwaysOnTop: true,
+                skipTaskbar: false,
+                center: true,
+                resizable: true,
+                movable: true,
+                webPreferences: {
+                    preload: preloadPath,
+                    nodeIntegration: false,
+                    contextIsolation: true
+                }
+            });
 
-        terminalWindows.set(terminalId, terminalState);
+            const terminalState = {
+                window: terminalWindow,
+                ready: false,
+                queue: []
+            };
 
-        terminalWindow.loadFile(getDataPath('frontend/terminal.html'));
+            terminalWindows.set(terminalId, terminalState);
 
-        terminalWindow.once('ready-to-show', () => {
-            terminalState.ready = true;
-            terminalWindow.show();
-            terminalWindow.webContents.send('terminal-setup', { id: terminalId, title });
-            terminalState.queue.forEach((text) => terminalWindow.webContents.send('terminal-log', text));
-            terminalState.queue = [];
-        });
+            terminalWindow.loadFile(htmlPath);
 
-        terminalWindow.on('closed', () => {
-            terminalWindows.delete(terminalId);
-        });
+            terminalWindow.once('ready-to-show', () => {
+                Logger.info(`[showTerminal] Ventana lista para mostrar: ${terminalId}`);
+                terminalState.ready = true;
+                terminalWindow.show();
+                terminalWindow.webContents.send('terminal-setup', { id: terminalId, title });
+                terminalState.queue.forEach((text) => terminalWindow.webContents.send('terminal-log', text));
+                terminalState.queue = [];
+            });
 
-        return terminalId;
+            terminalWindow.on('closed', () => {
+                Logger.info(`[showTerminal] Ventana cerrada: ${terminalId}`);
+                terminalWindows.delete(terminalId);
+            });
+
+            return terminalId;
+        } catch (error) {
+            Logger.error(`[showTerminal] Error crítico abriendo terminal: ${error.message}`, error);
+            return null;
+        }
     };
 
     global.appendTerminalLog = (terminalId, text) => {

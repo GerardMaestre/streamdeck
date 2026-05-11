@@ -19,6 +19,7 @@ export class AutoClickerModule {
             x: 0, y: 0,
             interval: 100,
             clickType: 'left',
+            clickMode: 'click', // 'click' | 'hold'
             monitorIndex: 0,
             totalClicks: 0,
             monitors: []
@@ -116,12 +117,20 @@ export class AutoClickerModule {
                     <span>⚙️</span> Configuración
                 </div>
 
-                <div class="ac-setting-row">
+                <div class="ac-setting-row" id="ac-interval-row" style="${s.clickMode === 'hold' ? 'display:none;' : ''}">
                     <label class="ac-setting-label">Intervalo (ms)</label>
                     <div class="ac-setting-control">
                         <input type="range" id="ac-interval" class="ac-range"
                                min="10" max="2000" step="10" value="${s.interval}">
                         <span class="ac-range-value" id="ac-interval-val">${s.interval}ms</span>
+                    </div>
+                </div>
+
+                <div class="ac-setting-row">
+                    <label class="ac-setting-label">Modo</label>
+                    <div class="ac-toggle-group" id="ac-click-mode">
+                        <button class="ac-toggle ${s.clickMode === 'click' ? 'active' : ''}" data-value="click">Repetir</button>
+                        <button class="ac-toggle ${s.clickMode === 'hold' ? 'active' : ''}" data-value="hold">Mantener</button>
                     </div>
                 </div>
 
@@ -165,6 +174,7 @@ export class AutoClickerModule {
         const pickBtn = document.getElementById('ac-btn-pick');
         const toggleBtn = document.getElementById('ac-btn-toggle');
         const intervalSlider = document.getElementById('ac-interval');
+        const clickModeGroup = document.getElementById('ac-click-mode');
         const clickTypeGroup = document.getElementById('ac-click-type');
         const monitorSelect = document.getElementById('ac-monitor');
 
@@ -191,6 +201,25 @@ export class AutoClickerModule {
                 this.state.interval = val;
                 this._sendConfigDebounced();
             }, { signal });
+        }
+
+        if (clickModeGroup) {
+            clickModeGroup.querySelectorAll('.ac-toggle').forEach(btn => {
+                btn.addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    clickModeGroup.querySelectorAll('.ac-toggle').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    this.state.clickMode = btn.dataset.value;
+                    
+                    // Activar o desactivar fila de intervalo
+                    const intervalRow = document.getElementById('ac-interval-row');
+                    if (intervalRow) {
+                        intervalRow.style.display = this.state.clickMode === 'hold' ? 'none' : 'flex';
+                    }
+
+                    this._sendConfigDebounced();
+                }, { signal });
+            });
         }
 
         if (clickTypeGroup) {
@@ -236,6 +265,7 @@ export class AutoClickerModule {
             y: this.state.y,
             interval: this.state.interval,
             clickType: this.state.clickType,
+            clickMode: this.state.clickMode,
             monitorIndex: this.state.monitorIndex
         });
     }
@@ -262,11 +292,30 @@ export class AutoClickerModule {
             pickBtn.classList.remove('ac-btn-waiting');
         }
 
-        // Interval
+        // Interval & Mode specific visual states
+        const intervalRow = document.getElementById('ac-interval-row');
+        if (intervalRow) {
+            intervalRow.style.display = s.clickMode === 'hold' ? 'none' : 'flex';
+        }
+
         const slider = document.getElementById('ac-interval');
         const sliderVal = document.getElementById('ac-interval-val');
         if (slider && !document.activeElement?.isSameNode(slider)) slider.value = s.interval;
         if (sliderVal) sliderVal.textContent = s.interval + 'ms';
+        
+        const modeGroup = document.getElementById('ac-click-mode');
+        if (modeGroup) {
+            modeGroup.querySelectorAll('.ac-toggle').forEach(b => {
+                b.classList.toggle('active', b.dataset.value === s.clickMode);
+            });
+        }
+        
+        const typeGroup = document.getElementById('ac-click-type');
+        if (typeGroup) {
+            typeGroup.querySelectorAll('.ac-toggle').forEach(b => {
+                b.classList.toggle('active', b.dataset.value === s.clickType);
+            });
+        }
 
         // Clicks counter
         const clicksVal = document.getElementById('ac-clicks-val');

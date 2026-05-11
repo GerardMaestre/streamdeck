@@ -9,6 +9,7 @@ const {
     parseShellArgs
 } = require('../utils/utils');
 const { withTimeout, retryWithBackoff, circuitState } = require('../utils/resilience');
+const Logger = require('../core/logger/logger');
 
 const baseScriptsPath = getDataPath('scripts');
 const ALLOWED_DYNAMIC_SCRIPT_FOLDERS = new Set([
@@ -20,11 +21,11 @@ const ALLOWED_DYNAMIC_SCRIPT_FOLDERS = new Set([
     '07_Personalizacion'
 ]);
 const DYNAMIC_SCRIPT_SUPPORT = Object.freeze({
-    '.py': { bin: 'python', resolveArgs: (absolutePath, parsedArgs) => [absolutePath, ...parsedArgs] },
-    '.bat': { bin: 'cmd.exe', resolveArgs: (absolutePath, parsedArgs) => ['/c', absolutePath, ...parsedArgs] },
-    '.cmd': { bin: 'cmd.exe', resolveArgs: (absolutePath, parsedArgs) => ['/c', absolutePath, ...parsedArgs] },
-    '.ps1': { bin: 'powershell', resolveArgs: (absolutePath, parsedArgs) => ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', absolutePath, ...parsedArgs] },
-    '.sh': { bin: 'bash', resolveArgs: (absolutePath, parsedArgs) => [absolutePath, ...parsedArgs] }
+    '.py': { bin: 'python', resolveArgs: (absolutePath, parsedArgs) => [`"${absolutePath}"`, ...parsedArgs] },
+    '.bat': { bin: 'cmd.exe', resolveArgs: (absolutePath, parsedArgs) => ['/c', `"${absolutePath}"`, ...parsedArgs] },
+    '.cmd': { bin: 'cmd.exe', resolveArgs: (absolutePath, parsedArgs) => ['/c', `"${absolutePath}"`, ...parsedArgs] },
+    '.ps1': { bin: 'powershell', resolveArgs: (absolutePath, parsedArgs) => ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', `"${absolutePath}"`, ...parsedArgs] },
+    '.sh': { bin: 'bash', resolveArgs: (absolutePath, parsedArgs) => [`"${absolutePath}"`, ...parsedArgs] }
 });
 const ALLOWED_DYNAMIC_SCRIPT_EXTENSIONS = new Set(Object.keys(DYNAMIC_SCRIPT_SUPPORT));
 const MAX_ARGS_COUNT = 16;
@@ -128,8 +129,12 @@ const applyScriptResultToCircuit = (circuit, code) => {
 
 const runScriptExternally = async (scriptLabel, absolutePath, args) => {
     let terminalId = null;
-    if (global.showTerminal) {
-        terminalId = global.showTerminal(path.basename(absolutePath));
+    try {
+        if (global.showTerminal) {
+            terminalId = global.showTerminal(path.basename(absolutePath));
+        }
+    } catch (err) {
+        Logger.error(`[Script] Error al mostrar terminal para ${scriptLabel}: ${err.message}`, err);
     }
 
     try {
@@ -138,7 +143,7 @@ const runScriptExternally = async (scriptLabel, absolutePath, args) => {
         if (global.appendTerminalLog) {
             global.appendTerminalLog(terminalId, `$ Ejecutando: ${command.bin} ${command.args.join(' ')}\n\n`);
         }
-        console.log(`[Script] Spawning: ${command.bin} ${command.args.join(' ')} (Shell: ${command.bin === 'cmd.exe'})`);
+        Logger.info(`[Script] Spawning: ${command.bin} ${command.args.join(' ')} (Shell: true)`, { bin: command.bin, args: command.args });
         
         const child = await retryWithBackoff(async () => withTimeout(() => Promise.resolve(spawn(command.bin, command.args, {
             detached: false,
@@ -147,8 +152,10 @@ const runScriptExternally = async (scriptLabel, absolutePath, args) => {
             cwd: path.dirname(absolutePath),
             stdio: ['ignore', 'pipe', 'pipe']
         })), 3000, { reasonCode: 'SCRIPT_SPAWN_TIMEOUT' }), { retries: 1, initialDelayMs: 100, shouldRetry: (e) => e?.code === 'SCRIPT_SPAWN_TIMEOUT' });
+        
         let timeoutHandle = null;
         RUNNING_SCRIPTS.add(child);
+        Logger.info(`[Script] Spawneado con éxito PID: ${child.pid}`);
 
         timeoutHandle = setTimeout(() => {
             if (!child.killed) {
@@ -156,22 +163,27 @@ const runScriptExternally = async (scriptLabel, absolutePath, args) => {
                 if (global.appendTerminalLog) {
                     global.appendTerminalLog(terminalId, `\n[TIMEOUT] Script finalizado tras exceder ${SCRIPT_MAX_RUNTIME_MS / 1000}s.\n`);
                 }
+                Logger.warn(`[Script] Timeout de ejecución excedido para ${scriptLabel}`);
             }
         }, SCRIPT_MAX_RUNTIME_MS);
         if (typeof timeoutHandle.unref === 'function') timeoutHandle.unref();
 
         child.stdout.on('data', (data) => {
-            if (global.appendTerminalLog) global.appendTerminalLog(terminalId, data.toString());
+            const outStr = data.toString();
+            if (global.appendTerminalLog) global.appendTerminalLog(terminalId, outStr);
         });
 
         child.stderr.on('data', (data) => {
-            if (global.appendTerminalLog) global.appendTerminalLog(terminalId, `[ERROR] ${data.toString()}`);
+            const errStr = data.toString();
+            if (global.appendTerminalLog) global.appendTerminalLog(terminalId, `[ERROR] ${errStr}`);
+            Logger.warn(`[Script STDERR] ${scriptLabel}: ${errStr}`);
         });
 
         child.on('close', (code) => {
             if (timeoutHandle) clearTimeout(timeoutHandle);
             RUNNING_SCRIPTS.delete(child);
             applyScriptResultToCircuit(scriptCircuit, code);
+            Logger.info(`[Script] Cerrado con código: ${code}`);
             if (global.appendTerminalLog) {
                 const estado = code === 0 ? 'Exito' : 'Error';
                 global.appendTerminalLog(terminalId, `\n--- [Proceso terminado con código ${code} (${estado})] ---\n`);
@@ -182,10 +194,12 @@ const runScriptExternally = async (scriptLabel, absolutePath, args) => {
             if (timeoutHandle) clearTimeout(timeoutHandle);
             RUNNING_SCRIPTS.delete(child);
             scriptCircuit.recordFailure();
+            Logger.error(`[Script Process Error] ${scriptLabel}`, error);
             if (global.appendTerminalLog) global.appendTerminalLog(terminalId, `\n[FALLO FATAL]: ${error.message}\n`);
             logControllerError(`script:${scriptLabel}`, error);
         });
     } catch (error) {
+        Logger.error(`[Script Exception] ${scriptLabel}`, error);
         if (global.appendTerminalLog) global.appendTerminalLog(terminalId, `\n[ERROR INESPERADO]: ${error.message}\n`);
         logControllerError(`script:${scriptLabel}`, error);
     }
@@ -257,7 +271,7 @@ const resolveSafeScriptPath = (carpeta, archivo) => {
 
 const ejecutarScriptDinamico = async (payload, socket) => {
     try {
-        console.log(`[Script] Solicitud ejecución: ${payload?.carpeta}/${payload?.archivo}`, payload?.args);
+        Logger.info(`[Script] Solicitud ejecución: ${payload?.carpeta}/${payload?.archivo}`, payload?.args);
         const { carpeta: folder, archivo: file, args: parsedArgs } = validateDynamicPayload(payload);
         const absolutePath = resolveSafeScriptPath(folder, file);
 
@@ -266,10 +280,10 @@ const ejecutarScriptDinamico = async (payload, socket) => {
         }
 
         await ensureFileExists(absolutePath);
-        console.log(`[Script] Archivo verificado, iniciando ejecución externa...`);
+        Logger.info(`[Script] Archivo verificado, iniciando ejecución externa...`, { path: absolutePath });
         await runScriptExternally(`${folder}/${file}`, absolutePath, parsedArgs);
     } catch (error) {
-        console.error(`[Script] Error ejecutando ${payload?.archivo}: ${error.message}`);
+        Logger.error(`[Script] Error ejecutando ${payload?.archivo}: ${error.message}`, error);
         logControllerError('script:dinamico', error);
     }
 };

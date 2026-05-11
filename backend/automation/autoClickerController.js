@@ -14,55 +14,71 @@ let clickerState = {
     y: 0,
     interval: 100,         // ms between clicks
     clickType: 'left',     // 'left' | 'right'
+    clickMode: 'click',    // 'click' | 'hold'
     monitorIndex: 0,       // restrict to this display
     totalClicks: 0
 };
 let globalIo = null;
 let clickCountInterval = null;
 
-// ── PS1 template that runs the click loop inside a single PowerShell process ──
-function buildPSScript(x, y, interval, clickType, monitorBounds) {
+// Helper one-shot force up (libera el mouse para garantizar que no quede atascado)
+function forceMouseUp(clickType) {
+    const upFlag = clickType === 'right' ? 0x0010 : 0x0004; // RIGHTUP : LEFTUP
+    const psCmd = `Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class WinAPI {[DllImport("user32.dll")]public static extern void mouse_event(uint f,int x,int y,uint d,UIntPtr e);}
+"@
+[WinAPI]::mouse_event(${upFlag},0,0,0,[UIntPtr]::Zero)`;
+    
+    spawn('powershell', ['-NoProfile', '-NonInteractive', '-Command', psCmd], { 
+        detached: true, 
+        windowsHide: true, 
+        stdio: 'ignore' 
+    }).unref();
+}
+
+// ── PS1 template que soporta tanto click repetitivo como mantener presionado ──
+// Usa System.Windows.Forms.Cursor para manejo automático de DPI y píxeles virtuales
+function buildPSScript(x, y, interval, clickType, mode) {
     const downFlag = clickType === 'right' ? 0x0008 : 0x0002; // RIGHTDOWN : LEFTDOWN
     const upFlag   = clickType === 'right' ? 0x0010 : 0x0004; // RIGHTUP : LEFTUP
 
     return `
+Add-Type -AssemblyName System.Windows.Forms
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
-public class AC {
-    [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
-    [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
+public class WinAPI {
     [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, UIntPtr dwExtraInfo);
-    [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
-
-    // Función consolidada para minimizar el tiempo que el cursor está fuera de su sitio
-    public static void ClickAt(int x, int y, uint down, uint up) {
-        POINT p;
-        if (GetCursorPos(out p)) {
-            SetCursorPos(x, y);
-            mouse_event(down, 0, 0, 0, UIntPtr.Zero);
-            mouse_event(up, 0, 0, 0, UIntPtr.Zero);
-            SetCursorPos(p.X, p.Y);
-        }
-    }
 }
 "@
 
-$targetX = ${x}
-$targetY = ${y}
-$interval = ${interval}
-$down = [uint32]${downFlag}
-$up = [uint32]${upFlag}
+$tX = ${x}
+$tY = ${y}
+$d = [uint32]${downFlag}
+$u = [uint32]${upFlag}
+$mode = "${mode}"
+$int = ${interval}
 $clicks = 0
 
-while ($true) {
-    # Ejecutar el click ultrarrápido
-    [AC]::ClickAt($targetX, $targetY, $down, $up)
-    
-    $clicks++
-    if ($clicks % 50 -eq 0) { Write-Output "CLICKS:$clicks" }
-
-    Start-Sleep -Milliseconds $interval
+if ($mode -eq "hold") {
+    [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point($tX, $tY)
+    [WinAPI]::mouse_event($d, 0, 0, 0, [UIntPtr]::Zero)
+    Write-Output "HOLDING"
+    while ($true) { Start-Sleep -Seconds 1 }
+} else {
+    while ($true) {
+        $orig = [System.Windows.Forms.Cursor]::Position
+        [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point($tX, $tY)
+        [WinAPI]::mouse_event($d, 0, 0, 0, [UIntPtr]::Zero)
+        [WinAPI]::mouse_event($u, 0, 0, 0, [UIntPtr]::Zero)
+        [System.Windows.Forms.Cursor]::Position = $orig
+        
+        $clicks++
+        if ($clicks % 50 -eq 0) { Write-Output "CLICKS:$clicks" }
+        Start-Sleep -Milliseconds $int
+    }
 }
 `;
 }
@@ -142,19 +158,26 @@ function startClicker(io) {
         clickerState.x, clickerState.y,
         clickerState.interval,
         clickerState.clickType,
-        bounds
+        clickerState.clickMode
     );
 
     clickerState.running = true;
     clickerState.totalClicks = 0;
 
+    // Lanzamos PowerShell y alimentamos el script vía Stdin para evitar límites de longitud de comandos/encoding
     clickerProcess = spawn('powershell', [
-        '-NoProfile', '-NoLogo', '-ExecutionPolicy', 'Bypass',
-        '-Command', script
-    ], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+        '-NoProfile', '-NoLogo', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+        '-Command', '-'
+    ], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+
+    clickerProcess.stdin.write(script);
+    clickerProcess.stdin.end();
 
     clickerProcess.stdout.on('data', (data) => {
         const text = data.toString().trim();
+        if (text.includes("HOLDING")) {
+            console.log(`[AutoClicker] MANTENIENDO botón ${clickerState.clickType} presionado.`);
+        }
         const match = text.match(/CLICKS:(\d+)/);
         if (match) {
             clickerState.totalClicks = parseInt(match[1], 10);
@@ -185,18 +208,25 @@ function startClicker(io) {
 }
 
 function stopClicker(io) {
+    const lastType = clickerState.clickType; // guardamos para asegurar liberación correcta
+    
     if (clickerProcess) {
         try { clickerProcess.kill('SIGTERM'); } catch (_) {}
         try { clickerProcess.kill('SIGKILL'); } catch (_) {}
         clickerProcess = null;
     }
+    
+    // GARANTÍA TOTAL: lanzamos un evento de "soltar" independiente
+    // Esto asegura que incluso si el proceso fue asesinado a la fuerza, el ratón no quede bloqueado abajo.
+    forceMouseUp(lastType);
+
     if (clickCountInterval) {
         clearInterval(clickCountInterval);
         clickCountInterval = null;
     }
     clickerState.running = false;
     if (io) io.emit('autoclicker_state', getPublicState());
-    console.log('[AutoClicker] Detenido.');
+    console.log('[AutoClicker] Detenido y liberado.');
 }
 
 function getPublicState() {
@@ -209,6 +239,7 @@ function getPublicState() {
         y: clickerState.y,
         interval: clickerState.interval,
         clickType: clickerState.clickType,
+        clickMode: clickerState.clickMode,
         monitorIndex: clickerState.monitorIndex,
         totalClicks: clickerState.totalClicks,
         monitors: getMonitors()
@@ -228,6 +259,7 @@ function handleAutoClickerSocket(socket, io) {
         if (Number.isFinite(config.y)) clickerState.y = Math.round(config.y);
         if (Number.isFinite(config.interval)) clickerState.interval = Math.max(10, Math.min(5000, config.interval));
         if (config.clickType === 'left' || config.clickType === 'right') clickerState.clickType = config.clickType;
+        if (config.clickMode === 'click' || config.clickMode === 'hold') clickerState.clickMode = config.clickMode;
         if (Number.isFinite(config.monitorIndex)) clickerState.monitorIndex = config.monitorIndex;
 
         io.emit('autoclicker_state', getPublicState());
