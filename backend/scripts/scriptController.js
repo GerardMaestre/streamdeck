@@ -21,11 +21,11 @@ const ALLOWED_DYNAMIC_SCRIPT_FOLDERS = new Set([
     '07_Personalizacion'
 ]);
 const DYNAMIC_SCRIPT_SUPPORT = Object.freeze({
-    '.py': { bin: 'python', resolveArgs: (absolutePath, parsedArgs) => [`"${absolutePath}"`, ...parsedArgs] },
-    '.bat': { bin: 'cmd.exe', resolveArgs: (absolutePath, parsedArgs) => ['/c', `"${absolutePath}"`, ...parsedArgs] },
-    '.cmd': { bin: 'cmd.exe', resolveArgs: (absolutePath, parsedArgs) => ['/c', `"${absolutePath}"`, ...parsedArgs] },
-    '.ps1': { bin: 'powershell', resolveArgs: (absolutePath, parsedArgs) => ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', `"${absolutePath}"`, ...parsedArgs] },
-    '.sh': { bin: 'bash', resolveArgs: (absolutePath, parsedArgs) => [`"${absolutePath}"`, ...parsedArgs] }
+    '.py': { bin: 'python', resolveArgs: (absolutePath, parsedArgs) => [absolutePath, ...parsedArgs] },
+    '.bat': { bin: 'cmd.exe', resolveArgs: (absolutePath, parsedArgs) => ['/c', absolutePath, ...parsedArgs] },
+    '.cmd': { bin: 'cmd.exe', resolveArgs: (absolutePath, parsedArgs) => ['/c', absolutePath, ...parsedArgs] },
+    '.ps1': { bin: 'powershell', resolveArgs: (absolutePath, parsedArgs) => ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', absolutePath, ...parsedArgs] },
+    '.sh': { bin: 'bash', resolveArgs: (absolutePath, parsedArgs) => [absolutePath, ...parsedArgs] }
 });
 const ALLOWED_DYNAMIC_SCRIPT_EXTENSIONS = new Set(Object.keys(DYNAMIC_SCRIPT_SUPPORT));
 const MAX_ARGS_COUNT = 16;
@@ -143,12 +143,12 @@ const runScriptExternally = async (scriptLabel, absolutePath, args) => {
         if (global.appendTerminalLog) {
             global.appendTerminalLog(terminalId, `$ Ejecutando: ${command.bin} ${command.args.join(' ')}\n\n`);
         }
-        Logger.info(`[Script] Spawning: ${command.bin} ${command.args.join(' ')} (Shell: true)`, { bin: command.bin, args: command.args });
+        Logger.info(`[Script] Spawning: ${command.bin} ${command.args.join(' ')} (Shell: false)`, { bin: command.bin, args: command.args });
         
         const child = await retryWithBackoff(async () => withTimeout(() => Promise.resolve(spawn(command.bin, command.args, {
             detached: false,
             windowsHide: true,
-            shell: true,
+            shell: false,
             cwd: path.dirname(absolutePath),
             stdio: ['ignore', 'pipe', 'pipe']
         })), 3000, { reasonCode: 'SCRIPT_SPAWN_TIMEOUT' }), { retries: 1, initialDelayMs: 100, shouldRetry: (e) => e?.code === 'SCRIPT_SPAWN_TIMEOUT' });
@@ -293,7 +293,10 @@ module.exports = {
     listarScripts,
     stopAllRunningScripts,
     __test__: {
-        applyScriptResultToCircuit
+        applyScriptResultToCircuit,
+        buildExecutionCommand,
+        validateDynamicPayload,
+        runScriptExternally
     }
 };
 
