@@ -692,6 +692,17 @@ app.get('/api/security/status', (req, res) => {
 app.post('/api/security/token', (req, res) => {
     if (!isLocalAddress(req.ip)) return res.status(403).json({ error: 'Acceso denegado' });
     if (envSecurityToken) return res.status(409).json({ error: 'SECURITY_TOKEN está fijado por entorno.' });
+
+    const sanitizedBody = Logger.sanitizeLogData({
+        token: req.body?.token,
+        length: typeof req.body?.token === 'string' ? req.body.token.length : 0
+    });
+    Logger.info('[Seguridad] Solicitud de actualización de token recibida', {
+        ip: req.ip,
+        correlationId: req.correlationId,
+        body: sanitizedBody
+    });
+
     const token = normalizeAuthToken(req.body?.token);
     if (!token || token.length < 12) return res.status(400).json({ error: 'Mínimo 12 caracteres.' });
     if (!saveTokenToFile(token)) return res.status(500).json({ error: 'No se pudo guardar.' });
@@ -803,12 +814,20 @@ app.get('/api/app-state', async (req, res) => {
 app.post('/api/app-state', async (req, res) => {
     if (!ensureAuthorizedRequest(req, res)) return;
     try {
+        /**
+         * Contrato de merge para consumidores:
+         * - payload.ui y payload.persistedMixer deben ser objetos planos (no null, no arrays).
+         * - Si no cumplen, el endpoint responde 400 y no persiste cambios parciales.
+         */
         const payload = req.body;
         if (payload.ui) appStateStore.merge('ui', payload.ui);
         if (payload.persistedMixer) appStateStore.merge('persistedMixer', payload.persistedMixer);
         appStateStore.set('updatedAt', Date.now());
         return res.json({ ok: true, correlationId: req.correlationId });
     } catch (err) {
+        if (err instanceof TypeError) {
+            return res.status(400).json({ error: err.message });
+        }
         return res.status(500).json({ error: 'Error' });
     }
 });

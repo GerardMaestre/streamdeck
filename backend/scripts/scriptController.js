@@ -296,7 +296,9 @@ module.exports = {
         applyScriptResultToCircuit,
         buildExecutionCommand,
         validateDynamicPayload,
-        runScriptExternally
+        runScriptExternally,
+        getDynamicScriptRuntime
+
     }
 };
 
@@ -322,7 +324,7 @@ async function listarScripts() {
                 const archivos = await Promise.all(files.map(async (f) => {
                     if (!f.isFile()) return null;
                     const ext = path.extname(f.name).toLowerCase();
-                    if (!['.py', '.bat', '.js', '.ps1', '.sh'].includes(ext)) return null;
+                    if (!ALLOWED_DYNAMIC_SCRIPT_EXTENSIONS.has(ext)) return null;
 
                     const absoluteFilePath = path.join(folderPath, f.name);
                     let description = '';

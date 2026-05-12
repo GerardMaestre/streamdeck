@@ -3,7 +3,9 @@ const assert = require('node:assert/strict');
 
 const { circuitState } = require('../backend/utils/resilience');
 const { __test__ } = require('../backend/scripts/scriptController');
-const { applyScriptResultToCircuit, buildExecutionCommand, validateDynamicPayload } = __test__;
+const { applyScriptResultToCircuit, buildExecutionCommand, validateDynamicPayload, getDynamicScriptRuntime } = __test__;
+const { listarScripts } = require('../backend/scripts/scriptController');
+
 
 test('applyScriptResultToCircuit registra success cuando code=0', () => {
     const circuit = circuitState({ failureThreshold: 2, cooldownMs: 1000 });
@@ -71,5 +73,16 @@ test('runScriptExternally usa spawn sin shell implícita', async () => {
     } finally {
         delete require.cache[require.resolve('../backend/scripts/scriptController')];
         childProcess.spawn = originalSpawn;
+    }
+});
+
+test('listarScripts solo devuelve archivos ejecutables por getDynamicScriptRuntime', async () => {
+    const scriptsByFolder = await listarScripts();
+
+    for (const folderData of Object.values(scriptsByFolder)) {
+        for (const fileData of folderData.archivos) {
+            const runtime = getDynamicScriptRuntime(fileData.archivo);
+            assert.ok(runtime, `El archivo listado no es ejecutable: ${fileData.archivo}`);
+        }
     }
 });
