@@ -25,8 +25,10 @@ const DYNAMIC_SCRIPT_SUPPORT = Object.freeze({
     '.bat': { bin: 'cmd.exe', resolveArgs: (absolutePath, parsedArgs) => ['/c', absolutePath, ...parsedArgs] },
     '.cmd': { bin: 'cmd.exe', resolveArgs: (absolutePath, parsedArgs) => ['/c', absolutePath, ...parsedArgs] },
     '.ps1': { bin: 'powershell', resolveArgs: (absolutePath, parsedArgs) => ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', absolutePath, ...parsedArgs] },
-    '.sh': { bin: 'bash', resolveArgs: (absolutePath, parsedArgs) => [absolutePath, ...parsedArgs] }
+    '.sh': { bin: 'bash', resolveArgs: (absolutePath, parsedArgs) => [absolutePath, ...parsedArgs] },
+    '.js': { bin: 'node', resolveArgs: (absolutePath, parsedArgs) => [absolutePath, ...parsedArgs] }
 });
+
 const ALLOWED_DYNAMIC_SCRIPT_EXTENSIONS = new Set(Object.keys(DYNAMIC_SCRIPT_SUPPORT));
 const MAX_ARGS_COUNT = 16;
 const MAX_ARG_LENGTH = 256;
