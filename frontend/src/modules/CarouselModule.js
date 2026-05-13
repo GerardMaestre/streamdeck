@@ -108,6 +108,13 @@ export class CarouselModule {
 
             const clone = this.container.cloneNode(true);
             clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+            
+            // Ocultamos el footer clonado para que no haya doble render ni parpadeo
+            const cloneFooter = clone.querySelector('.deck-footer');
+            if (cloneFooter) {
+                cloneFooter.style.visibility = 'hidden';
+            }
+
             clone.classList.remove('slide-enter-right', 'slide-enter-left', 'slide-active');
             clone.classList.add('slide-snapshot', direction > 0 ? 'slide-exit-left' : 'slide-exit-right');
 
@@ -139,10 +146,12 @@ export class CarouselModule {
 
         this.container.replaceChildren();
         this.container.className = 'deck-view';
+        
         if (useSlideAnimation) {
-            this.container.classList.add(slideClass);
-            this.container.addEventListener('animationend', () => {
-                this.container.classList.remove(slideClass);
+            // Animamos solo el Grid, manteniendo el Footer totalmente estático (Estilo iOS Premium)
+            cached.grid.classList.add(slideClass);
+            cached.grid.addEventListener('animationend', () => {
+                cached.grid.classList.remove(slideClass);
             }, { once: true });
         }
 

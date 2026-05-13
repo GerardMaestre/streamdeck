@@ -259,9 +259,13 @@ const createSafeSocketHandler = (socket, eventName, handler) => {
     return async (...args) => {
         const ackCandidate = args[args.length - 1];
         const ack = typeof ackCandidate === 'function' ? ackCandidate : null;
+        const payloadArgs = ack ? args.slice(0, -1) : args;
+        const handlerArgs = ack
+            ? (payloadArgs.length ? [...payloadArgs, ack] : [undefined, ack])
+            : payloadArgs;
 
         try {
-            await handler(...args);
+            await handler(...handlerArgs);
         } catch (error) {
             logControllerError(`socket:${eventName}`, error);
             emitErrorToFrontend(socket, eventName, error);

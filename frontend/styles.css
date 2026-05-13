@@ -58,8 +58,9 @@ body.dragging-active {
     -webkit-backface-visibility: hidden;
 }
 
-/* Optimización agresiva durante animaciones (solo snapshot para no degradar toda la UI) */
-body.animating .slide-snapshot * {
+/* Optimización agresiva durante animaciones (tanto snapshot como grid entrante para 60FPS constantes) */
+body.animating .slide-snapshot *,
+body.animating .deck-grid * {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
     filter: none !important;
@@ -120,6 +121,10 @@ body {
     min-height: 100vh;
     box-sizing: border-box;
     transform: var(--gpu-accel);
+}
+
+#deck-container.hidden {
+    display: none !important;
 }
 
 /* Nueva vista principal tipo Stream Deck: 4x4 grid + footer */
@@ -220,7 +225,6 @@ body {
 
 .boton {
     position: relative;
-    border: none;
     border-radius: var(--radius-md);
     font-size: clamp(0.75rem, 1.2vw, 1.15rem);
     font-weight: 600;
@@ -556,15 +560,15 @@ body {
     position: fixed !important;
     top: 20px !important;
     right: 20px !important;
-    width: 150px !important;
-    height: 150px !important;
+    width: 68px !important;
+    height: 68px !important;
     flex: none !important;
     aspect-ratio: 1 / 1 !important;
     border-radius: 50% !important;
     background: rgba(30, 41, 59, 0.88) !important;
-    border: 5px solid rgba(255, 255, 255, 0.3) !important;
+    border: 2px solid rgba(255, 255, 255, 0.3) !important;
     color: white !important;
-    font-size: 5rem !important;
+    font-size: 2.2rem !important;
     display: grid !important;
     place-items: center !important;
     cursor: pointer !important;
@@ -649,35 +653,35 @@ body {
     transition: none; /* desactivamos transition global para controlar manualmente */
 }
 
-.grid-container.slide-enter-right, .deck-view.slide-enter-right {
+.grid-container.slide-enter-right, .deck-view.slide-enter-right, .deck-grid.slide-enter-right {
     animation: slideFromRight 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
     will-change: transform, opacity;
 }
 
 /* Slide entrando desde la izquierda (swipe derecha) */
-.grid-container.slide-enter-left, .deck-view.slide-enter-left {
+.grid-container.slide-enter-left, .deck-view.slide-enter-left, .deck-grid.slide-enter-left {
     animation: slideFromLeft 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
     will-change: transform, opacity;
 }
 
 @keyframes slideFromRight {
     from {
-        transform: translate3d(40px, 0, 0) scale(0.97);
+        transform: translate3d(70px, 0, 0);
         opacity: 0;
     }
     to {
-        transform: translate3d(0, 0, 0) scale(1);
+        transform: translate3d(0, 0, 0);
         opacity: 1;
     }
 }
 
 @keyframes slideFromLeft {
     from {
-        transform: translate3d(-40px, 0, 0) scale(0.97);
+        transform: translate3d(-70px, 0, 0);
         opacity: 0;
     }
     to {
-        transform: translate3d(0, 0, 0) scale(1);
+        transform: translate3d(0, 0, 0);
         opacity: 1;
     }
 }
@@ -706,14 +710,14 @@ body {
 
 @keyframes slideExitLeft {
     to {
-        transform: translate3d(-40px, 0, 0) scale(0.97);
+        transform: translate3d(-70px, 0, 0);
         opacity: 0;
     }
 }
 
 @keyframes slideExitRight {
     to {
-        transform: translate3d(40px, 0, 0) scale(0.97);
+        transform: translate3d(70px, 0, 0);
         opacity: 0;
     }
 }
@@ -740,9 +744,6 @@ body {
     overflow: visible; /* Necesario para que ::after de los dots sobresalga */
 }
 
-#carousel-dots {
-    display: none !important;
-}
 
 #carousel-nav-buttons {
     position: fixed;

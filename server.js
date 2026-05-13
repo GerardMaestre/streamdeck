@@ -340,8 +340,9 @@ const { hacerCaptura } = require('./backend/system/captureController');
 const { ejecutarScriptDinamico, listarScripts, stopAllRunningScripts } = require('./backend/scripts/scriptController');
 const { initDiscordRPC, requestInitialDiscordState, discordToggleMute, discordToggleDeaf, discordSetUserVolume, forceDiscordReconnect } = require('./backend/discord/discordController');
 const { sendTuyaCommand, controlMultipleDevices } = require('./backend/iot/smart_home');
-const { minimizarTodo, cambiarResolucion, apagarPC, reiniciarPC } = require('./backend/system/systemController');
+const { cambiarResolucion, minimizarTodo, apagarPC, reiniciarPC } = require('./backend/system/systemController');
 const { handleAutoClickerSocket } = require('./backend/automation/autoClickerController');
+const { initAudioHost, registerSoundboardSocketHandlers, sendSoundboardAudio } = require('./backend/soundboard/soundboardController');
 
 // --- CACHE DE SISTEMA ---
 let configCache = null;
@@ -760,6 +761,8 @@ app.get('/sw.js', async (req, res) => {
     }
 });
 
+app.get('/audio/:fileName', sendSoundboardAudio);
+
 app.use(express.static(getDataPath('frontend'), {
     etag: true,
     lastModified: true,
@@ -797,8 +800,9 @@ app.post('/api/config', async (req, res) => {
     if (!ensureAuthorizedRequest(req, res)) return;
     try {
         const newConfig = req.body;
-        if (!newConfig || typeof newConfig !== 'object' || !newConfig.pages) return res.status(400).json({ error: 'Payload invalido' });
-        await fs.promises.writeFile(CONFIG_PATH, JSON.stringify(newConfig, null, 4), 'utf8');
+        const payloadError = validateConfigPayload(newConfig);
+        if (payloadError) return res.status(400).json({ error: payloadError });
+        await writeJsonAtomic(CONFIG_PATH, newConfig);
         configCache = newConfig;
         return res.json({ ok: true, correlationId: req.correlationId });
     } catch (err) {
@@ -820,8 +824,13 @@ app.post('/api/app-state', async (req, res) => {
          * - Si no cumplen, el endpoint responde 400 y no persiste cambios parciales.
          */
         const payload = req.body;
+        if (!isPlainObject(payload)) return res.status(400).json({ error: 'Payload invalido' });
+        if (payload.ui !== undefined && !isPlainObject(payload.ui)) return res.status(400).json({ error: 'ui debe ser un objeto' });
+        if (payload.persistedMixer !== undefined && !isPlainObject(payload.persistedMixer)) return res.status(400).json({ error: 'persistedMixer debe ser un objeto' });
+        if (payload.persistedSoundboard !== undefined && !isPlainObject(payload.persistedSoundboard)) return res.status(400).json({ error: 'persistedSoundboard debe ser un objeto' });
         if (payload.ui) appStateStore.merge('ui', payload.ui);
         if (payload.persistedMixer) appStateStore.merge('persistedMixer', payload.persistedMixer);
+        if (payload.persistedSoundboard) appStateStore.merge('persistedSoundboard', payload.persistedSoundboard);
         appStateStore.set('updatedAt', Date.now());
         return res.json({ ok: true, correlationId: req.correlationId });
     } catch (err) {
@@ -834,6 +843,7 @@ app.post('/api/app-state', async (req, res) => {
 
 initAudioMixer(io);
 initDiscordRPC(io);
+initAudioHost(); // Arrancar motor invisible de sonido
 
 const handleSocketError = (socket, eventName, error, ack) => {
     Logger.error(`Socket [${eventName}]`, error);
@@ -911,6 +921,46 @@ const runSafely = async (socket, eventName, action, ack) => {
 };
 
 const getAck = (p, ack) => typeof ack === 'function' ? ack : (typeof p === 'function' ? p : undefined);
+const isPlainObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const writeJsonAtomic = async (filePath, value) => {
+    const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+    await fs.promises.writeFile(tempPath, JSON.stringify(value, null, 4), 'utf8');
+    await fs.promises.rename(tempPath, filePath);
+};
+
+const validateConfigPayload = (config) => {
+    if (!isPlainObject(config)) return 'Payload invalido';
+    if (!isPlainObject(config.pages)) return 'El campo pages debe ser un objeto';
+    if (config.carouselPages !== undefined && !Array.isArray(config.carouselPages)) {
+        return 'El campo carouselPages debe ser un array';
+    }
+    return null;
+};
+
+const validateTuyaPayload = (payload) => {
+    if (!isPlainObject(payload)) return 'Payload Tuya invalido';
+    const hasSingle = typeof payload.deviceId === 'string' && payload.deviceId.trim();
+    const hasMany = Array.isArray(payload.deviceIds) && payload.deviceIds.length > 0
+        && payload.deviceIds.every((id) => typeof id === 'string' && id.trim());
+    if (!hasSingle && !hasMany) return 'Se requiere deviceId o deviceIds';
+    if (typeof payload.code !== 'string' || !payload.code.trim()) return 'Se requiere code';
+    return null;
+};
+
+const validateResolutionPayload = (payload) => {
+    if (!isPlainObject(payload)) return 'Payload de resolucion invalido';
+    const width = Number(payload.width);
+    const height = Number(payload.height);
+    if (!Number.isInteger(width) || !Number.isInteger(height)) return 'Resolucion invalida';
+    return null;
+};
+
+const ackOkWhenDone = (promise, ack, mapper = () => ({ ok: true })) => {
+    promise.then((result) => {
+        if (result !== null && typeof ack === 'function') ack(mapper(result));
+    });
+};
 
 io.on('connection', (socket) => {
     log('[Socket] Conectado');
@@ -923,18 +973,19 @@ io.on('connection', (socket) => {
         if (getMissingEnvKeys(REQUIRED_DISCORD_KEYS).length) return cb && cb({ ok: false });
         runSafely(socket, 'discord_initial_state', () => requestInitialDiscordState(socket), cb);
     });
-    socket.on('abrir', (destino, ack) => runSafely(socket, 'abrir', () => abrirAplicacionOWeb(destino), ack).then(() => typeof ack === 'function' && ack({ ok: true })));
-    socket.on('macro', (tipo, ack) => runSafely(socket, 'macro', () => ejecutarMacro(tipo), ack).then(() => typeof ack === 'function' && ack({ ok: true })));
-    socket.on('multimedia', (accion, ack) => runSafely(socket, 'multimedia', () => controlMultimedia(accion), ack).then(() => typeof ack === 'function' && ack({ ok: true })));
-    socket.on('captura', (pantalla, ack) => runSafely(socket, 'captura', () => hacerCaptura(pantalla), ack).then(() => typeof ack === 'function' && ack({ ok: true })));
+    socket.on('abrir', (destino, ack) => ackOkWhenDone(runSafely(socket, 'abrir', () => abrirAplicacionOWeb(destino), ack), ack));
+    socket.on('macro', (tipo, ack) => ackOkWhenDone(runSafely(socket, 'macro', () => ejecutarMacro(tipo), ack), ack));
+    socket.on('multimedia', (accion, ack) => ackOkWhenDone(runSafely(socket, 'multimedia', () => controlMultimedia(accion), ack), ack));
+    socket.on('captura', (pantalla, ack) => ackOkWhenDone(runSafely(socket, 'captura', () => hacerCaptura(pantalla), ack), ack));
     
     socket.on('ejecutar_script_dinamico', async (payload, ack) => {
+        if (!isPlainObject(payload)) return typeof ack === 'function' && ack({ ok: false, message: 'Payload de script invalido' });
         if (payload.requiresParams && !payload.args && global.showPCPrompt) {
             const pcArgs = await global.showPCPrompt(payload.archivo || 'Script');
             if (!pcArgs) return typeof ack === 'function' && ack({ ok: false });
             payload.args = pcArgs;
         }
-        runSafely(socket, 'ejecutar_script_dinamico', () => ejecutarScriptDinamico(payload, socket), ack).then(() => typeof ack === 'function' && ack({ ok: true }));
+        ackOkWhenDone(runSafely(socket, 'ejecutar_script_dinamico', () => ejecutarScriptDinamico(payload, socket), ack), ack);
     });
 
     socket.on('discord_toggle_mute', async (p, ack) => {
@@ -960,19 +1011,26 @@ io.on('connection', (socket) => {
 
     socket.on('tuya_command', async (payload, ack) => {
         if (!(await ensureIntegrationCredentials('tuya')).ok) return typeof ack === 'function' && ack({ ok: false });
+        const payloadError = validateTuyaPayload(payload);
+        if (payloadError) return typeof ack === 'function' && ack({ ok: false, message: payloadError });
         const { deviceId, deviceIds, code, value } = payload;
         const result = await runSafely(socket, 'tuya_command', () => deviceIds ? controlMultipleDevices(deviceIds, code, value) : sendTuyaCommand(deviceId, code, value), ack);
         if (typeof ack === 'function') ack({ ok: !!result });
     });
 
-    socket.on('minimizar_todo', (p, ack) => { const cb = getAck(p, ack); runSafely(socket, 'minimizar_todo', () => minimizarTodo(), cb).then(() => cb && cb({ ok: true })); });
-    socket.on('abrir_keep', (p, ack) => { const cb = getAck(p, ack); runSafely(socket, 'abrir_keep', () => abrirAplicacionOWeb('google-keep'), cb).then(() => cb && cb({ ok: true })); });
-    socket.on('abrir_calendario', (p, ack) => { const cb = getAck(p, ack); runSafely(socket, 'abrir_calendario', () => abrirAplicacionOWeb('google-calendar'), cb).then(() => cb && cb({ ok: true })); });
-    socket.on('cambiar_resolucion', (p, ack) => runSafely(socket, 'cambiar_resolucion', () => cambiarResolucion(p.width, p.height), ack).then(res => typeof ack === 'function' && ack(res)));
-    socket.on('apagar_pc', (p, ack) => { const cb = getAck(p, ack); runSafely(socket, 'apagar_pc', () => apagarPC(), cb).then(() => cb && cb({ ok: true })); });
-    socket.on('reiniciar_pc', (p, ack) => { const cb = getAck(p, ack); runSafely(socket, 'reiniciar_pc', () => reiniciarPC(), cb).then(() => cb && cb({ ok: true })); });
+    socket.on('minimizar_todo', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'minimizar_todo', () => minimizarTodo(), cb), cb); });
+    socket.on('abrir_keep', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'abrir_keep', () => abrirAplicacionOWeb('google-keep'), cb), cb); });
+    socket.on('abrir_calendario', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'abrir_calendario', () => abrirAplicacionOWeb('google-calendar'), cb), cb); });
+    socket.on('cambiar_resolucion', (p, ack) => {
+        const payloadError = validateResolutionPayload(p);
+        if (payloadError) return typeof ack === 'function' && ack({ ok: false, error: payloadError });
+        ackOkWhenDone(runSafely(socket, 'cambiar_resolucion', () => cambiarResolucion(p.width, p.height), ack), ack, (res) => res);
+    });
+    socket.on('apagar_pc', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'apagar_pc', () => apagarPC(), cb), cb); });
+    socket.on('reiniciar_pc', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'reiniciar_pc', () => reiniciarPC(), cb), cb); });
     socket.on('ping', (ack) => typeof ack === 'function' && ack());
     handleAutoClickerSocket(socket, io);
+    registerSoundboardSocketHandlers(socket);
 });
 
 let PORT = process.env.PORT ? Number(process.env.PORT) : 3000;

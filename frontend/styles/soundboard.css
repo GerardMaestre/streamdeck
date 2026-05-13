@@ -1,0 +1,298 @@
+/* Panel Contenedor Principal de Soundboard */
+.soundboard-view {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    background: #0f0f11;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Cabecera con controles y configuración */
+.sb-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    background: rgba(20, 20, 25, 0.8);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    z-index: 10;
+}
+
+.sb-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #a855f7, #ec4899);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.sb-controls {
+    display: flex;
+    gap: 12px;
+}
+
+.sb-ctrl-btn {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    color: white;
+    padding: 8px 16px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    min-height: 44px;
+}
+
+.sb-ctrl-btn:active {
+    transform: scale(0.95);
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.sb-ctrl-btn.btn-stop {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #fca5a5;
+}
+
+.sb-ctrl-btn.btn-stop:active {
+    background: rgba(239, 68, 68, 0.3);
+}
+
+/* El Grid de Sonidos */
+.sb-grid-container {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.sb-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 16px;
+    padding-bottom: 30px;
+}
+
+/* Tile de Sonido Individual */
+.sb-tile {
+    aspect-ratio: 1 / 1;
+    background: linear-gradient(145deg, rgba(40,40,50,0.6), rgba(20,20,25,0.8));
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 15px;
+    text-align: center;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.15s, box-shadow 0.2s, border-color 0.2s;
+    user-select: none;
+    -webkit-user-select: none;
+    color: inherit;
+    font: inherit;
+}
+
+.sb-tile:active {
+    transform: scale(0.94);
+    background: linear-gradient(145deg, rgba(60,60,75,0.8), rgba(30,30,35,0.9));
+    border-color: rgba(168, 85, 247, 0.5);
+    box-shadow: 0 0 20px rgba(168, 85, 247, 0.2);
+}
+
+.sb-icon {
+    width: 48px;
+    height: 48px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.6rem;
+    transition: transform 0.2s;
+}
+
+.sb-tile:active .sb-icon {
+    transform: scale(1.1) rotate(5deg);
+    background: rgba(168, 85, 247, 0.2);
+}
+
+.sb-name {
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #e2e8f0;
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.3;
+}
+
+/* Efecto de Ripple de Sonido cuando suena */
+.sb-tile.playing::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 2px solid #a855f7;
+    border-radius: 16px;
+    animation: sb-pulse 1.5s infinite;
+}
+
+@keyframes sb-pulse {
+    0% { transform: scale(1); opacity: 1; }
+    100% { transform: scale(1.05); opacity: 0; }
+}
+
+/* Vista Vacía */
+.sb-empty {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 60%;
+    color: #94a3b8;
+    text-align: center;
+    padding: 20px;
+    line-height: 1.4;
+    min-height: 220px;
+    white-space: pre-line;
+}
+
+.sb-empty-error {
+    color: #fca5a5;
+}
+
+.sb-empty svg {
+    width: 64px;
+    height: 64px;
+    margin-bottom: 15px;
+    opacity: 0.4;
+}
+
+/* Configuración de Salida en Modal */
+.sb-settings-container {
+    padding: 10px 0;
+}
+
+.sb-setting-group {
+    margin-bottom: 20px;
+}
+
+.sb-setting-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #94a3b8;
+    font-size: 0.9rem;
+}
+
+.sb-select {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+    color: white;
+    padding: 12px;
+    font-size: 1rem;
+    outline: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 18px;
+}
+
+.sb-hint {
+    margin-top: 12px;
+    font-size: 0.85rem;
+    color: #a855f7;
+    background: rgba(168, 85, 247, 0.1);
+    padding: 10px;
+    border-radius: 8px;
+    line-height: 1.4;
+}
+
+.sb-settings-panel {
+    max-width: 450px;
+}
+
+.sb-settings-footer {
+    margin-top: 20px;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.sb-primary {
+    background: #a855f7;
+    border: none;
+    color: white;
+}
+
+.sb-primary:disabled,
+.sb-select:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+@media (max-width: 680px) {
+    .sb-header {
+        padding: 12px;
+        gap: 10px;
+    }
+
+    .sb-header h2 {
+        font-size: 1.15rem;
+    }
+
+    .sb-controls {
+        gap: 8px;
+    }
+
+    .sb-ctrl-btn {
+        padding: 8px 10px;
+        font-size: 0.85rem;
+        border-radius: 10px;
+    }
+
+    .sb-grid-container {
+        padding: 14px;
+    }
+
+    .sb-grid {
+        grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+        gap: 12px;
+    }
+
+    .sb-tile {
+        border-radius: 12px;
+        padding: 10px;
+        gap: 8px;
+    }
+
+    .sb-icon {
+        width: 40px;
+        height: 40px;
+        font-size: 1.35rem;
+    }
+
+    .sb-name {
+        font-size: 0.82rem;
+    }
+}

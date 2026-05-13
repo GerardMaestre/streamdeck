@@ -47,6 +47,7 @@ export function getButtonHelpText(btnData) {
     if (btnData.type === 'mixer') return 'Abre los controles de audio y volumen del mezclador.';
     if (btnData.type === 'discord_panel') return 'Abre el panel de Discord para gestionar mute y volumen.';
     if (btnData.type === 'domotica_panel') return 'Abre el panel de domótica para controlar tus dispositivos.';
+    if (btnData.type === 'soundboard_panel') return 'Abre el soundboard integrado para lanzar sonidos y memes.';
 
     if (btnData.type === 'action') {
         const action = btnData.action || btnData.channel;
@@ -96,7 +97,7 @@ export function createButton(btnData, index, buttonStateMap, skipAnimation = fal
 
     const iconEl = document.createElement('div');
     iconEl.className = 'button-icon';
-    iconEl.innerHTML = btnData.icon || '';
+    iconEl.textContent = btnData.icon || '';
 
     const labelEl = document.createElement('div');
     labelEl.className = 'button-label';
@@ -122,7 +123,10 @@ export function createBackButton(index, onBack, buttonStateMap) {
     const backBtn = document.createElement('button');
     backBtn.className = 'boton btn-streamdeck btn-back-gradient';
     backBtn.style.animationDelay = `${index * 0.05}s`;
-    backBtn.innerHTML = '<span class="icon">⬅️</span>Volver';
+    const icon = document.createElement('span');
+    icon.className = 'icon';
+    icon.textContent = '←';
+    backBtn.append(icon, document.createTextNode('Volver'));
 
     // Lo registramos en el mapa de estados para que StreamDeckApp lo reconozca
     buttonStateMap.set(backBtn, {
@@ -146,7 +150,9 @@ export function createPanelBackButton(onClick) {
     backBtn.id = 'panel-back-button';
     // Usamos ambas clases para asegurar compatibilidad con estilos locales y globales
     backBtn.className = 'panel-back-btn-sketch-circle back-btn-sketch-circle';
-    backBtn.innerHTML = '<span>←</span>';
+    const icon = document.createElement('span');
+    icon.textContent = '←';
+    backBtn.appendChild(icon);
 
     backBtn.addEventListener('pointerdown', () => {
         backBtn.classList.add('pressing');
@@ -172,7 +178,7 @@ export function createPanelBackButton(onClick) {
         setTimeout(() => shield.remove(), 400);
 
         if (onClick) onClick();
-        backBtn.remove();
+        // backBtn.remove(); // Gestionado por PanelManager
     });
 
     return backBtn;

@@ -1,0 +1,501 @@
+/* ============================================================ */
+/* Stream Deck Pro - unified visual polish layer                 */
+/* ============================================================ */
+
+:root {
+    color-scheme: dark;
+    --app-bg-0: #070a0f;
+    --app-bg-1: #0e1724;
+    --app-bg-2: #141d2c;
+    --surface-1: rgba(255, 255, 255, 0.07);
+    --surface-2: rgba(255, 255, 255, 0.105);
+    --surface-3: rgba(255, 255, 255, 0.16);
+    --surface-stroke: rgba(255, 255, 255, 0.16);
+    --surface-stroke-strong: rgba(255, 255, 255, 0.26);
+    --shadow-soft: 0 14px 34px rgba(0, 0, 0, 0.32);
+    --shadow-lift: 0 22px 60px rgba(0, 0, 0, 0.42);
+    --shadow-press: inset 0 4px 16px rgba(0, 0, 0, 0.35);
+    --radius-control: 18px;
+    --radius-panel: 26px;
+    --radius-sheet: 34px;
+    --ios-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --ios-spring: cubic-bezier(0.2, 0.95, 0.18, 1.12);
+    --motion-fast: 160ms;
+    --motion-normal: 280ms;
+    --motion-panel: 420ms;
+}
+
+html {
+    background: var(--app-bg-0);
+}
+
+body {
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0) 34%),
+        linear-gradient(215deg, rgba(102, 212, 255, 0.13), rgba(126, 168, 255, 0.06) 38%, rgba(0, 0, 0, 0) 70%),
+        linear-gradient(160deg, var(--app-bg-2), var(--app-bg-1) 48%, var(--app-bg-0));
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", "Segoe UI", sans-serif;
+    letter-spacing: 0;
+}
+
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+    background:
+        linear-gradient(rgba(255, 255, 255, 0.024) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.45), transparent 78%);
+}
+
+body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+    background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0) 22%, rgba(0,0,0,0.18));
+}
+
+#deck-container {
+    position: relative;
+    z-index: 1;
+    transition: transform 0.35s var(--ios-spring), opacity 0.32s var(--ios-ease), filter 0.32s var(--ios-ease);
+    will-change: transform, opacity, filter;
+}
+
+#deck-container.panel-active {
+    transform: scale(0.965) translateZ(0);
+    opacity: 0;
+    filter: blur(12px);
+    pointer-events: none;
+}
+
+
+.deck-grid {
+    gap: clamp(12px, 1.45vw, 20px);
+    padding: clamp(14px, 2.5vw, 30px);
+}
+
+.deck-footer {
+    padding: 10px clamp(14px, 2.5vw, 28px) calc(10px + env(safe-area-inset-bottom));
+}
+
+.boton,
+.footer-btn,
+.carousel-nav-btn,
+.parameter-btn,
+.auth-btn,
+.discord-btn,
+.discord-tactical-btn,
+.domotica-sketch-btn,
+.ac-btn,
+.sb-ctrl-btn,
+.panel-back-btn,
+.btn-fullscreen {
+    -webkit-tap-highlight-color: transparent;
+    transform: translate3d(0, 0, 0);
+}
+
+.boton {
+    border-radius: clamp(18px, 2vw, 26px);
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.20), rgba(255,255,255,0.055)),
+        var(--surface-1);
+    border: 1px solid var(--surface-stroke);
+    box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.22),
+        inset 0 -1px 0 rgba(0,0,0,0.20),
+        var(--shadow-soft);
+    isolation: isolate;
+    transition:
+        transform var(--motion-fast) var(--ios-spring),
+        filter var(--motion-normal) var(--ios-ease),
+        box-shadow var(--motion-normal) var(--ios-ease),
+        border-color var(--motion-normal) var(--ios-ease);
+}
+
+.boton::before {
+    content: "";
+    position: absolute;
+    inset: 1px;
+    border-radius: inherit;
+    background: linear-gradient(145deg, rgba(255,255,255,0.20), rgba(255,255,255,0.02) 52%, rgba(0,0,0,0.10));
+    opacity: 0.72;
+    pointer-events: none;
+    z-index: -1;
+}
+
+.boton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(180deg, rgba(255,255,255,0.18), transparent 38%);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--motion-normal) var(--ios-ease);
+}
+
+.boton:hover {
+    filter: brightness(1.06) saturate(1.04);
+    border-color: var(--surface-stroke-strong);
+    box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.26),
+        var(--shadow-lift);
+}
+
+.boton:hover::after {
+    opacity: 1;
+}
+
+.boton:active,
+.boton.pressing {
+    transform: scale(0.965) translate3d(0, 1px, 0) !important;
+    filter: brightness(1.02);
+    box-shadow: var(--shadow-press), 0 8px 20px rgba(0,0,0,0.24);
+}
+
+.button-icon {
+    font-size: clamp(2rem, 4.7vw, 3rem);
+    line-height: 1;
+    filter: drop-shadow(0 8px 16px rgba(0,0,0,0.34));
+}
+
+.button-label {
+    max-width: 88%;
+    font-weight: 700;
+    color: rgba(255,255,255,0.92);
+    text-shadow: 0 1px 10px rgba(0,0,0,0.30);
+}
+
+.footer-btn,
+.carousel-nav-btn,
+#edit-mode-btn,
+.deck-footer #edit-mode-btn {
+    min-height: 44px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.075);
+    border: 1px solid rgba(255,255,255,0.15);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), 0 10px 24px rgba(0,0,0,0.24);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    transition:
+        transform var(--motion-fast) var(--ios-spring),
+        background var(--motion-normal) var(--ios-ease),
+        border-color var(--motion-normal) var(--ios-ease);
+}
+
+.footer-btn:active,
+.carousel-nav-btn:active,
+#edit-mode-btn:active {
+    transform: scale(0.96) translateY(1px);
+    background: rgba(255,255,255,0.13);
+}
+
+.panel-cache-node {
+    background:
+        linear-gradient(145deg, rgba(255,255,255,0.04), rgba(255,255,255,0) 34%),
+        linear-gradient(165deg, #111b2a, #080d14 62%, #05070b);
+    transition:
+        opacity var(--motion-panel) var(--ios-ease),
+        transform var(--motion-panel) var(--ios-ease),
+        filter var(--motion-panel) var(--ios-ease);
+}
+
+.panel-cache-node.hidden {
+    transform: scale(0.985) translateY(14px);
+    filter: blur(6px);
+}
+
+.mixer-panel,
+.mixer-panel-fullscreen,
+.discord-panel,
+.discord-card-mixer,
+.discord-card-tactical,
+.discord-tactical-btn,
+.domotica-card-fader,
+.domotica-card-buttons,
+.ac-panel,
+.settings-panel,
+.parameter-modal,
+.auth-card,
+.soundboard-view .sb-header,
+.sb-tile,
+.sb-select,
+.sb-empty {
+    border-color: rgba(255,255,255,0.15) !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.10),
+        0 24px 70px rgba(0,0,0,0.34) !important;
+    backdrop-filter: blur(24px) saturate(1.18) !important;
+    -webkit-backdrop-filter: blur(24px) saturate(1.18) !important;
+}
+
+.mixer-panel,
+.mixer-panel-fullscreen,
+.discord-card-mixer,
+.discord-card-tactical,
+.domotica-card-fader,
+.domotica-card-buttons,
+.ac-panel,
+.settings-panel,
+.parameter-modal,
+.auth-card {
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.105), rgba(255,255,255,0.045)),
+        rgba(12, 18, 28, 0.78) !important;
+    border-radius: var(--radius-sheet) !important;
+}
+
+.discord-sketch-match-view,
+.domotica-sketch-match-view,
+.mixer-fullscreen-view,
+.autoclicker-fullscreen-view,
+.soundboard-view {
+    background:
+        linear-gradient(145deg, rgba(255,255,255,0.04), rgba(255,255,255,0) 35%),
+        linear-gradient(165deg, #111b2a, #080d14 62%, #05070b) !important;
+}
+
+.discord-status-pill,
+.discord-status,
+.ac-status,
+.sb-header,
+.settings-row,
+.ac-card {
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.11), rgba(255,255,255,0.045)),
+        rgba(255,255,255,0.045) !important;
+    border: 1px solid rgba(255,255,255,0.14) !important;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), 0 10px 28px rgba(0,0,0,0.22);
+}
+
+.discord-tactical-btn,
+.domotica-sketch-btn,
+.ac-btn,
+.sb-ctrl-btn,
+.mixer-icon-btn,
+.panel-back-btn,
+.btn-fullscreen {
+    transition:
+        transform var(--motion-fast) var(--ios-spring),
+        background var(--motion-normal) var(--ios-ease),
+        border-color var(--motion-normal) var(--ios-ease),
+        box-shadow var(--motion-normal) var(--ios-ease),
+        opacity var(--motion-normal) var(--ios-ease);
+}
+
+.discord-tactical-btn:hover,
+.domotica-sketch-btn:hover,
+.ac-btn:hover,
+.sb-ctrl-btn:hover,
+.mixer-icon-btn:hover,
+.panel-back-btn:hover,
+.btn-fullscreen:hover {
+    transform: translateY(-1px);
+    border-color: rgba(255,255,255,0.24) !important;
+}
+
+.discord-tactical-btn:active,
+.domotica-sketch-btn:active,
+.ac-btn:active,
+.sb-ctrl-btn:active,
+.mixer-icon-btn:active,
+.panel-back-btn:active,
+.btn-fullscreen:active {
+    transform: scale(0.96) translateY(1px) !important;
+}
+
+.slider-container,
+.fader-track-pro,
+.discord-slider-tall {
+    background:
+        linear-gradient(180deg, rgba(0,0,0,0.55), rgba(255,255,255,0.035)),
+        rgba(0,0,0,0.34) !important;
+    border: 1px solid rgba(255,255,255,0.10) !important;
+    box-shadow:
+        inset 0 8px 20px rgba(0,0,0,0.44),
+        inset 0 1px 0 rgba(255,255,255,0.08) !important;
+}
+
+.fader-thumb-mixer,
+.fader-thumb-pro {
+    box-shadow:
+        0 16px 30px rgba(0,0,0,0.40),
+        inset 0 2px 0 rgba(255,255,255,0.90),
+        inset 0 -6px 10px rgba(0,0,0,0.16) !important;
+}
+
+.overlay {
+    background: rgba(5, 8, 13, 0.72);
+    backdrop-filter: blur(24px) saturate(1.15);
+    -webkit-backdrop-filter: blur(24px) saturate(1.15);
+}
+
+.parameter-modal {
+    overflow: hidden;
+}
+
+.parameter-input,
+.auth-input,
+.ac-select,
+.sb-select {
+    min-height: 46px;
+    border-radius: 14px !important;
+    background: rgba(0,0,0,0.22) !important;
+    border: 1px solid rgba(255,255,255,0.14) !important;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+.parameter-input:focus,
+.auth-input:focus,
+.ac-select:focus,
+.sb-select:focus {
+    border-color: rgba(102, 212, 255, 0.62) !important;
+    box-shadow: 0 0 0 4px rgba(102, 212, 255, 0.12), inset 0 1px 0 rgba(255,255,255,0.10) !important;
+}
+
+.toast {
+    border-radius: 16px !important;
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.055)),
+        rgba(13, 18, 28, 0.84) !important;
+    border: 1px solid rgba(255,255,255,0.16) !important;
+    box-shadow: 0 18px 50px rgba(0,0,0,0.36) !important;
+}
+
+.sb-grid {
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+}
+
+.sb-tile {
+    border-radius: 22px !important;
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04)),
+        rgba(255,255,255,0.05) !important;
+    transition:
+        transform var(--motion-fast) var(--ios-spring),
+        border-color var(--motion-normal) var(--ios-ease),
+        box-shadow var(--motion-normal) var(--ios-ease),
+        background var(--motion-normal) var(--ios-ease);
+}
+
+.sb-tile:hover {
+    transform: translateY(-2px);
+    border-color: rgba(168, 85, 247, 0.38) !important;
+}
+
+.sb-tile:active {
+    transform: scale(0.955) translateY(1px);
+}
+
+.sb-icon {
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0.05)),
+        rgba(255,255,255,0.055);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), 0 10px 24px rgba(0,0,0,0.18);
+}
+
+.ac-btn-start,
+.ac-btn-stop,
+.btn-submit,
+.auth-btn,
+.sb-primary {
+    box-shadow: 0 12px 30px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.22) !important;
+}
+
+.ac-btn-start:hover,
+.ac-btn-stop:hover,
+.btn-submit:hover,
+.auth-btn:hover,
+.sb-primary:hover {
+    filter: brightness(1.06) saturate(1.04);
+}
+
+@keyframes polishPanelIn {
+    from {
+        opacity: 0;
+        transform: translate3d(0, 18px, 0) scale(0.985);
+        filter: blur(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1);
+        filter: blur(0);
+    }
+}
+
+.panel-cache-node:not(.hidden) > *,
+.overlay:not(.hidden) #overlay-container,
+.parameter-modal:not(.hidden) {
+    animation: polishPanelIn var(--motion-panel) var(--ios-ease) both;
+}
+
+@keyframes polishPanelOut {
+    from {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1);
+        filter: blur(0);
+    }
+    to {
+        opacity: 0;
+        transform: translate3d(0, 22px, 0) scale(0.975);
+        filter: blur(12px);
+    }
+}
+
+.panel-cache-node.animating-out > *,
+.overlay.animating-out #overlay-container,
+.parameter-modal.animating-out,
+#panel-back-button.animating-out {
+    animation: polishPanelOut 0.24s var(--ios-ease) both !important;
+}
+
+@media (max-width: 780px) {
+    .deck-grid {
+        gap: 10px;
+        padding: 12px;
+    }
+
+    .boton {
+        border-radius: 18px;
+    }
+
+    .button-label {
+        font-size: 0.78rem;
+        max-width: 92%;
+    }
+
+    .panel-back-btn-sketch-circle {
+        width: 54px !important;
+        height: 54px !important;
+        font-size: 1.8rem !important;
+        border-width: 2px !important;
+    }
+
+    .mixer-panel,
+    .mixer-panel-fullscreen,
+    .discord-card-mixer,
+    .discord-card-tactical,
+    .domotica-card-fader,
+    .domotica-card-buttons,
+    .ac-panel,
+    .settings-panel {
+        border-radius: 22px !important;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}

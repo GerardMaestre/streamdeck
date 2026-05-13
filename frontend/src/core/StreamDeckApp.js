@@ -17,6 +17,7 @@ import { DomoticaModule } from '../modules/DomoticaModule.js';
 import { AutoClickerModule } from '../modules/AutoClickerModule.js';
 import { CarouselModule } from '../modules/CarouselModule.js';
 import { EditModeModule } from '../modules/EditModeModule.js';
+import { SoundboardModule } from '../modules/SoundboardModule.js';
 import { NotificationToast } from '../ui/NotificationToast.js';
 
 export class StreamDeckApp {
@@ -75,7 +76,8 @@ export class StreamDeckApp {
                 mixer: document.getElementById('panel-mixer'),
                 discord: document.getElementById('panel-discord'),
                 domotica: document.getElementById('panel-domotica'),
-                autoclicker: document.getElementById('panel-autoclicker')
+                autoclicker: document.getElementById('panel-autoclicker'),
+                soundboard: document.getElementById('panel-soundboard')
             },
             onPanelChange: (panelId, previousPanel) => {
                 if (previousPanel === 'mixer' && panelId !== 'mixer') {
@@ -135,6 +137,7 @@ export class StreamDeckApp {
         this.discord = new DiscordModule(ctx);
         this.domotica = new DomoticaModule(ctx);
         this.autoclicker = new AutoClickerModule(ctx);
+        this.soundboard = new SoundboardModule(ctx);
 
         // --- Wire editmode state to carousel ---
         this.events.on('editmode:changed', (active) => {
@@ -466,6 +469,8 @@ export class StreamDeckApp {
                 this._openDomotica();
             } else if (btnData.type === 'autoclicker_panel') {
                 this._openAutoClicker();
+            } else if (btnData.type === 'soundboard_panel') {
+                this._openSoundboard();
             } else if (btnData.type === 'quick_action') {
                 this._processQuickAction(btnData);
             } else if (btnData.type === 'action') {
@@ -604,6 +609,17 @@ export class StreamDeckApp {
         this.carousel.setEditButtonVisibility(false);
         this.autoclicker.open(
             this.panelManager.panels.autoclicker,
+            () => {
+                this.panelManager.hidePanels();
+                this.carousel.renderSlide(this.carousel.getCarouselIndex(), 0);
+            }
+        );
+    }
+
+    _openSoundboard() {
+        this.carousel.setEditButtonVisibility(false);
+        this.soundboard.open(
+            this.panelManager.panels.soundboard,
             () => {
                 this.panelManager.hidePanels();
                 this.carousel.renderSlide(this.carousel.getCarouselIndex(), 0);

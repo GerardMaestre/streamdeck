@@ -60,7 +60,13 @@ export class DomoticaModule {
                 const btn = document.createElement('button');
                 btn.className = 'domotica-sketch-btn';
                 btn.style.setProperty('--btn-accent', c.color);
-                btn.innerHTML = `<span class="k-icon">${c.icon}</span><span class="k-label">${c.label}</span>`;
+                const icon = document.createElement('span');
+                icon.className = 'k-icon';
+                icon.textContent = c.icon;
+                const label = document.createElement('span');
+                label.className = 'k-label';
+                label.textContent = c.label;
+                btn.append(icon, label);
                 
                 let startPos = null;
                 let isPressing = false;
