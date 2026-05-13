@@ -63,14 +63,7 @@ body::after {
 #deck-container {
     position: relative;
     z-index: 1;
-    transition: transform 0.45s var(--ios-spring), opacity 0.4s var(--ios-ease);
     will-change: transform, opacity;
-}
-
-#deck-container.panel-active {
-    transform: scale(0.94) translateZ(0);
-    opacity: 0;
-    pointer-events: none;
 }
 
 
@@ -196,15 +189,12 @@ body::after {
     background:
         linear-gradient(145deg, rgba(255,255,255,0.04), rgba(255,255,255,0) 34%),
         linear-gradient(165deg, #111b2a, #080d14 62%, #05070b);
-    transition:
-        opacity var(--motion-panel) var(--ios-ease),
-        transform var(--motion-panel) var(--ios-ease);
-    will-change: transform, opacity;
+    will-change: transform;
 }
 
 .panel-cache-node.hidden {
-    transform: scale(0.985) translateY(14px);
-    opacity: 0;
+    transform: translate3d(100%, 0, 0);
+    opacity: 1;
 }
 
 .mixer-panel,
@@ -409,39 +399,13 @@ body::after {
     filter: brightness(1.06) saturate(1.04);
 }
 
-@keyframes polishPanelIn {
-    from {
-        opacity: 0;
-        transform: translate3d(0, 50px, 0) scale(0.9);
-    }
-    to {
-        opacity: 1;
-        transform: translate3d(0, 0, 0) scale(1);
-    }
+/* Panel slide-in: subtle shadow edge during transition */
+.panel-cache-node.panel-slide-in {
+    box-shadow: -8px 0 40px rgba(0, 0, 0, 0.35);
 }
 
-.panel-cache-node:not(.hidden) > *,
-.overlay:not(.hidden) #overlay-container,
-.parameter-modal:not(.hidden) {
-    animation: polishPanelIn 0.5s var(--ios-spring) both;
-}
-
-@keyframes polishPanelOut {
-    from {
-        opacity: 1;
-        transform: translate3d(0, 0, 0) scale(1);
-    }
-    to {
-        opacity: 0;
-        transform: translate3d(0, 50px, 0) scale(0.9);
-    }
-}
-
-.panel-cache-node.animating-out > *,
-.overlay.animating-out #overlay-container,
-.parameter-modal.animating-out,
-#panel-back-button.animating-out {
-    animation: polishPanelOut 0.35s var(--ios-ease) both !important;
+.panel-cache-node.panel-slide-back-out {
+    box-shadow: -8px 0 40px rgba(0, 0, 0, 0.35);
 }
 
 @media (max-width: 780px) {

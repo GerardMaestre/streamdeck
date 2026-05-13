@@ -43,6 +43,10 @@
     /* OPTIMIZATION TOKENS */
     --gpu-accel: translate3d(0,0,0);
     --perf-blur-multiplier: 1;
+
+    /* Panel slide duration */
+    --panel-slide-duration: 380ms;
+    --panel-slide-ease: cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 body.dragging-active {
@@ -58,26 +62,10 @@ body.dragging-active {
     -webkit-backface-visibility: hidden;
 }
 
-/* Optimización agresiva durante animaciones (tanto snapshot como grid entrante para 60FPS constantes) */
-body.animating .slide-snapshot *,
-body.animating .deck-grid * {
+/* Optimización durante transición de carrusel */
+.carousel-sliding .carousel-slide-track .deck-grid * {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
-    filter: none !important;
-    box-shadow: none !important;
-}
-
-.slide-snapshot {
-    position: fixed;
-    inset: 0;
-    width: 100vw;
-    height: 100vh;
-    z-index: 10;
-    pointer-events: none;
-    background: transparent;
-    will-change: transform, opacity;
-    contain: strict;
-    transform: translate3d(0, 0, 0);
 }
 
 
@@ -125,6 +113,60 @@ body {
 
 #deck-container.hidden {
     display: none !important;
+}
+
+/* ============================================================ */
+/* 🎬 PANEL SLIDE TRANSITIONS (iOS-style navigation)            */
+/* ============================================================ */
+
+/* Grid sliding out to the left when a panel opens */
+@keyframes gridSlideOut {
+    from { transform: translate3d(0, 0, 0); opacity: 1; }
+    to   { transform: translate3d(-30%, 0, 0); opacity: 0.4; }
+}
+
+/* Grid sliding back from the left when returning */
+@keyframes gridSlideBack {
+    from { transform: translate3d(-30%, 0, 0); opacity: 0.4; }
+    to   { transform: translate3d(0, 0, 0); opacity: 1; }
+}
+
+/* Panel sliding in from the right */
+@keyframes panelSlideIn {
+    from { transform: translate3d(100%, 0, 0); }
+    to   { transform: translate3d(0, 0, 0); }
+}
+
+/* Panel sliding out to the right (going back) */
+@keyframes panelSlideBackOut {
+    from { transform: translate3d(0, 0, 0); }
+    to   { transform: translate3d(100%, 0, 0); }
+}
+
+#deck-container.grid-slide-out {
+    animation: gridSlideOut var(--panel-slide-duration) var(--panel-slide-ease) both;
+    will-change: transform, opacity;
+}
+
+#deck-container.grid-slide-back {
+    animation: gridSlideBack var(--panel-slide-duration) var(--panel-slide-ease) both;
+    will-change: transform, opacity;
+}
+
+.panel-cache-node.panel-slide-in {
+    animation: panelSlideIn var(--panel-slide-duration) var(--panel-slide-ease) both;
+    will-change: transform;
+}
+
+.panel-cache-node.panel-slide-back-out {
+    animation: panelSlideBackOut var(--panel-slide-duration) var(--panel-slide-ease) both;
+    will-change: transform;
+}
+
+/* Back button exit animation */
+.panel-back-btn-exit {
+    animation: panelSlideBackOut var(--panel-slide-duration) var(--panel-slide-ease) both;
+    pointer-events: none;
 }
 
 /* Nueva vista principal tipo Stream Deck: 4x4 grid + footer */
@@ -209,16 +251,16 @@ body {
     position: absolute;
     top: 0;
     left: 0;
-    transform: var(--gpu-accel);
+    transform: translate3d(0, 0, 0);
     background: var(--bg-base);
-    transition: opacity 0.3s var(--ease-smooth), transform 0.3s var(--ease-smooth);
+    will-change: transform;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .panel-cache-node.hidden {
-    opacity: 0;
     pointer-events: none;
-    transform: scale(0.98) translateY(10px);
-    display: none !important; /* Fix ghosting */
+    display: none !important;
 }
 
 
@@ -630,90 +672,37 @@ body {
 }
 
 /* ============================================================ */
-/* 🎠 CARRUSEL — ANIMACIONES DE SLIDE (BUTTERY SMOOTH)          */
+/* 🎠 CARRUSEL — SLIDE TRACK SYSTEM (60fps Fluid)               */
 /* ============================================================ */
 
 .grid-container {
-    transition: none; /* desactivamos transition global para controlar manualmente */
+    transition: none;
 }
 
-/* 
- * Animaciones fluidas estilo móvil (iOS)
- * La pantalla que entra lo hace desde el 100% de la pantalla.
- * La pantalla que sale realiza un pequeño desplazamiento parallax.
- */
-.grid-container.slide-enter-right, .deck-view.slide-enter-right, .deck-grid.slide-enter-right {
-    animation: slideFromRight 0.38s cubic-bezier(0.36, 0.66, 0.04, 1) both;
-    will-change: transform;
+/* Container state while sliding */
+.carousel-sliding {
+    overflow: hidden;
 }
 
-/* Slide entrando desde la izquierda (swipe derecha) */
-.grid-container.slide-enter-left, .deck-view.slide-enter-left, .deck-grid.slide-enter-left {
-    animation: slideFromLeft 0.38s cubic-bezier(0.36, 0.66, 0.04, 1) both;
-    will-change: transform;
+/* The slide track is a flex row holding two grids side by side.
+   Transition is applied inline by JS for precise control. */
+.carousel-slide-track {
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
 }
 
-@keyframes slideFromRight {
-    from {
-        transform: translate3d(100%, 0, 0);
-    }
-    to {
-        transform: translate3d(0, 0, 0);
-    }
+.carousel-slide-page {
+    display: flex;
+    flex-direction: column;
 }
 
-@keyframes slideFromLeft {
-    from {
-        transform: translate3d(-100%, 0, 0);
-    }
-    to {
-        transform: translate3d(0, 0, 0);
-    }
-}
-
-/* Animaciones de Salida (Desplazamiento Parallax + Brillo) */
-.slide-exit-left {
-    animation: slideExitLeft 0.38s cubic-bezier(0.36, 0.66, 0.04, 1) both !important;
-    will-change: transform, filter;
-    z-index: 5 !important;
-}
-
-.slide-exit-right {
-    animation: slideExitRight 0.38s cubic-bezier(0.36, 0.66, 0.04, 1) both !important;
-    will-change: transform, filter;
-    z-index: 5 !important;
+.carousel-slide-page .deck-grid {
+    flex: 1 1 auto;
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .grid-container.slide-enter-right,
-    .deck-view.slide-enter-right,
-    .grid-container.slide-enter-left,
-    .deck-view.slide-enter-left,
-    .slide-exit-left,
-    .slide-exit-right {
-        animation-duration: 0.01ms !important;
-    }
-}
-
-@keyframes slideExitLeft {
-    from {
-        transform: translate3d(0, 0, 0);
-        filter: brightness(1);
-    }
-    to {
-        transform: translate3d(-30%, 0, 0);
-        filter: brightness(0.6);
-    }
-}
-
-@keyframes slideExitRight {
-    from {
-        transform: translate3d(0, 0, 0);
-        filter: brightness(1);
-    }
-    to {
-        transform: translate3d(30%, 0, 0);
-        filter: brightness(0.6);
+    .carousel-slide-track {
+        transition-duration: 0.01ms !important;
     }
 }
 

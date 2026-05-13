@@ -1,5 +1,9 @@
 /**
- * CarouselModule — Multi-page carousel with swipe gestures, page caching, and navigation.
+ * CarouselModule — Multi-page carousel with fluid mobile-style slide transitions.
+ * 
+ * Uses a dual-container translateX system instead of DOM cloning.
+ * Both old and new grids coexist briefly inside a sliding wrapper,
+ * producing a seamless, 60fps iOS-style page swipe.
  */
 import { createButton, createBackButton } from '../ui/ButtonFactory.js';
 
@@ -19,7 +23,8 @@ export class CarouselModule {
         this.editMode = false;
         this.initialLoad = true;
         this._cachedGrids = new Map();
-        this._slideDurationMs = 380;
+        this._slideDurationMs = 400;
+        this._isSliding = false;
 
         // Callbacks
         this.onPageChange = ctx.onPageChange || (() => {});
@@ -86,51 +91,11 @@ export class CarouselModule {
         this.container.appendChild(this._buildFooter());
     }
 
-    /** Render a carousel slide with caching */
-    renderSlide(index, direction = 0) {
-        if (!this.carouselPages || this.carouselPages.length === 0) {
-            this.renderGrid('main');
-            return;
-        }
-
-        this.carouselIndex = Math.max(0, Math.min(index, this.carouselPages.length - 1));
-        const pageId = this.carouselPages[this.carouselIndex];
-        this.currentPage = pageId;
-        this.onPageChange(pageId);
-
-        const slideClass = direction > 0 ? 'slide-enter-right' : direction < 0 ? 'slide-enter-left' : '';
-        const useSlideAnimation = !this.initialLoad && Boolean(slideClass);
-
-        // --- Displacement Animation Logic (Bug-Free & Optimized) ---
-        if (useSlideAnimation) {
-            this._cleanupSlideArtifacts();
-            document.body.classList.add('animating');
-
-            const clone = this.container.cloneNode(true);
-            clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
-            
-            // Ocultamos el footer clonado para que no haya doble render ni parpadeo
-            const cloneFooter = clone.querySelector('.deck-footer');
-            if (cloneFooter) {
-                cloneFooter.style.visibility = 'hidden';
-            }
-
-            clone.classList.remove('slide-enter-right', 'slide-enter-left', 'slide-active');
-            clone.classList.add('slide-snapshot', direction > 0 ? 'slide-exit-left' : 'slide-exit-right');
-
-            document.body.appendChild(clone);
-            this._activeSnapshot = clone;
-
-            this._snapshotFallbackTimeout = setTimeout(() => {
-                this._cleanupSlideArtifacts();
-            }, this._slideDurationMs + 140);
-
-            clone.addEventListener('animationend', () => {
-                this._cleanupSlideArtifacts();
-            }, { once: true });
-        }
-
-        // Page cache
+    /** 
+     * Build or retrieve a cached grid element for a carousel page.
+     * Returns a NEW clone each time so we can have two grids in the DOM simultaneously.
+     */
+    _getOrCreateGrid(pageId) {
         let cached = this._cachedGrids.get(pageId);
         if (!cached) {
             const pageData = this.getPageData(pageId);
@@ -139,24 +104,41 @@ export class CarouselModule {
             pageData.forEach((btnData, i) => {
                 gridEl.appendChild(createButton(btnData, i, this.buttonStateMap, this.initialLoad));
             });
-
-            cached = { grid: gridEl, footer: this._buildFooter() };
+            cached = { grid: gridEl };
             this._cachedGrids.set(pageId, cached);
         }
+        return cached.grid;
+    }
 
-        this.container.replaceChildren();
-        this.container.className = 'deck-view';
-        
-        if (useSlideAnimation) {
-            // Animamos solo el Grid, manteniendo el Footer totalmente estático (Estilo iOS Premium)
-            cached.grid.classList.add(slideClass);
-            cached.grid.addEventListener('animationend', () => {
-                cached.grid.classList.remove(slideClass);
-            }, { once: true });
+    /** Render a carousel slide with fluid mobile-style transitions */
+    renderSlide(index, direction = 0) {
+        if (!this.carouselPages || this.carouselPages.length === 0) {
+            this.renderGrid('main');
+            return;
         }
 
-        this.container.appendChild(cached.grid);
-        this.container.appendChild(cached.footer);
+        // Prevent overlapping slides
+        if (this._isSliding) return;
+
+        const newIndex = Math.max(0, Math.min(index, this.carouselPages.length - 1));
+        const pageId = this.carouselPages[newIndex];
+        const shouldAnimate = !this.initialLoad && direction !== 0 && newIndex !== this.carouselIndex;
+
+        this.carouselIndex = newIndex;
+        this.currentPage = pageId;
+        this.onPageChange(pageId);
+
+        const newGrid = this._getOrCreateGrid(pageId);
+
+        if (shouldAnimate) {
+            this._performSlideTransition(newGrid, direction);
+        } else {
+            // No animation — instant render (initial load or same page)
+            this.container.replaceChildren();
+            this.container.className = 'deck-view';
+            this.container.appendChild(newGrid);
+            this.container.appendChild(this._buildFooter());
+        }
 
         // Remove floating edit buttons
         const existingFloating = document.getElementById('edit-mode-btn');
@@ -174,25 +156,104 @@ export class CarouselModule {
             this.initialLoad = false;
         }
 
-        // Asegurar que el botón de edición vuelva a ser visible al retornar al carrusel
+        // Ensure edit button visible
         this.setEditButtonVisibility(true);
     }
 
-    _cleanupSlideArtifacts() {
-        if (this._snapshotFallbackTimeout) {
-            clearTimeout(this._snapshotFallbackTimeout);
-            this._snapshotFallbackTimeout = null;
+    /**
+     * Perform a fluid slide transition between two grids.
+     * 
+     * Strategy: 
+     * - Create a temporary "slide-track" that holds both grids side by side
+     * - Use CSS transform: translateX to slide the track
+     * - Hardware-accelerated, no DOM cloning, no layout thrashing
+     */
+    _performSlideTransition(newGrid, direction) {
+        this._isSliding = true;
+
+        // Get current grid (the one being displayed)
+        const currentGrid = this.container.querySelector('.deck-grid');
+        const footer = this.container.querySelector('.deck-footer');
+
+        // Create a slide track container
+        const track = document.createElement('div');
+        track.className = 'carousel-slide-track';
+        track.style.cssText = `
+            display: flex;
+            width: 200%;
+            height: 100%;
+            flex: 1 1 auto;
+            will-change: transform;
+            transform: translateX(${direction > 0 ? '0%' : '-50%'}) translate3d(0,0,0);
+        `;
+
+        // Create wrappers for each grid so they each take exactly 50% of the track
+        const oldWrapper = document.createElement('div');
+        oldWrapper.className = 'carousel-slide-page';
+        oldWrapper.style.cssText = 'width: 50%; height: 100%; flex-shrink: 0; overflow: hidden;';
+
+        const newWrapper = document.createElement('div');
+        newWrapper.className = 'carousel-slide-page';
+        newWrapper.style.cssText = 'width: 50%; height: 100%; flex-shrink: 0; overflow: hidden;';
+
+        // Clone the current grid for the old position (keeps current grid intact for cache)
+        if (currentGrid) {
+            const oldGridClone = currentGrid.cloneNode(true);
+            oldGridClone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+            oldWrapper.appendChild(oldGridClone);
+        }
+        newWrapper.appendChild(newGrid);
+
+        // Order: [old | new] for forward, [new | old] for backward
+        if (direction > 0) {
+            track.appendChild(oldWrapper);
+            track.appendChild(newWrapper);
+        } else {
+            track.appendChild(newWrapper);
+            track.appendChild(oldWrapper);
         }
 
-        if (this._activeSnapshot) {
-            this._activeSnapshot.remove();
-            this._activeSnapshot = null;
-        }
+        // Replace container content with track + keep footer static
+        this.container.replaceChildren();
+        this.container.className = 'deck-view carousel-sliding';
+        this.container.appendChild(track);
+        
+        // Keep the footer always visible and static (doesn't slide)
+        const newFooter = this._buildFooter();
+        this.container.appendChild(newFooter);
 
-        document.body.classList.remove('animating');
+        // Force reflow, then animate
+        void track.offsetWidth;
+
+        // Apply the sliding transform
+        const targetX = direction > 0 ? '-50%' : '0%';
+        track.style.transition = `transform ${this._slideDurationMs}ms cubic-bezier(0.25, 1, 0.5, 1)`;
+        track.style.transform = `translateX(${targetX}) translate3d(0,0,0)`;
+
+        // Clean up after animation
+        const cleanup = () => {
+            track.removeEventListener('transitionend', cleanup);
+            
+            // Replace track with just the new grid
+            this.container.replaceChildren();
+            this.container.className = 'deck-view';
+            this.container.appendChild(newGrid);
+            this.container.appendChild(newFooter);
+
+            this._isSliding = false;
+        };
+
+        track.addEventListener('transitionend', cleanup, { once: true });
+
+        // Fallback timeout
+        setTimeout(() => {
+            if (this._isSliding) {
+                cleanup();
+            }
+        }, this._slideDurationMs + 150);
     }
 
-    /** Build the footer with Editar/Anterior/Siguiente/Ajustes */
+    /** Build the footer with Editar/Ajustes */
     _buildFooter() {
         const footer = document.createElement('div');
         footer.className = 'deck-footer';

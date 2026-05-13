@@ -1,5 +1,8 @@
 /**
- * PanelManager — show/hide/cache panels.
+ * PanelManager — show/hide/cache panels with fluid mobile-style slide transitions.
+ * 
+ * Uses a hardware-accelerated translateX slide system instead of scale/opacity,
+ * mimicking iOS/Android screen-to-screen navigation.
  */
 export class PanelManager {
     /**
@@ -15,96 +18,116 @@ export class PanelManager {
         this.panels = panels;
         this.activePanel = null;
         this.onPanelChange = onPanelChange || (() => {});
-        this._transitionTimeout = null;
+        this._animating = false;
+
+        // Duration in ms — matches CSS --panel-slide-duration
+        this._duration = 380;
     }
 
-    /** Show a panel by ID, hiding all others and the main grid */
+    /** Show a panel by ID with a forward slide (panel slides in from the right) */
     showPanel(panelId) {
+        if (this._animating) return;
         const previousPanel = this.activePanel;
         this.activePanel = panelId;
+        this._animating = true;
 
-        // Cancelamos timers previos si existieran
-        if (this._transitionTimeout) {
-            clearTimeout(this._transitionTimeout);
-            this._transitionTimeout = null;
-        }
-
-        // Ocultamos el resto de paneles inmediatamente
+        // Hide all other panels immediately
         Object.entries(this.panels).forEach(([id, p]) => {
             if (id !== panelId) {
                 p.classList.add('hidden');
-                p.classList.remove('animating-out');
+                p.classList.remove('panel-slide-in', 'panel-slide-out', 'panel-slide-back-in', 'panel-slide-back-out');
             }
         });
 
-        // 1. Preparamos la animación del Grid: quitar hidden y añadir clase de transición activa
-        this.container.classList.remove('hidden');
-        // Forzamos reflow
-        void this.container.offsetWidth;
-        this.container.classList.add('panel-active');
+        // Prepare the panels container
+        this.panelsContainer.classList.remove('hidden');
 
-        // 2. Preparamos el nuevo panel para entrar
+        // Prepare the target panel: show it at the starting position (off-screen right)
         const panel = this.panels[panelId];
         if (panel) {
             panel.classList.remove('hidden');
-            panel.classList.remove('animating-out');
+            panel.classList.remove('panel-slide-in', 'panel-slide-out', 'panel-slide-back-in', 'panel-slide-back-out');
+            // Force reflow so the browser registers the starting position
+            void panel.offsetWidth;
+            panel.classList.add('panel-slide-in');
         }
-        this.panelsContainer.classList.remove('hidden');
 
-        // 3. Programamos el display:none del Grid al terminar la animación de entrada (500ms)
-        this._transitionTimeout = setTimeout(() => {
-            if (this.activePanel === panelId) {
-                this.container.classList.add('hidden');
+        // Animate the main grid: slide it slightly to the left (parallax)
+        this.container.classList.remove('hidden');
+        this.container.classList.remove('grid-slide-out', 'grid-slide-back');
+        void this.container.offsetWidth;
+        this.container.classList.add('grid-slide-out');
+
+        // After animation completes, clean up
+        const onDone = () => {
+            this.container.classList.add('hidden');
+            this.container.classList.remove('grid-slide-out');
+            if (panel) panel.classList.remove('panel-slide-in');
+            this._animating = false;
+        };
+
+        if (panel) {
+            panel.addEventListener('animationend', onDone, { once: true });
+        }
+        // Fallback timeout in case animationend doesn't fire
+        setTimeout(() => {
+            if (this._animating && this.activePanel === panelId) {
+                onDone();
             }
-            this._transitionTimeout = null;
-        }, 500);
+        }, this._duration + 100);
 
         this.onPanelChange(panelId, previousPanel);
     }
 
-    /** Hide all panels and show the main grid */
+    /** Hide all panels with a backward slide (panel slides out to the right, grid returns) */
     hidePanels() {
         const previousPanel = this.activePanel;
-        if (!previousPanel) return; // Ya oculto
+        if (!previousPanel || this._animating) return;
 
         this.activePanel = null;
+        this._animating = true;
 
-        // Cancelamos timers en curso
-        if (this._transitionTimeout) {
-            clearTimeout(this._transitionTimeout);
-            this._transitionTimeout = null;
-        }
-
-        // 1. Devolvemos el Grid al DOM (está en opacity 0 y escala reducida)
-        this.container.classList.remove('hidden');
-        // Forzamos reflow
-        void this.container.offsetWidth;
-
-        // 2. Disparamos la animación de vuelta del Grid
-        this.container.classList.remove('panel-active');
-
-        // 3. Disparamos la animación de salida del panel actual y el botón de atrás
         const panel = this.panels[previousPanel];
+
+        // Start animating the panel out to the right
         if (panel) {
-            panel.classList.add('animating-out');
+            panel.classList.remove('panel-slide-in', 'panel-slide-out', 'panel-slide-back-in', 'panel-slide-back-out');
+            void panel.offsetWidth;
+            panel.classList.add('panel-slide-back-out');
         }
 
+        // Animate the back button out
         const backBtn = document.getElementById('panel-back-button');
         if (backBtn) {
-            backBtn.classList.add('animating-out');
+            backBtn.classList.add('panel-back-btn-exit');
         }
 
-        // 4. Al terminar la animación de salida (350ms), limpiamos completamente el DOM
-        this._transitionTimeout = setTimeout(() => {
+        // Bring the grid back: slide from left
+        this.container.classList.remove('hidden', 'grid-slide-out', 'grid-slide-back');
+        void this.container.offsetWidth;
+        this.container.classList.add('grid-slide-back');
+
+        // After animation completes, clean up
+        const onDone = () => {
+            this.container.classList.remove('grid-slide-back');
             this.panelsContainer.classList.add('hidden');
             Object.values(this.panels).forEach(p => {
                 p.classList.add('hidden');
-                p.classList.remove('animating-out');
+                p.classList.remove('panel-slide-in', 'panel-slide-out', 'panel-slide-back-in', 'panel-slide-back-out');
             });
-
             if (backBtn) backBtn.remove();
-            this._transitionTimeout = null;
-        }, 350);
+            this._animating = false;
+        };
+
+        if (panel) {
+            panel.addEventListener('animationend', onDone, { once: true });
+        }
+        // Fallback timeout
+        setTimeout(() => {
+            if (this._animating && this.activePanel === null) {
+                onDone();
+            }
+        }, this._duration + 100);
 
         this.onPanelChange(null, previousPanel);
     }
