@@ -20,8 +20,8 @@
     --radius-sheet: 34px;
     --ios-ease: cubic-bezier(0.22, 1, 0.36, 1);
     --ios-spring: cubic-bezier(0.2, 0.95, 0.18, 1.12);
-    --motion-fast: 160ms;
-    --motion-normal: 280ms;
+    --motion-fast: 120ms;
+    --motion-normal: 240ms;
     --motion-panel: 420ms;
 }
 
@@ -63,14 +63,13 @@ body::after {
 #deck-container {
     position: relative;
     z-index: 1;
-    transition: transform 0.35s var(--ios-spring), opacity 0.32s var(--ios-ease), filter 0.32s var(--ios-ease);
-    will-change: transform, opacity, filter;
+    transition: transform 0.45s var(--ios-spring), opacity 0.4s var(--ios-ease);
+    will-change: transform, opacity;
 }
 
 #deck-container.panel-active {
-    transform: scale(0.965) translateZ(0);
+    transform: scale(0.94) translateZ(0);
     opacity: 0;
-    filter: blur(12px);
     pointer-events: none;
 }
 
@@ -111,11 +110,8 @@ body::after {
         inset 0 -1px 0 rgba(0,0,0,0.20),
         var(--shadow-soft);
     isolation: isolate;
-    transition:
-        transform var(--motion-fast) var(--ios-spring),
-        filter var(--motion-normal) var(--ios-ease),
-        box-shadow var(--motion-normal) var(--ios-ease),
-        border-color var(--motion-normal) var(--ios-ease);
+    transition: transform 320ms var(--ios-spring);
+    will-change: transform;
 }
 
 .boton::before {
@@ -154,7 +150,8 @@ body::after {
 
 .boton:active,
 .boton.pressing {
-    transform: scale(0.965) translate3d(0, 1px, 0) !important;
+    transform: scale(0.91) translate3d(0, 0, 0) !important;
+    transition: transform 100ms var(--ios-ease) !important;
     filter: brightness(1.02);
     box-shadow: var(--shadow-press), 0 8px 20px rgba(0,0,0,0.24);
 }
@@ -183,16 +180,15 @@ body::after {
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), 0 10px 24px rgba(0,0,0,0.24);
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
-    transition:
-        transform var(--motion-fast) var(--ios-spring),
-        background var(--motion-normal) var(--ios-ease),
-        border-color var(--motion-normal) var(--ios-ease);
+    transition: transform 320ms var(--ios-spring);
+    will-change: transform;
 }
 
 .footer-btn:active,
 .carousel-nav-btn:active,
 #edit-mode-btn:active {
-    transform: scale(0.96) translateY(1px);
+    transform: scale(0.91) translate3d(0, 0, 0) !important;
+    transition: transform 100ms var(--ios-ease) !important;
     background: rgba(255,255,255,0.13);
 }
 
@@ -202,13 +198,13 @@ body::after {
         linear-gradient(165deg, #111b2a, #080d14 62%, #05070b);
     transition:
         opacity var(--motion-panel) var(--ios-ease),
-        transform var(--motion-panel) var(--ios-ease),
-        filter var(--motion-panel) var(--ios-ease);
+        transform var(--motion-panel) var(--ios-ease);
+    will-change: transform, opacity;
 }
 
 .panel-cache-node.hidden {
     transform: scale(0.985) translateY(14px);
-    filter: blur(6px);
+    opacity: 0;
 }
 
 .mixer-panel,
@@ -282,11 +278,9 @@ body::after {
 .panel-back-btn,
 .btn-fullscreen {
     transition:
-        transform var(--motion-fast) var(--ios-spring),
-        background var(--motion-normal) var(--ios-ease),
-        border-color var(--motion-normal) var(--ios-ease),
-        box-shadow var(--motion-normal) var(--ios-ease),
+        transform 320ms var(--ios-spring),
         opacity var(--motion-normal) var(--ios-ease);
+    will-change: transform, opacity;
 }
 
 .discord-tactical-btn:hover,
@@ -307,7 +301,8 @@ body::after {
 .mixer-icon-btn:active,
 .panel-back-btn:active,
 .btn-fullscreen:active {
-    transform: scale(0.96) translateY(1px) !important;
+    transform: scale(0.91) translate3d(0, 0, 0) !important;
+    transition: transform 100ms var(--ios-ease) !important;
 }
 
 .slider-container,
@@ -377,11 +372,8 @@ body::after {
     background:
         linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04)),
         rgba(255,255,255,0.05) !important;
-    transition:
-        transform var(--motion-fast) var(--ios-spring),
-        border-color var(--motion-normal) var(--ios-ease),
-        box-shadow var(--motion-normal) var(--ios-ease),
-        background var(--motion-normal) var(--ios-ease);
+    transition: transform 320ms var(--ios-spring);
+    will-change: transform;
 }
 
 .sb-tile:hover {
@@ -390,7 +382,8 @@ body::after {
 }
 
 .sb-tile:active {
-    transform: scale(0.955) translateY(1px);
+    transform: scale(0.91) translate3d(0, 0, 0) !important;
+    transition: transform 100ms var(--ios-ease) !important;
 }
 
 .sb-icon {
@@ -419,32 +412,28 @@ body::after {
 @keyframes polishPanelIn {
     from {
         opacity: 0;
-        transform: translate3d(0, 18px, 0) scale(0.985);
-        filter: blur(8px);
+        transform: translate3d(0, 50px, 0) scale(0.9);
     }
     to {
         opacity: 1;
         transform: translate3d(0, 0, 0) scale(1);
-        filter: blur(0);
     }
 }
 
 .panel-cache-node:not(.hidden) > *,
 .overlay:not(.hidden) #overlay-container,
 .parameter-modal:not(.hidden) {
-    animation: polishPanelIn var(--motion-panel) var(--ios-ease) both;
+    animation: polishPanelIn 0.5s var(--ios-spring) both;
 }
 
 @keyframes polishPanelOut {
     from {
         opacity: 1;
         transform: translate3d(0, 0, 0) scale(1);
-        filter: blur(0);
     }
     to {
         opacity: 0;
-        transform: translate3d(0, 22px, 0) scale(0.975);
-        filter: blur(12px);
+        transform: translate3d(0, 50px, 0) scale(0.9);
     }
 }
 
@@ -452,7 +441,7 @@ body::after {
 .overlay.animating-out #overlay-container,
 .parameter-modal.animating-out,
 #panel-back-button.animating-out {
-    animation: polishPanelOut 0.24s var(--ios-ease) both !important;
+    animation: polishPanelOut 0.35s var(--ios-ease) both !important;
 }
 
 @media (max-width: 780px) {

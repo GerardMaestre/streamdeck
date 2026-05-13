@@ -343,6 +343,7 @@ const { sendTuyaCommand, controlMultipleDevices } = require('./backend/iot/smart
 const { cambiarResolucion, minimizarTodo, apagarPC, reiniciarPC } = require('./backend/system/systemController');
 const { handleAutoClickerSocket } = require('./backend/automation/autoClickerController');
 const { initAudioHost, registerSoundboardSocketHandlers, sendSoundboardAudio } = require('./backend/soundboard/soundboardController');
+const { handleInstagramSocket, destroyInstagram } = require('./backend/automation/instagramController');
 
 // --- CACHE DE SISTEMA ---
 let configCache = null;
@@ -1031,6 +1032,7 @@ io.on('connection', (socket) => {
     socket.on('ping', (ack) => typeof ack === 'function' && ack());
     handleAutoClickerSocket(socket, io);
     registerSoundboardSocketHandlers(socket);
+    handleInstagramSocket(socket, io);
 });
 
 let PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
@@ -1078,6 +1080,6 @@ server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
 
-const gracefulShutdown = () => { try { stopAllRunningScripts(); shutdownPluginSystem(); } catch (e) {} };
+const gracefulShutdown = () => { try { stopAllRunningScripts(); destroyInstagram(); shutdownPluginSystem(); } catch (e) {} };
 process.on('SIGINT', gracefulShutdown);
 process.on('SIGTERM', gracefulShutdown);

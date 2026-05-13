@@ -1,0 +1,18 @@
+{
+    "manifest_version": 3,
+    "name": "IG Script Runner",
+    "description": "Auto-inject Phantom V9.4 on Instagram",
+    "version": "1.0",
+    "permissions": [],
+    "content_scripts": [
+        {
+            "matches": [
+                "https://www.instagram.com/*",
+                "https://instagram.com/*"
+            ],
+            "js": ["phantom.js", "payload.js"],
+            "run_at": "document_idle",
+            "world": "MAIN"
+        }
+    ]
+}

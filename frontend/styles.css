@@ -35,9 +35,9 @@
     --duration-fast: 0.18s;
     --duration-normal: 0.32s;
     --duration-slow: 0.56s;
-    --ease-standard: cubic-bezier(0.25, 0.8, 0.25, 1);
-    --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
-    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-smooth: cubic-bezier(0.32, 0.72, 0, 1);
+    --ease-spring: cubic-bezier(0.2, 0.95, 0.18, 1.12);
     --ease-snap: cubic-bezier(0.2, 0.9, 0.24, 1);
     
     /* OPTIMIZATION TOKENS */
@@ -257,15 +257,7 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.boton.releasing {
-    animation: buttonReleaseSpring 340ms var(--ease-spring);
-}
-
-@keyframes buttonReleaseSpring {
-    0% { transform: scale(0.95) translateZ(0); }
-    55% { transform: scale(1.035) translateZ(0); }
-    100% { transform: scale(1) translateZ(0); }
-}
+/* removed buttonReleaseSpring */
 
 .btn-ripple {
     position: absolute;
@@ -368,19 +360,12 @@ body {
 @keyframes macOsGenieIn {
     0% {
         opacity: 0;
-        transform: translateY(200px) scaleX(0.2) scaleY(0.5);
-        border-radius: 50px;
+        transform: translateY(40px) scale(0.9);
+        border-radius: 30px;
     }
-
-    40% {
-        opacity: 0.8;
-        transform: translateY(-10px) scaleX(1.05) scaleY(1.05);
-        border-radius: 12px;
-    }
-
     100% {
         opacity: 1;
-        transform: translateY(0) scaleX(1) scaleY(1);
+        transform: translateY(0) scale(1);
         border-radius: 15px;
     }
 }
@@ -390,11 +375,10 @@ body {
         opacity: 1;
         transform: translateY(0) scale(1);
     }
-
     100% {
         opacity: 0;
-        transform: translateY(200px) scaleX(0.2) scaleY(0.5);
-        border-radius: 50px;
+        transform: translateY(40px) scale(0.9);
+        border-radius: 30px;
     }
 }
 
@@ -653,48 +637,51 @@ body {
     transition: none; /* desactivamos transition global para controlar manualmente */
 }
 
+/* 
+ * Animaciones fluidas estilo móvil (iOS)
+ * La pantalla que entra lo hace desde el 100% de la pantalla.
+ * La pantalla que sale realiza un pequeño desplazamiento parallax.
+ */
 .grid-container.slide-enter-right, .deck-view.slide-enter-right, .deck-grid.slide-enter-right {
-    animation: slideFromRight 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
-    will-change: transform, opacity;
+    animation: slideFromRight 0.38s cubic-bezier(0.36, 0.66, 0.04, 1) both;
+    will-change: transform;
 }
 
 /* Slide entrando desde la izquierda (swipe derecha) */
 .grid-container.slide-enter-left, .deck-view.slide-enter-left, .deck-grid.slide-enter-left {
-    animation: slideFromLeft 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
-    will-change: transform, opacity;
+    animation: slideFromLeft 0.38s cubic-bezier(0.36, 0.66, 0.04, 1) both;
+    will-change: transform;
 }
 
 @keyframes slideFromRight {
     from {
-        transform: translate3d(70px, 0, 0);
-        opacity: 0;
+        transform: translate3d(100%, 0, 0);
     }
     to {
         transform: translate3d(0, 0, 0);
-        opacity: 1;
     }
 }
 
 @keyframes slideFromLeft {
     from {
-        transform: translate3d(-70px, 0, 0);
-        opacity: 0;
+        transform: translate3d(-100%, 0, 0);
     }
     to {
         transform: translate3d(0, 0, 0);
-        opacity: 1;
     }
 }
 
-/* Animaciones de Salida (Desplazamiento) */
+/* Animaciones de Salida (Desplazamiento Parallax + Brillo) */
 .slide-exit-left {
-    animation: slideExitLeft 0.28s cubic-bezier(0.16, 1, 0.3, 1) both !important;
-    will-change: transform, opacity;
+    animation: slideExitLeft 0.38s cubic-bezier(0.36, 0.66, 0.04, 1) both !important;
+    will-change: transform, filter;
+    z-index: 5 !important;
 }
 
 .slide-exit-right {
-    animation: slideExitRight 0.28s cubic-bezier(0.16, 1, 0.3, 1) both !important;
-    will-change: transform, opacity;
+    animation: slideExitRight 0.38s cubic-bezier(0.36, 0.66, 0.04, 1) both !important;
+    will-change: transform, filter;
+    z-index: 5 !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -709,16 +696,24 @@ body {
 }
 
 @keyframes slideExitLeft {
+    from {
+        transform: translate3d(0, 0, 0);
+        filter: brightness(1);
+    }
     to {
-        transform: translate3d(-70px, 0, 0);
-        opacity: 0;
+        transform: translate3d(-30%, 0, 0);
+        filter: brightness(0.6);
     }
 }
 
 @keyframes slideExitRight {
+    from {
+        transform: translate3d(0, 0, 0);
+        filter: brightness(1);
+    }
     to {
-        transform: translate3d(70px, 0, 0);
-        opacity: 0;
+        transform: translate3d(30%, 0, 0);
+        filter: brightness(0.6);
     }
 }
 

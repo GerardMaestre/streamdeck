@@ -51,13 +51,13 @@ export class PanelManager {
         }
         this.panelsContainer.classList.remove('hidden');
 
-        // 3. Programamos el display:none del Grid al terminar la animación de entrada (420ms como --motion-panel)
+        // 3. Programamos el display:none del Grid al terminar la animación de entrada (500ms)
         this._transitionTimeout = setTimeout(() => {
             if (this.activePanel === panelId) {
                 this.container.classList.add('hidden');
             }
             this._transitionTimeout = null;
-        }, 420);
+        }, 500);
 
         this.onPanelChange(panelId, previousPanel);
     }
@@ -94,7 +94,7 @@ export class PanelManager {
             backBtn.classList.add('animating-out');
         }
 
-        // 4. Al terminar la animación de salida (240ms), limpiamos completamente el DOM
+        // 4. Al terminar la animación de salida (350ms), limpiamos completamente el DOM
         this._transitionTimeout = setTimeout(() => {
             this.panelsContainer.classList.add('hidden');
             Object.values(this.panels).forEach(p => {
@@ -104,7 +104,7 @@ export class PanelManager {
 
             if (backBtn) backBtn.remove();
             this._transitionTimeout = null;
-        }, 240);
+        }, 350);
 
         this.onPanelChange(null, previousPanel);
     }
