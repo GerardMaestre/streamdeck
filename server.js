@@ -631,7 +631,23 @@ const normalizeAuthToken = (rawToken) => {
 };
 
 const isLocalAddress = (address) => {
-    return address === '::1' || address === '127.0.0.1' || address === '::ffff:127.0.0.1';
+    const clean = (address || '').replace(/^::ffff:/, '');
+    if (clean === '::1' || clean === '127.0.0.1') return true;
+    
+    const parts = clean.split('.');
+    if (parts.length === 4) {
+        const first = parseInt(parts[0], 10);
+        const second = parseInt(parts[1], 10);
+        
+        // Tailscale (100.64.0.0/10)
+        if (first === 100 && second >= 64 && second <= 127) return true;
+        
+        // Private networks (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+        if (first === 192 && second === 168) return true;
+        if (first === 10) return true;
+        if (first === 172 && second >= 16 && second <= 31) return true;
+    }
+    return false;
 };
 
 const registerBadAuthAttempt = (ip) => {
