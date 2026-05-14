@@ -779,6 +779,19 @@ app.use(express.static(getDataPath('frontend'), {
     }
 }));
 
+app.post('/api/run-script', async (req, res) => {
+    if (!ensureAuthorizedRequest(req, res)) return;
+    try {
+        const { carpeta, archivo, args } = req.body;
+        if (!carpeta || !archivo) return res.status(400).json({ error: 'Faltan parámetros (carpeta, archivo)' });
+        
+        await ejecutarScriptDinamico({ carpeta, archivo, args });
+        return res.json({ ok: true, message: 'Script iniciado correctamente' });
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
 app.get('/api/config', async (req, res) => {
     if (!ensureAuthorizedRequest(req, res)) return;
     try {
