@@ -49,7 +49,7 @@ if not exist "%IMMICH_DIR%\docker-compose.yml" (
         echo      %IMMICH_DIR%
         echo.
         echo  Asegurate de que Immich esta correctamente instalado.
-        timeout /t 5 >nul
+        ping 127.0.0.1 -n 6 >nul
         exit /b 1
     )
 )
@@ -71,7 +71,7 @@ if errorlevel 1 (
     echo  [~] Esperando a que Docker responda...
     set /a intentos=0
     :esperar_docker
-    timeout /t 5 /nobreak >nul
+    ping 127.0.0.1 -n 6 >nul
     docker info >nul 2>&1
     if errorlevel 1 (
         set /a intentos+=1
@@ -79,7 +79,7 @@ if errorlevel 1 (
             echo.
             echo  [X] Docker no respondio tras 2 minutos.
             echo      Verifica que Docker Desktop este instalado y funcionando.
-            timeout /t 5 >nul
+            ping 127.0.0.1 -n 6 >nul
             exit /b 1
         )
         :: Barra de progreso visual
@@ -120,7 +120,7 @@ if errorlevel 1 (
         echo.
         echo  [X] No se pudo arrancar Immich.
         echo      Revisa los logs con: docker compose logs
-        timeout /t 5 >nul
+        ping 127.0.0.1 -n 6 >nul
         exit /b 1
     )
 )
@@ -135,7 +135,7 @@ echo  [~] Verificando que Immich responde...
 
 set /a health_tries=0
 :health_loop
-timeout /t 5 /nobreak >nul
+ping 127.0.0.1 -n 6 >nul
 
 :: Intentar una peticion HTTP al puerto de Immich
 curl -s -o nul -w "%%{http_code}" http://localhost:%IMMICH_PORT%/api/server/ping 2>nul | findstr "200" >nul 2>&1
@@ -181,5 +181,5 @@ echo  ╠═══════════════════════�
 echo  ║  Para apagar: ejecuta cerrar_fotos    ║
 echo  ╚═══════════════════════════════════════╝
 echo.
-timeout /t 8 >nul
+ping 127.0.0.1 -n 9 >nul
 exit /b 0

@@ -15,7 +15,7 @@ echo.
 
 echo [*] Cerrando Spotify...
 taskkill /F /IM Spotify.exe >nul 2>&1
-timeout /t 2 /nobreak >nul
+ping 127.0.0.1 -n 3 >nul
 
 echo.
 echo [*] Paso 1/3 - Instalando Spicetify CLI...
@@ -40,7 +40,7 @@ echo [OK] Spicetify instalado correctamente.
 echo     Abre Spotify para ver los cambios.
 echo ===================================================
 echo.
-pause
+ping 127.0.0.1 -n 4 >nul
 exit /b 0
 
 :Cancelled

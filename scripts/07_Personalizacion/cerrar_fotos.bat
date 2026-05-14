@@ -40,7 +40,7 @@ if errorlevel 1 (
     echo  ╔═══════════════════════════════════════╗
     echo  ║  ✅  No habia contenedores activos.   ║
     echo  ╚═══════════════════════════════════════╝
-    timeout /t 3 >nul
+    ping 127.0.0.1 -n 4 >nul
     exit /b 0
 )
 
@@ -54,7 +54,7 @@ if errorlevel 1 (
     echo  ╔═══════════════════════════════════════╗
     echo  ║  ✅  No habia contenedores activos.   ║
     echo  ╚═══════════════════════════════════════╝
-    timeout /t 3 >nul
+    ping 127.0.0.1 -n 4 >nul
     exit /b 0
 )
 
@@ -72,7 +72,7 @@ if errorlevel 1 (
         echo.
         echo  [X] No se pudieron detener los contenedores.
         echo      Prueba manualmente: docker compose down
-        timeout /t 5 >nul
+        ping 127.0.0.1 -n 6 >nul
         exit /b 1
     )
 )
@@ -88,5 +88,5 @@ echo  ║  RAM y CPU liberados.                 ║
 echo  ║  Tus fotos siguen seguras en disco.   ║
 echo  ╚═══════════════════════════════════════╝
 echo.
-timeout /t 4 >nul
+ping 127.0.0.1 -n 5 >nul
 exit /b 0
