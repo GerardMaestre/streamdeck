@@ -14,9 +14,6 @@
     margin-right: 15px;
 }
 
-.boton:not([style*="background"]) {
-    background: #333;
-}
 
 .log-error {
     color: #e74c3c;
@@ -222,7 +219,6 @@ body.dragging-active .mixer-panel {
     align-items: center;
     gap: 15px;
     width: 160px;
-    padding: 15px 10px;
     background: rgba(255, 255, 255, 0.01);
     border-radius: 20px;
     height: 100% !important;

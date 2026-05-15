@@ -29,10 +29,12 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "native-sound-mixer": "^3.4.6-win",
+    "node-windows": "^1.0.0-beta.8",
     "open": "^8.4.2",
     "screenshot-desktop": "^1.15.3",
     "socket.io": "^4.8.3",
-    "socket.io-client": "^4.8.3"
+    "socket.io-client": "^4.8.3",
+    "ws": "^8.20.1"
   },
   "devDependencies": {
     "electron": "^31.0.0",

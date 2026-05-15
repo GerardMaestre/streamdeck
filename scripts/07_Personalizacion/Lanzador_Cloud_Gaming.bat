@@ -61,7 +61,7 @@ if %errorlevel% neq 0 (
         echo [!] Tailscale VPN NO instalado. Descargando silenciosamente con reparacion forzada...
         winget install --id Tailscale.Tailscale -e --force --silent --accept-package-agreements --accept-source-agreements
         echo [*] Esperando 5 segundos a que inicie el servicio Tailscale...
-        timeout /t 5 /nobreak >nul
+        ping 127.0.0.1 -n 6 >nul
         set "PATH=%PATH%;C:\Program Files\Tailscale"
     ) else (
         set "PATH=%PATH%;C:\Program Files\Tailscale"
@@ -83,7 +83,7 @@ if not exist "C:\Program Files\Sunshine\sunshine.exe" (
         echo [!] Sunshine NO instalado. Descargando silenciosamente...
         winget install --id LizardByte.Sunshine -e --force --silent --accept-package-agreements --accept-source-agreements
         echo [*] Esperando 5 segundos a que inicie el servicio Sunshine...
-        timeout /t 5 /nobreak >nul
+        ping 127.0.0.1 -n 6 >nul
     )
 )
 
@@ -107,12 +107,12 @@ if "%ERRORLEVEL%"=="0" (
     )
 )
 
-timeout /t 2 /nobreak >nul
+ping 127.0.0.1 -n 3 >nul
 echo [*] Optimizando prioridad de CPU para cero Input Lag...
 powershell -Command "$p = Get-Process -Name 'sunshine' -ErrorAction SilentlyContinue; if ($p) { $p.PriorityClass = 'High' }"
 echo.
 echo [V] HOST ONLINE Y LISTO.
-pause
+ping 127.0.0.1 -n 4 >nul
 exit
 
 :: ==========================
@@ -130,7 +130,7 @@ if not exist "%moonlight_path%" (
     echo [!] Moonlight NO instalado. Descargando silenciosamente...
     winget install --id MoonlightGameStreamingProject.Moonlight -e --force --silent --accept-package-agreements --accept-source-agreements
     echo [*] Esperando 5 segundos a que Windows reconozca el programa...
-    timeout /t 5 /nobreak >nul
+    ping 127.0.0.1 -n 6 >nul
 )
 
 echo [*] Levantando tunel VPN conectando al Host...
@@ -146,7 +146,7 @@ if exist "%moonlight_path%" (
 echo.
 echo [V] CLIENTE LISTO.
 echo Recuerda agregar a Moonlight la IP que te mostro tu PC Host.
-pause
+ping 127.0.0.1 -n 4 >nul
 exit
 
 :end

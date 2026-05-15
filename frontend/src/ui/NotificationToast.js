@@ -68,10 +68,10 @@ export class NotificationToast {
         const toast = document.createElement('div');
         toast.className = `toast ${type}`;
         
-        let icon = 'ℹ️';
-        if (type === 'success') icon = '✅';
-        if (type === 'error') icon = '❌';
-        if (type === 'warning') icon = '⚠️';
+        let icon = 'i';
+        if (type === 'success') icon = '✓';
+        if (type === 'error') icon = '!';
+        if (type === 'warning') icon = '!';
 
         const iconEl = document.createElement('span');
         iconEl.className = 'toast-icon';

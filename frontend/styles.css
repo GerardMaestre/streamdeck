@@ -35,14 +35,18 @@
     --duration-fast: 0.18s;
     --duration-normal: 0.32s;
     --duration-slow: 0.56s;
-    --ease-standard: cubic-bezier(0.25, 0.8, 0.25, 1);
-    --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
-    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-smooth: cubic-bezier(0.32, 0.72, 0, 1);
+    --ease-spring: cubic-bezier(0.2, 0.95, 0.18, 1.12);
     --ease-snap: cubic-bezier(0.2, 0.9, 0.24, 1);
     
     /* OPTIMIZATION TOKENS */
     --gpu-accel: translate3d(0,0,0);
     --perf-blur-multiplier: 1;
+
+    /* Panel slide duration */
+    --panel-slide-duration: 380ms;
+    --panel-slide-ease: cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 body.dragging-active {
@@ -58,25 +62,10 @@ body.dragging-active {
     -webkit-backface-visibility: hidden;
 }
 
-/* Optimización agresiva durante animaciones (solo snapshot para no degradar toda la UI) */
-body.animating .slide-snapshot * {
+/* Optimización durante transición de carrusel */
+.carousel-sliding .carousel-slide-track .deck-grid * {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
-    filter: none !important;
-    box-shadow: none !important;
-}
-
-.slide-snapshot {
-    position: fixed;
-    inset: 0;
-    width: 100vw;
-    height: 100vh;
-    z-index: 10;
-    pointer-events: none;
-    background: transparent;
-    will-change: transform, opacity;
-    contain: strict;
-    transform: translate3d(0, 0, 0);
 }
 
 
@@ -120,6 +109,64 @@ body {
     min-height: 100vh;
     box-sizing: border-box;
     transform: var(--gpu-accel);
+}
+
+#deck-container.hidden {
+    display: none !important;
+}
+
+/* ============================================================ */
+/* 🎬 PANEL SLIDE TRANSITIONS (iOS-style navigation)            */
+/* ============================================================ */
+
+/* Grid sliding out to the left when a panel opens */
+@keyframes gridSlideOut {
+    from { transform: translate3d(0, 0, 0); opacity: 1; }
+    to   { transform: translate3d(-30%, 0, 0); opacity: 0.4; }
+}
+
+/* Grid sliding back from the left when returning */
+@keyframes gridSlideBack {
+    from { transform: translate3d(-30%, 0, 0); opacity: 0.4; }
+    to   { transform: translate3d(0, 0, 0); opacity: 1; }
+}
+
+/* Panel sliding in from the right */
+@keyframes panelSlideIn {
+    from { transform: translate3d(100%, 0, 0); }
+    to   { transform: translate3d(0, 0, 0); }
+}
+
+/* Panel sliding out to the right (going back) */
+@keyframes panelSlideBackOut {
+    from { transform: translate3d(0, 0, 0); }
+    to   { transform: translate3d(100%, 0, 0); }
+}
+
+#deck-container.grid-slide-out {
+    animation: gridSlideOut var(--panel-slide-duration) var(--panel-slide-ease) both;
+    will-change: transform, opacity;
+}
+
+#deck-container.grid-slide-back {
+    animation: gridSlideBack var(--panel-slide-duration) var(--panel-slide-ease) both;
+    will-change: transform, opacity;
+}
+
+.panel-cache-node.panel-slide-in {
+    animation: panelSlideIn var(--panel-slide-duration) var(--panel-slide-ease) both;
+    will-change: transform;
+}
+
+.panel-cache-node.panel-slide-back-out {
+    animation: panelSlideBackOut var(--panel-slide-duration) var(--panel-slide-ease) both;
+    will-change: transform;
+}
+
+/* Back button exit animation */
+.panel-back-btn-exit {
+    animation: panelSlideBackOut var(--panel-slide-duration) var(--panel-slide-ease) both;
+    pointer-events: none;
 }
 
 /* Nueva vista principal tipo Stream Deck: 4x4 grid + footer */
@@ -204,23 +251,22 @@ body {
     position: absolute;
     top: 0;
     left: 0;
-    transform: var(--gpu-accel);
+    transform: translate3d(0, 0, 0);
     background: var(--bg-base);
-    transition: opacity 0.3s var(--ease-smooth), transform 0.3s var(--ease-smooth);
+    will-change: transform;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .panel-cache-node.hidden {
-    opacity: 0;
     pointer-events: none;
-    transform: scale(0.98) translateY(10px);
-    display: none !important; /* Fix ghosting */
+    display: none !important;
 }
 
 
 
 .boton {
     position: relative;
-    border: none;
     border-radius: var(--radius-md);
     font-size: clamp(0.75rem, 1.2vw, 1.15rem);
     font-weight: 600;
@@ -253,15 +299,7 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.boton.releasing {
-    animation: buttonReleaseSpring 340ms var(--ease-spring);
-}
-
-@keyframes buttonReleaseSpring {
-    0% { transform: scale(0.95) translateZ(0); }
-    55% { transform: scale(1.035) translateZ(0); }
-    100% { transform: scale(1) translateZ(0); }
-}
+/* removed buttonReleaseSpring */
 
 .btn-ripple {
     position: absolute;
@@ -364,19 +402,12 @@ body {
 @keyframes macOsGenieIn {
     0% {
         opacity: 0;
-        transform: translateY(200px) scaleX(0.2) scaleY(0.5);
-        border-radius: 50px;
+        transform: translateY(40px) scale(0.9);
+        border-radius: 30px;
     }
-
-    40% {
-        opacity: 0.8;
-        transform: translateY(-10px) scaleX(1.05) scaleY(1.05);
-        border-radius: 12px;
-    }
-
     100% {
         opacity: 1;
-        transform: translateY(0) scaleX(1) scaleY(1);
+        transform: translateY(0) scale(1);
         border-radius: 15px;
     }
 }
@@ -386,11 +417,10 @@ body {
         opacity: 1;
         transform: translateY(0) scale(1);
     }
-
     100% {
         opacity: 0;
-        transform: translateY(200px) scaleX(0.2) scaleY(0.5);
-        border-radius: 50px;
+        transform: translateY(40px) scale(0.9);
+        border-radius: 30px;
     }
 }
 
@@ -556,15 +586,15 @@ body {
     position: fixed !important;
     top: 20px !important;
     right: 20px !important;
-    width: 150px !important;
-    height: 150px !important;
+    width: 68px !important;
+    height: 68px !important;
     flex: none !important;
     aspect-ratio: 1 / 1 !important;
     border-radius: 50% !important;
     background: rgba(30, 41, 59, 0.88) !important;
-    border: 5px solid rgba(255, 255, 255, 0.3) !important;
+    border: 2px solid rgba(255, 255, 255, 0.3) !important;
     color: white !important;
-    font-size: 5rem !important;
+    font-size: 2.2rem !important;
     display: grid !important;
     place-items: center !important;
     cursor: pointer !important;
@@ -642,79 +672,37 @@ body {
 }
 
 /* ============================================================ */
-/* 🎠 CARRUSEL — ANIMACIONES DE SLIDE (BUTTERY SMOOTH)          */
+/* 🎠 CARRUSEL — SLIDE TRACK SYSTEM (60fps Fluid)               */
 /* ============================================================ */
 
 .grid-container {
-    transition: none; /* desactivamos transition global para controlar manualmente */
+    transition: none;
 }
 
-.grid-container.slide-enter-right, .deck-view.slide-enter-right {
-    animation: slideFromRight 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
-    will-change: transform, opacity;
+/* Container state while sliding */
+.carousel-sliding {
+    overflow: hidden;
 }
 
-/* Slide entrando desde la izquierda (swipe derecha) */
-.grid-container.slide-enter-left, .deck-view.slide-enter-left {
-    animation: slideFromLeft 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
-    will-change: transform, opacity;
+/* The slide track is a flex row holding two grids side by side.
+   Transition is applied inline by JS for precise control. */
+.carousel-slide-track {
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
 }
 
-@keyframes slideFromRight {
-    from {
-        transform: translate3d(40px, 0, 0) scale(0.97);
-        opacity: 0;
-    }
-    to {
-        transform: translate3d(0, 0, 0) scale(1);
-        opacity: 1;
-    }
+.carousel-slide-page {
+    display: flex;
+    flex-direction: column;
 }
 
-@keyframes slideFromLeft {
-    from {
-        transform: translate3d(-40px, 0, 0) scale(0.97);
-        opacity: 0;
-    }
-    to {
-        transform: translate3d(0, 0, 0) scale(1);
-        opacity: 1;
-    }
-}
-
-/* Animaciones de Salida (Desplazamiento) */
-.slide-exit-left {
-    animation: slideExitLeft 0.28s cubic-bezier(0.16, 1, 0.3, 1) both !important;
-    will-change: transform, opacity;
-}
-
-.slide-exit-right {
-    animation: slideExitRight 0.28s cubic-bezier(0.16, 1, 0.3, 1) both !important;
-    will-change: transform, opacity;
+.carousel-slide-page .deck-grid {
+    flex: 1 1 auto;
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .grid-container.slide-enter-right,
-    .deck-view.slide-enter-right,
-    .grid-container.slide-enter-left,
-    .deck-view.slide-enter-left,
-    .slide-exit-left,
-    .slide-exit-right {
-        animation-duration: 0.01ms !important;
-    }
-}
-
-@keyframes slideExitLeft {
-    to {
-        transform: translate3d(-40px, 0, 0) scale(0.97);
-        opacity: 0;
-    }
-}
-
-@keyframes slideExitRight {
-    to {
-        transform: translate3d(40px, 0, 0) scale(0.97);
-        opacity: 0;
+    .carousel-slide-track {
+        transition-duration: 0.01ms !important;
     }
 }
 
@@ -740,9 +728,6 @@ body {
     overflow: visible; /* Necesario para que ::after de los dots sobresalga */
 }
 
-#carousel-dots {
-    display: none !important;
-}
 
 #carousel-nav-buttons {
     position: fixed;

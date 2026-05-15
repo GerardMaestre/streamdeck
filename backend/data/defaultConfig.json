@@ -67,6 +67,12 @@
                 "type": "autoclicker_panel"
             },
             {
+                "label": "Soundboard",
+                "icon": "📣",
+                "color": "linear-gradient(145deg, #a855f7, #6d28d9)",
+                "type": "soundboard_panel"
+            },
+            {
                 "label": "Multimedia",
                 "icon": "🎵",
                 "color": "linear-gradient(145deg, #e67e22, #f39c12)",

@@ -1,5 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
+
 :: DESC: Detiene el stack Docker de Immich para liberar recursos.
 :: ARGS: [Ruta_Immich]
 :: RISK: low
@@ -27,8 +28,7 @@ echo.
 ::  VALIDACIONES
 :: =============================================
 if not exist "%IMMICH_DIR%" (
-    echo  [X] No se encontro la carpeta de Immich:
-    echo      %IMMICH_DIR%
+    echo  [X] No se encontro la carpeta de Immich: %IMMICH_DIR%
     exit /b 1
 )
 
@@ -36,11 +36,7 @@ if not exist "%IMMICH_DIR%" (
 docker info >nul 2>&1
 if errorlevel 1 (
     echo  [OK] Docker no esta activo. No hay nada que apagar.
-    echo.
-    echo  ╔═══════════════════════════════════════╗
-    echo  ║  ✅  No habia contenedores activos.   ║
-    echo  ╚═══════════════════════════════════════╝
-    timeout /t 3 >nul
+    powershell -Command "Start-Sleep -Seconds 3"
     exit /b 0
 )
 
@@ -50,11 +46,7 @@ cd /d "%IMMICH_DIR%"
 docker compose ps --status running 2>nul | findstr /i "immich" >nul 2>&1
 if errorlevel 1 (
     echo  [OK] Immich no estaba en ejecucion.
-    echo.
-    echo  ╔═══════════════════════════════════════╗
-    echo  ║  ✅  No habia contenedores activos.   ║
-    echo  ╚═══════════════════════════════════════╝
-    timeout /t 3 >nul
+    powershell -Command "Start-Sleep -Seconds 3"
     exit /b 0
 )
 
@@ -66,13 +58,11 @@ echo.
 
 docker compose down >nul 2>&1
 if errorlevel 1 (
-    echo  [~] Reintentando con docker-compose (v1)...
+    echo  [~] Reintentando con docker-compose...
     docker-compose down >nul 2>&1
     if errorlevel 1 (
-        echo.
         echo  [X] No se pudieron detener los contenedores.
-        echo      Prueba manualmente: docker compose down
-        timeout /t 5 >nul
+        powershell -Command "Start-Sleep -Seconds 5"
         exit /b 1
     )
 )
@@ -85,8 +75,8 @@ echo  ╔═══════════════════════�
 echo  ║  ✅  Immich apagado correctamente.    ║
 echo  ║                                       ║
 echo  ║  RAM y CPU liberados.                 ║
-echo  ║  Tus fotos siguen seguras en disco.   ║
 echo  ╚═══════════════════════════════════════╝
 echo.
-timeout /t 4 >nul
+powershell -Command "Start-Sleep -Seconds 5"
 exit /b 0
+

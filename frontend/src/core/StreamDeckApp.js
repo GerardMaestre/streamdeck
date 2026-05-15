@@ -17,6 +17,7 @@ import { DomoticaModule } from '../modules/DomoticaModule.js';
 import { AutoClickerModule } from '../modules/AutoClickerModule.js';
 import { CarouselModule } from '../modules/CarouselModule.js';
 import { EditModeModule } from '../modules/EditModeModule.js';
+import { SoundboardModule } from '../modules/SoundboardModule.js';
 import { NotificationToast } from '../ui/NotificationToast.js';
 
 export class StreamDeckApp {
@@ -75,7 +76,8 @@ export class StreamDeckApp {
                 mixer: document.getElementById('panel-mixer'),
                 discord: document.getElementById('panel-discord'),
                 domotica: document.getElementById('panel-domotica'),
-                autoclicker: document.getElementById('panel-autoclicker')
+                autoclicker: document.getElementById('panel-autoclicker'),
+                soundboard: document.getElementById('panel-soundboard')
             },
             onPanelChange: (panelId, previousPanel) => {
                 if (previousPanel === 'mixer' && panelId !== 'mixer') {
@@ -135,6 +137,7 @@ export class StreamDeckApp {
         this.discord = new DiscordModule(ctx);
         this.domotica = new DomoticaModule(ctx);
         this.autoclicker = new AutoClickerModule(ctx);
+        this.soundboard = new SoundboardModule(ctx);
 
         // --- Wire editmode state to carousel ---
         this.events.on('editmode:changed', (active) => {
@@ -466,6 +469,10 @@ export class StreamDeckApp {
                 this._openDomotica();
             } else if (btnData.type === 'autoclicker_panel') {
                 this._openAutoClicker();
+            } else if (btnData.type === 'soundboard_panel') {
+                this._openSoundboard();
+            } else if (btnData.type === 'ig_panel') {
+                this._openInstagram();
             } else if (btnData.type === 'quick_action') {
                 this._processQuickAction(btnData);
             } else if (btnData.type === 'action') {
@@ -609,6 +616,99 @@ export class StreamDeckApp {
                 this.carousel.renderSlide(this.carousel.getCarouselIndex(), 0);
             }
         );
+    }
+
+    _openSoundboard() {
+        this.carousel.setEditButtonVisibility(false);
+        this.soundboard.open(
+            this.panelManager.panels.soundboard,
+            () => {
+                this.panelManager.hidePanels();
+                this.carousel.renderSlide(this.carousel.getCarouselIndex(), 0);
+            }
+        );
+    }
+
+    _openInstagram() {
+        this.carousel.setEditButtonVisibility(false);
+        if (!this.overlay || !this.overlayContainer) return;
+
+        this.overlayContainer.innerHTML = `
+            <div class="settings-panel glass" style="max-width:460px;">
+                <div class="settings-header">
+                    <div><h2>👻 IG Phantom V9.4</h2><p>Automatización multi-perfil de Instagram</p></div>
+                    <button id="ig-close-btn" type="button" class="footer-btn">Cerrar</button>
+                </div>
+                <div class="settings-content" style="gap:12px;">
+                    <div id="ig-status" style="background:rgba(0,0,0,0.3);padding:12px 16px;border-radius:10px;font-size:13px;color:#94a3b8;">
+                        Estado: <b id="ig-status-text" style="color:#0fe;">Listo</b>
+                    </div>
+                    <div id="ig-profiles-list" style="display:flex;flex-direction:column;gap:8px;max-height:200px;overflow-y:auto;"></div>
+                    <div id="ig-errors" style="display:none;background:rgba(244,63,94,0.1);border:1px solid rgba(244,63,94,0.3);padding:10px;border-radius:8px;font-size:12px;color:#f43f5e;max-height:80px;overflow-y:auto;"></div>
+                    <div style="display:flex;gap:8px;">
+                        <button id="ig-start-btn" class="footer-btn" style="flex:2;background:rgba(0,255,238,0.1);color:#0fe;border:1px solid rgba(0,255,238,0.3);padding:14px;font-size:13px;font-weight:700;">
+                            ▶ LANZAR PERFILES
+                        </button>
+                        <button id="ig-stop-btn" class="footer-btn" style="flex:1;background:rgba(244,63,94,0.1);color:#f43f5e;border:1px solid rgba(244,63,94,0.3);padding:14px;">
+                            ⏹ PARAR
+                        </button>
+                    </div>
+                    <p style="font-size:11px;color:#64748b;text-align:center;margin:0;">
+                        Configura perfiles en <code>tools/ig-profiles.json</code>
+                    </p>
+                </div>
+            </div>
+        `;
+
+        this.overlay.classList.remove('hidden');
+
+        const closeBtn = this.overlayContainer.querySelector('#ig-close-btn');
+        const startBtn = this.overlayContainer.querySelector('#ig-start-btn');
+        const stopBtn = this.overlayContainer.querySelector('#ig-stop-btn');
+
+        closeBtn?.addEventListener('click', () => this._closeFolder());
+        startBtn?.addEventListener('click', () => this.socket.emit('ig_start'));
+        stopBtn?.addEventListener('click', () => this.socket.emit('ig_stop'));
+
+        // Request current state
+        this.socket.emit('ig_get_state');
+
+        // Listen for state updates
+        const onState = (state) => {
+            const statusText = this.overlayContainer?.querySelector('#ig-status-text');
+            const profilesList = this.overlayContainer?.querySelector('#ig-profiles-list');
+            const errorsDiv = this.overlayContainer?.querySelector('#ig-errors');
+            if (!statusText) return;
+
+            statusText.textContent = state.running ? `Ejecutando (${state.completedCount}/${state.totalCount})` : 'Listo';
+            statusText.style.color = state.running ? '#fbbf24' : '#0fe';
+
+            if (profilesList && state.profiles) {
+                profilesList.innerHTML = state.profiles.map(p => {
+                    const colors = { idle: '#64748b', launching: '#fbbf24', ready: '#38bdf8', navigating: '#a855f7', injected: '#10b981', error: '#f43f5e', closed: '#475569' };
+                    const icons = { idle: '⏸', launching: '🚀', ready: '✅', navigating: '🌐', injected: '👻', error: '❌', closed: '🔒' };
+                    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;border:1px solid rgba(255,255,255,0.06);">
+                        <span style="font-size:16px;">${icons[p.status] || '⏸'}</span>
+                        <span style="flex:1;font-size:13px;font-weight:600;">${p.name}</span>
+                        <span style="font-size:11px;color:${colors[p.status] || '#64748b'};font-weight:700;text-transform:uppercase;">${p.status}</span>
+                    </div>`;
+                }).join('');
+            }
+
+            if (errorsDiv && state.errors && state.errors.length > 0) {
+                errorsDiv.style.display = 'block';
+                errorsDiv.innerHTML = state.errors.map(e => `<div style="margin-bottom:4px;">⚠️ ${e}</div>`).join('');
+            }
+        };
+
+        this.socket.on('ig_state', onState);
+        // Cleanup listener when overlay closes
+        const originalClose = this._closeFolder.bind(this);
+        this._closeFolder = () => {
+            this.socket.off('ig_state', onState);
+            this._closeFolder = originalClose;
+            originalClose();
+        };
     }
 
     // --- Settings panel ---

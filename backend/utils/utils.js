@@ -259,9 +259,13 @@ const createSafeSocketHandler = (socket, eventName, handler) => {
     return async (...args) => {
         const ackCandidate = args[args.length - 1];
         const ack = typeof ackCandidate === 'function' ? ackCandidate : null;
+        const payloadArgs = ack ? args.slice(0, -1) : args;
+        const handlerArgs = ack
+            ? (payloadArgs.length ? [...payloadArgs, ack] : [undefined, ack])
+            : payloadArgs;
 
         try {
-            await handler(...args);
+            await handler(...handlerArgs);
         } catch (error) {
             logControllerError(`socket:${eventName}`, error);
             emitErrorToFrontend(socket, eventName, error);
@@ -273,11 +277,7 @@ const createSafeSocketHandler = (socket, eventName, handler) => {
     };
 };
 
-const sanitizeShellArgs = (args) => {
-    if (typeof args !== 'string') return '';
-    // Eliminar caracteres peligrosos para la shell
-    return args.replace(/[&|;<>`$()!]/g, '').trim();
-};
+const DANGEROUS_SHELL_CHARS = /[&|;<>`]/;
 
 const parseShellArgs = (args) => {
     const raw = typeof args === 'string' ? args.trim() : '';
@@ -316,7 +316,14 @@ const parseShellArgs = (args) => {
     }
 
     if (current) result.push(current);
-    return result.map(arg => sanitizeShellArgs(arg)).filter(Boolean);
+
+    const cleaned = result.map(arg => arg.trim()).filter(Boolean);
+    const unsafeArg = cleaned.find(arg => DANGEROUS_SHELL_CHARS.test(arg));
+    if (unsafeArg) {
+        throw new Error(`Argumento contiene caracteres no permitidos: ${unsafeArg}`);
+    }
+
+    return cleaned;
 };
 
 module.exports = {

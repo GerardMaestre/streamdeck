@@ -393,7 +393,10 @@ export class MixerModule {
             console.error('[Mixer] Error crítico en renderInitialMixer:', error);
             const container = document.getElementById('mixer-main-container');
             if (container) {
-                container.innerHTML = `<div style="color: red;">Error UI: ${error.message}</div>`;
+                const errorEl = document.createElement('div');
+                errorEl.style.color = 'red';
+                errorEl.textContent = `Error UI: ${error.message || error}`;
+                container.replaceChildren(errorEl);
             }
         }
     }

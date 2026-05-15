@@ -25,4 +25,4 @@ if exist "%godModeFolder%" (
 
 echo.
 echo ⚡ ================================================== ⚡
-timeout /t 3 >nul
+ping 127.0.0.1 -n 4 >nul

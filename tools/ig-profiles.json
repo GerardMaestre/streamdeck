@@ -1,0 +1,32 @@
+{
+    "chromePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "maxConcurrent": 3,
+    "targetUrl": "https://www.instagram.com/",
+    "profiles": [
+        {
+            "name": "gerard_mf",
+            "userDataDir": "C:\\Users\\gerar\\AppData\\Local\\Google\\Chrome\\User Data\\Profile 2",
+            "port": 9222
+        },
+        {
+            "name": "viral",
+            "userDataDir": "C:\\Users\\gerar\\AppData\\Local\\Google\\Chrome\\User Data\\Profile 5",
+            "port": 9223
+        },
+        {
+            "name": "jangueo",
+            "userDataDir": "C:\\Users\\gerar\\AppData\\Local\\Google\\Chrome\\User Data\\Profile 4",
+            "port": 9224
+        },
+        {
+            "name": "lsitas_mf",
+            "userDataDir": "C:\\Users\\gerar\\AppData\\Local\\Google\\Chrome\\User Data\\Profile 3",
+            "port": 9225
+        },
+        {
+            "name": "obsession",
+            "userDataDir": "C:\\Users\\gerar\\AppData\\Local\\Google\\Chrome\\User Data\\Profile 6",
+            "port": 9226
+        }
+    ]
+}

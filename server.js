@@ -85,6 +85,26 @@ const Logger = require("./backend/core/logger/logger");
 const { PluginManager } = require('./backend/core/plugins/pluginManager');
 const { appendAdminAudit, clearAdminAudit } = require('./backend/core/plugins/adminAudit');
 
+const isLocalAddress = (address) => {
+    const clean = (address || '').replace(/^::ffff:/, '');
+    if (clean === '::1' || clean === '127.0.0.1') return true;
+    
+    const parts = clean.split('.');
+    if (parts.length === 4) {
+        const first = parseInt(parts[0], 10);
+        const second = parseInt(parts[1], 10);
+        
+        // Tailscale (100.64.0.0/10)
+        if (first === 100 && second >= 64 && second <= 127) return true;
+        
+        // Private networks (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+        if (first === 192 && second === 168) return true;
+        if (first === 10) return true;
+        if (first === 172 && second >= 16 && second <= 31) return true;
+    }
+    return false;
+};
+
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
@@ -120,7 +140,20 @@ try {
 
 const isAllowedOrigin = (origin) => {
     if (!origin) return true;
-    return allowedCorsOrigins.has(origin);
+    if (allowedCorsOrigins.has(origin)) return true;
+    
+    try {
+        const url = new URL(origin);
+        const hostname = url.hostname;
+        if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') return true;
+        
+        // Validar dinámicamente si la IP de origen pertenece a una red local o Tailscale
+        if (isLocalAddress(hostname)) return true;
+    } catch (err) {
+        // Fallback si no es una URL válida
+    }
+    
+    return false;
 };
 
 const logRejectedOrigin = (context, origin) => {
@@ -340,8 +373,10 @@ const { hacerCaptura } = require('./backend/system/captureController');
 const { ejecutarScriptDinamico, listarScripts, stopAllRunningScripts } = require('./backend/scripts/scriptController');
 const { initDiscordRPC, requestInitialDiscordState, discordToggleMute, discordToggleDeaf, discordSetUserVolume, forceDiscordReconnect } = require('./backend/discord/discordController');
 const { sendTuyaCommand, controlMultipleDevices } = require('./backend/iot/smart_home');
-const { minimizarTodo, cambiarResolucion, apagarPC, reiniciarPC } = require('./backend/system/systemController');
+const { cambiarResolucion, minimizarTodo, apagarPC, reiniciarPC } = require('./backend/system/systemController');
 const { handleAutoClickerSocket } = require('./backend/automation/autoClickerController');
+const { initAudioHost, registerSoundboardSocketHandlers, sendSoundboardAudio } = require('./backend/soundboard/soundboardController');
+const { handleInstagramSocket, destroyInstagram } = require('./backend/automation/instagramController');
 
 // --- CACHE DE SISTEMA ---
 let configCache = null;
@@ -628,10 +663,6 @@ const normalizeAuthToken = (rawToken) => {
     return rawToken.toString().replace(/^Bearer\s+/i, '').trim();
 };
 
-const isLocalAddress = (address) => {
-    return address === '::1' || address === '127.0.0.1' || address === '::ffff:127.0.0.1';
-};
-
 const registerBadAuthAttempt = (ip) => {
     if (!ip) return;
     const now = Date.now();
@@ -760,6 +791,8 @@ app.get('/sw.js', async (req, res) => {
     }
 });
 
+app.get('/audio/:fileName', sendSoundboardAudio);
+
 app.use(express.static(getDataPath('frontend'), {
     etag: true,
     lastModified: true,
@@ -774,6 +807,19 @@ app.use(express.static(getDataPath('frontend'), {
         }
     }
 }));
+
+app.post('/api/run-script', async (req, res) => {
+    if (!ensureAuthorizedRequest(req, res)) return;
+    try {
+        const { carpeta, archivo, args } = req.body;
+        if (!carpeta || !archivo) return res.status(400).json({ error: 'Faltan parámetros (carpeta, archivo)' });
+        
+        await ejecutarScriptDinamico({ carpeta, archivo, args });
+        return res.json({ ok: true, message: 'Script iniciado correctamente' });
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+});
 
 app.get('/api/config', async (req, res) => {
     if (!ensureAuthorizedRequest(req, res)) return;
@@ -797,8 +843,9 @@ app.post('/api/config', async (req, res) => {
     if (!ensureAuthorizedRequest(req, res)) return;
     try {
         const newConfig = req.body;
-        if (!newConfig || typeof newConfig !== 'object' || !newConfig.pages) return res.status(400).json({ error: 'Payload invalido' });
-        await fs.promises.writeFile(CONFIG_PATH, JSON.stringify(newConfig, null, 4), 'utf8');
+        const payloadError = validateConfigPayload(newConfig);
+        if (payloadError) return res.status(400).json({ error: payloadError });
+        await writeJsonAtomic(CONFIG_PATH, newConfig);
         configCache = newConfig;
         return res.json({ ok: true, correlationId: req.correlationId });
     } catch (err) {
@@ -820,8 +867,13 @@ app.post('/api/app-state', async (req, res) => {
          * - Si no cumplen, el endpoint responde 400 y no persiste cambios parciales.
          */
         const payload = req.body;
+        if (!isPlainObject(payload)) return res.status(400).json({ error: 'Payload invalido' });
+        if (payload.ui !== undefined && !isPlainObject(payload.ui)) return res.status(400).json({ error: 'ui debe ser un objeto' });
+        if (payload.persistedMixer !== undefined && !isPlainObject(payload.persistedMixer)) return res.status(400).json({ error: 'persistedMixer debe ser un objeto' });
+        if (payload.persistedSoundboard !== undefined && !isPlainObject(payload.persistedSoundboard)) return res.status(400).json({ error: 'persistedSoundboard debe ser un objeto' });
         if (payload.ui) appStateStore.merge('ui', payload.ui);
         if (payload.persistedMixer) appStateStore.merge('persistedMixer', payload.persistedMixer);
+        if (payload.persistedSoundboard) appStateStore.merge('persistedSoundboard', payload.persistedSoundboard);
         appStateStore.set('updatedAt', Date.now());
         return res.json({ ok: true, correlationId: req.correlationId });
     } catch (err) {
@@ -834,12 +886,9 @@ app.post('/api/app-state', async (req, res) => {
 
 initAudioMixer(io);
 initDiscordRPC(io);
+initAudioHost(); // Arrancar motor invisible de sonido
 
-const handleSocketError = (socket, eventName, error, ack) => {
-    Logger.error(`Socket [${eventName}]`, error);
-    emitErrorToFrontend(socket, eventName, error);
-    if (typeof ack === 'function') ack({ ok: false, message: getErrorMessage(error) });
-};
+// Helper functions move to line 949 section
 
 const REQUIRED_TUYA_KEYS = ['TUYA_ACCESS_KEY', 'TUYA_SECRET_KEY'];
 const REQUIRED_DISCORD_KEYS = ['DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'DISCORD_REDIRECT_URI'];
@@ -906,35 +955,118 @@ const ensureIntegrationCredentials = async (type) => {
     }
 };
 
+const handleSocketError = (socket, eventName, error, ack) => {
+    const correlationId = socket.handshake.auth?.correlationId || 'N/A';
+    Logger.error(`[Socket:${eventName}] Error`, {
+        message: error.message,
+        stack: error.stack,
+        correlationId
+    });
+    if (typeof ack === 'function') {
+        ack({ ok: false, error: 'Error interno del servidor' });
+    }
+};
+
 const runSafely = async (socket, eventName, action, ack) => {
-    try { return await action(); } catch (error) { handleSocketError(socket, eventName, error, ack); return null; }
+    try {
+        return await action();
+    } catch (error) {
+        handleSocketError(socket, eventName, error, ack);
+        return null;
+    }
+};
+
+const ackOkWhenDone = (promise, ack, mapper = (res) => ({ ok: !!res })) => {
+    if (promise instanceof Promise) {
+        promise.then((result) => {
+            if (typeof ack === 'function') {
+                ack(mapper(result));
+            }
+        }).catch(() => {
+            // Error ya manejado en runSafely
+        });
+    } else {
+        if (typeof ack === 'function') {
+            ack(mapper(promise));
+        }
+    }
 };
 
 const getAck = (p, ack) => typeof ack === 'function' ? ack : (typeof p === 'function' ? p : undefined);
+const isPlainObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const writeJsonAtomic = async (filePath, value) => {
+    const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+    await fs.promises.writeFile(tempPath, JSON.stringify(value, null, 4), 'utf8');
+    await fs.promises.rename(tempPath, filePath);
+};
+
+const validateConfigPayload = (config) => {
+    if (!isPlainObject(config)) return 'Payload invalido';
+    if (!isPlainObject(config.pages)) return 'El campo pages debe ser un objeto';
+    if (config.carouselPages !== undefined && !Array.isArray(config.carouselPages)) {
+        return 'El campo carouselPages debe ser un array';
+    }
+    return null;
+};
+
+const validateTuyaPayload = (payload) => {
+    if (!isPlainObject(payload)) return 'Payload Tuya invalido';
+    const hasSingle = typeof payload.deviceId === 'string' && payload.deviceId.trim();
+    const hasMany = Array.isArray(payload.deviceIds) && payload.deviceIds.length > 0
+        && payload.deviceIds.every((id) => typeof id === 'string' && id.trim());
+    if (!hasSingle && !hasMany) return 'Se requiere deviceId o deviceIds';
+    if (typeof payload.code !== 'string' || !payload.code.trim()) return 'Se requiere code';
+    return null;
+};
+
+const validateResolutionPayload = (payload) => {
+    if (!isPlainObject(payload)) return 'Payload de resolucion invalido';
+    const width = Number(payload.width);
+    const height = Number(payload.height);
+    if (!Number.isInteger(width) || !Number.isInteger(height)) return 'Resolucion invalida';
+    return null;
+};
+
+// ackOkWhenDone already defined above
 
 io.on('connection', (socket) => {
     log('[Socket] Conectado');
     socket.emit('server_version', { version: SERVER_START_TS });
 
-    socket.on('mixer_initial_state', (p, ack) => { const cb = getAck(p, ack); runSafely(socket, 'mixer_initial_state', () => sendInitialState(socket), cb); });
-    socket.on('mixer_bind_commands', (p, ack) => { const cb = getAck(p, ack); runSafely(socket, 'mixer_bind_commands', () => handleSocketCommands(socket), cb); });
+    socket.on('mixer_initial_state', (p, ack) => {
+        const cb = getAck(p, ack);
+        runSafely(socket, 'mixer_initial_state', () => sendInitialState(socket), cb);
+    });
+    socket.on('mixer_bind_commands', (p, ack) => {
+        const cb = getAck(p, ack);
+        runSafely(socket, 'mixer_bind_commands', () => handleSocketCommands(socket), cb);
+    });
     socket.on('discord_initial_state', (p, ack) => {
         const cb = getAck(p, ack);
-        if (getMissingEnvKeys(REQUIRED_DISCORD_KEYS).length) return cb && cb({ ok: false });
+        if (getMissingEnvKeys(REQUIRED_DISCORD_KEYS).length) {
+            if (cb) cb({ ok: false, error: 'Discord keys missing' });
+            return;
+        }
         runSafely(socket, 'discord_initial_state', () => requestInitialDiscordState(socket), cb);
     });
-    socket.on('abrir', (destino, ack) => runSafely(socket, 'abrir', () => abrirAplicacionOWeb(destino), ack).then(() => typeof ack === 'function' && ack({ ok: true })));
-    socket.on('macro', (tipo, ack) => runSafely(socket, 'macro', () => ejecutarMacro(tipo), ack).then(() => typeof ack === 'function' && ack({ ok: true })));
-    socket.on('multimedia', (accion, ack) => runSafely(socket, 'multimedia', () => controlMultimedia(accion), ack).then(() => typeof ack === 'function' && ack({ ok: true })));
-    socket.on('captura', (pantalla, ack) => runSafely(socket, 'captura', () => hacerCaptura(pantalla), ack).then(() => typeof ack === 'function' && ack({ ok: true })));
+    socket.on('abrir', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'abrir', () => abrirAplicacionOWeb(p), cb), cb); });
+    socket.on('macro', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'macro', () => ejecutarMacro(p), cb), cb); });
+    socket.on('multimedia', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'multimedia', () => controlMultimedia(p), cb), cb); });
+    socket.on('captura', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'captura', () => hacerCaptura(p), cb), cb); });
     
-    socket.on('ejecutar_script_dinamico', async (payload, ack) => {
+    socket.on('ejecutar_script_dinamico', async (p, ack) => {
+        const cb = getAck(p, ack);
+        const payload = isPlainObject(p) ? p : {};
+        
+        if (!isPlainObject(p)) return typeof cb === 'function' && cb({ ok: false, message: 'Payload de script invalido' });
+        
         if (payload.requiresParams && !payload.args && global.showPCPrompt) {
             const pcArgs = await global.showPCPrompt(payload.archivo || 'Script');
-            if (!pcArgs) return typeof ack === 'function' && ack({ ok: false });
+            if (!pcArgs) return typeof cb === 'function' && cb({ ok: false });
             payload.args = pcArgs;
         }
-        runSafely(socket, 'ejecutar_script_dinamico', () => ejecutarScriptDinamico(payload, socket), ack).then(() => typeof ack === 'function' && ack({ ok: true }));
+        ackOkWhenDone(runSafely(socket, 'ejecutar_script_dinamico', () => ejecutarScriptDinamico(payload, socket), cb), cb);
     });
 
     socket.on('discord_toggle_mute', async (p, ack) => {
@@ -951,32 +1083,42 @@ io.on('connection', (socket) => {
         if (res !== null && cb) cb(res);
     });
 
-    socket.on('discord_set_user_volume', async (payload, ack) => {
-        if (!(await ensureIntegrationCredentials('discord')).ok) return typeof ack === 'function' && ack({ ok: false });
-        const { userId, volume } = payload || {};
-        const res = await runSafely(socket, 'discord_set_user_volume', () => discordSetUserVolume(userId, volume), ack);
-        if (res !== null && typeof ack === 'function') ack(res);
+    socket.on('discord_set_user_volume', async (p, ack) => {
+        const cb = getAck(p, ack);
+        if (!(await ensureIntegrationCredentials('discord')).ok) return cb && cb({ ok: false });
+        const { userId, volume } = isPlainObject(p) ? p : {};
+        const res = await runSafely(socket, 'discord_set_user_volume', () => discordSetUserVolume(userId, volume), cb);
+        if (res !== null && cb) cb(res);
     });
 
-    socket.on('tuya_command', async (payload, ack) => {
-        if (!(await ensureIntegrationCredentials('tuya')).ok) return typeof ack === 'function' && ack({ ok: false });
-        const { deviceId, deviceIds, code, value } = payload;
-        const result = await runSafely(socket, 'tuya_command', () => deviceIds ? controlMultipleDevices(deviceIds, code, value) : sendTuyaCommand(deviceId, code, value), ack);
-        if (typeof ack === 'function') ack({ ok: !!result });
+    socket.on('tuya_command', async (p, ack) => {
+        const cb = getAck(p, ack);
+        if (!(await ensureIntegrationCredentials('tuya')).ok) return cb && cb({ ok: false });
+        const payloadError = validateTuyaPayload(p);
+        if (payloadError) return cb && cb({ ok: false, message: payloadError });
+        const { deviceId, deviceIds, code, value } = p;
+        const result = await runSafely(socket, 'tuya_command', () => deviceIds ? controlMultipleDevices(deviceIds, code, value) : sendTuyaCommand(deviceId, code, value), cb);
+        if (cb) cb({ ok: !!result });
     });
 
-    socket.on('minimizar_todo', (p, ack) => { const cb = getAck(p, ack); runSafely(socket, 'minimizar_todo', () => minimizarTodo(), cb).then(() => cb && cb({ ok: true })); });
-    socket.on('abrir_keep', (p, ack) => { const cb = getAck(p, ack); runSafely(socket, 'abrir_keep', () => abrirAplicacionOWeb('google-keep'), cb).then(() => cb && cb({ ok: true })); });
-    socket.on('abrir_calendario', (p, ack) => { const cb = getAck(p, ack); runSafely(socket, 'abrir_calendario', () => abrirAplicacionOWeb('google-calendar'), cb).then(() => cb && cb({ ok: true })); });
-    socket.on('cambiar_resolucion', (p, ack) => runSafely(socket, 'cambiar_resolucion', () => cambiarResolucion(p.width, p.height), ack).then(res => typeof ack === 'function' && ack(res)));
-    socket.on('apagar_pc', (p, ack) => { const cb = getAck(p, ack); runSafely(socket, 'apagar_pc', () => apagarPC(), cb).then(() => cb && cb({ ok: true })); });
-    socket.on('reiniciar_pc', (p, ack) => { const cb = getAck(p, ack); runSafely(socket, 'reiniciar_pc', () => reiniciarPC(), cb).then(() => cb && cb({ ok: true })); });
+    socket.on('minimizar_todo', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'minimizar_todo', () => minimizarTodo(), cb), cb); });
+    socket.on('abrir_keep', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'abrir_keep', () => abrirAplicacionOWeb('google-keep'), cb), cb); });
+    socket.on('abrir_calendario', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'abrir_calendario', () => abrirAplicacionOWeb('google-calendar'), cb), cb); });
+    socket.on('cambiar_resolucion', (p, ack) => {
+        const cb = getAck(p, ack);
+        const payloadError = validateResolutionPayload(p);
+        if (payloadError) return cb && cb({ ok: false, error: payloadError });
+        ackOkWhenDone(runSafely(socket, 'cambiar_resolucion', () => cambiarResolucion(p.width, p.height), cb), cb, (res) => res);
+    });
+    socket.on('apagar_pc', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'apagar_pc', () => apagarPC(), cb), cb); });
+    socket.on('reiniciar_pc', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'reiniciar_pc', () => reiniciarPC(), cb), cb); });
     socket.on('ping', (ack) => typeof ack === 'function' && ack());
     handleAutoClickerSocket(socket, io);
+    registerSoundboardSocketHandlers(socket);
+    handleInstagramSocket(socket, io);
 });
 
 let PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
-global.__streamdeck_port = PORT;
 
 const updateCorsForPort = (port) => {
     try {
@@ -997,7 +1139,6 @@ const updateCorsForPort = (port) => {
 server.on('error', (err) => {
     if (err && err.code === 'EADDRINUSE') {
         PORT++;
-        global.__streamdeck_port = PORT;
         updateCorsForPort(PORT);
         setTimeout(() => server.listen(PORT), 200);
     } else {
@@ -1017,9 +1158,10 @@ app.get('/api/scripts', async (req, res) => {
 });
 
 server.listen(PORT, () => {
+    global.__streamdeck_port = PORT;
     console.log(`Server running on port ${PORT}`);
 });
 
-const gracefulShutdown = () => { try { stopAllRunningScripts(); shutdownPluginSystem(); } catch (e) {} };
+const gracefulShutdown = () => { try { stopAllRunningScripts(); destroyInstagram(); shutdownPluginSystem(); } catch (e) {} };
 process.on('SIGINT', gracefulShutdown);
 process.on('SIGTERM', gracefulShutdown);
