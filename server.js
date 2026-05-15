@@ -85,6 +85,26 @@ const Logger = require("./backend/core/logger/logger");
 const { PluginManager } = require('./backend/core/plugins/pluginManager');
 const { appendAdminAudit, clearAdminAudit } = require('./backend/core/plugins/adminAudit');
 
+const isLocalAddress = (address) => {
+    const clean = (address || '').replace(/^::ffff:/, '');
+    if (clean === '::1' || clean === '127.0.0.1') return true;
+    
+    const parts = clean.split('.');
+    if (parts.length === 4) {
+        const first = parseInt(parts[0], 10);
+        const second = parseInt(parts[1], 10);
+        
+        // Tailscale (100.64.0.0/10)
+        if (first === 100 && second >= 64 && second <= 127) return true;
+        
+        // Private networks (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+        if (first === 192 && second === 168) return true;
+        if (first === 10) return true;
+        if (first === 172 && second >= 16 && second <= 31) return true;
+    }
+    return false;
+};
+
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
@@ -120,7 +140,20 @@ try {
 
 const isAllowedOrigin = (origin) => {
     if (!origin) return true;
-    return allowedCorsOrigins.has(origin);
+    if (allowedCorsOrigins.has(origin)) return true;
+    
+    try {
+        const url = new URL(origin);
+        const hostname = url.hostname;
+        if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') return true;
+        
+        // Validar dinámicamente si la IP de origen pertenece a una red local o Tailscale
+        if (isLocalAddress(hostname)) return true;
+    } catch (err) {
+        // Fallback si no es una URL válida
+    }
+    
+    return false;
 };
 
 const logRejectedOrigin = (context, origin) => {
@@ -630,26 +663,6 @@ const normalizeAuthToken = (rawToken) => {
     return rawToken.toString().replace(/^Bearer\s+/i, '').trim();
 };
 
-const isLocalAddress = (address) => {
-    const clean = (address || '').replace(/^::ffff:/, '');
-    if (clean === '::1' || clean === '127.0.0.1') return true;
-    
-    const parts = clean.split('.');
-    if (parts.length === 4) {
-        const first = parseInt(parts[0], 10);
-        const second = parseInt(parts[1], 10);
-        
-        // Tailscale (100.64.0.0/10)
-        if (first === 100 && second >= 64 && second <= 127) return true;
-        
-        // Private networks (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
-        if (first === 192 && second === 168) return true;
-        if (first === 10) return true;
-        if (first === 172 && second >= 16 && second <= 31) return true;
-    }
-    return false;
-};
-
 const registerBadAuthAttempt = (ip) => {
     if (!ip) return;
     const now = Date.now();
@@ -1106,7 +1119,6 @@ io.on('connection', (socket) => {
 });
 
 let PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
-global.__streamdeck_port = PORT;
 
 const updateCorsForPort = (port) => {
     try {
@@ -1127,7 +1139,6 @@ const updateCorsForPort = (port) => {
 server.on('error', (err) => {
     if (err && err.code === 'EADDRINUSE') {
         PORT++;
-        global.__streamdeck_port = PORT;
         updateCorsForPort(PORT);
         setTimeout(() => server.listen(PORT), 200);
     } else {
@@ -1147,6 +1158,7 @@ app.get('/api/scripts', async (req, res) => {
 });
 
 server.listen(PORT, () => {
+    global.__streamdeck_port = PORT;
     console.log(`Server running on port ${PORT}`);
 });
 
