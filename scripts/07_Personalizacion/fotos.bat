@@ -1,5 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
+
 :: DESC: Inicia el stack Docker de Immich para servidor local de fotos.
 :: ARGS: [Ruta_Immich]
 :: RISK: medium
@@ -15,6 +16,9 @@ if not defined IMMICH_DIR set "IMMICH_DIR=C:\immich-app"
 set "MAX_DOCKER_WAIT=120"
 set "MAX_HEALTH_WAIT=60"
 set "IMMICH_PORT=2283"
+set "LOG_FILE=%TEMP%\immich_start.log"
+
+echo [%DATE% %TIME%] Iniciando fotos.bat > "%LOG_FILE%"
 
 :: =============================================
 ::  BANNER
@@ -30,28 +34,10 @@ echo.
 ::  VALIDACIONES PREVIAS
 :: =============================================
 
-:: 1. Comprobar que la carpeta de Immich existe
 if not exist "%IMMICH_DIR%" (
-    echo  [X] No se encontro la carpeta de Immich:
-    echo      %IMMICH_DIR%
-    echo.
-    echo  Soluciones:
-    echo    1. Pasa la ruta como argumento: fotos.bat "C:\ruta\immich"
-    echo    2. Define la variable HORUS_IMMICH_PATH en el sistema.
-    echo.
+    echo  [X] No se encontro la carpeta de Immich: %IMMICH_DIR%
+    echo [%DATE% %TIME%] ERROR: Directorio no encontrado: %IMMICH_DIR% >> "%LOG_FILE%"
     exit /b 1
-)
-
-:: 2. Comprobar que existe docker-compose.yml o compose.yaml
-if not exist "%IMMICH_DIR%\docker-compose.yml" (
-    if not exist "%IMMICH_DIR%\compose.yaml" (
-        echo  [X] No se encontro docker-compose.yml ni compose.yaml en:
-        echo      %IMMICH_DIR%
-        echo.
-        echo  Asegurate de que Immich esta correctamente instalado.
-        ping 127.0.0.1 -n 6 >nul
-        exit /b 1
-    )
 )
 
 :: =============================================
@@ -59,116 +45,101 @@ if not exist "%IMMICH_DIR%\docker-compose.yml" (
 :: =============================================
 docker info >nul 2>&1
 if errorlevel 1 (
-    echo  [~] Docker no esta activo. Arrancando Docker Desktop...
+    echo  [~] Docker no esta activo. Intentando arrancar...
+    echo [%DATE% %TIME%] Docker inactivo. Lanzando... >> "%LOG_FILE%"
 
     if exist "C:\Program Files\Docker\Docker\Docker Desktop.exe" (
         start "" "C:\Program Files\Docker\Docker\Docker Desktop.exe"
     ) else (
-        :: Fallback: URI protocol
         start docker-desktop://
     )
 
     echo  [~] Esperando a que Docker responda...
     set /a intentos=0
     :esperar_docker
-    ping 127.0.0.1 -n 6 >nul
+    powershell -Command "Start-Sleep -Seconds 2"
     docker info >nul 2>&1
     if errorlevel 1 (
-        set /a intentos+=1
+        set /a intentos+=2
         if !intentos! GEQ %MAX_DOCKER_WAIT% (
-            echo.
             echo  [X] Docker no respondio tras 2 minutos.
-            echo      Verifica que Docker Desktop este instalado y funcionando.
-            ping 127.0.0.1 -n 6 >nul
+            echo [%DATE% %TIME%] ERROR: Timeout Docker >> "%LOG_FILE%"
+            powershell -Command "Start-Sleep -Seconds 5"
             exit /b 1
         )
-        :: Barra de progreso visual
-        set /a pct=!intentos!*100/%MAX_DOCKER_WAIT%
-        echo  [~] Esperando Docker... (!pct!%%)
+        echo  [~] Esperando Docker... (!intentos!s)
         goto esperar_docker
     )
-    echo  [OK] Docker Desktop listo.
-    echo.
+    echo  [OK] Docker listo.
 ) else (
     echo  [OK] Docker ya estaba activo.
 )
 
 :: =============================================
-::  COMPROBAR SI IMMICH YA ESTA CORRIENDO
+::  ARRANCAR IMMICH
 :: =============================================
 cd /d "%IMMICH_DIR%"
+echo [%DATE% %TIME%] CWD: %CD% >> "%LOG_FILE%"
 
+:: Comprobar si ya corre
 docker compose ps --status running 2>nul | findstr /i "immich" >nul 2>&1
 if not errorlevel 1 (
     echo  [!] Immich ya esta en ejecucion.
-    echo      No es necesario volver a arrancarlo.
-    echo.
+    echo [%DATE% %TIME%] Ya en ejecucion. >> "%LOG_FILE%"
     goto mostrar_acceso
 )
 
-:: =============================================
-::  ARRANCAR IMMICH
-:: =============================================
 echo  [~] Levantando contenedores de Immich...
-echo.
+echo [%DATE% %TIME%] Ejecutando docker compose up... >> "%LOG_FILE%"
 
-docker compose up -d 2>nul
+docker compose up -d 2>>"%LOG_FILE%"
 if errorlevel 1 (
-    echo  [~] Reintentando con docker-compose (v1)...
-    docker-compose up -d
+    echo  [~] Reintentando con docker-compose...
+    docker-compose up -d 2>>"%LOG_FILE%"
     if errorlevel 1 (
-        echo.
-        echo  [X] No se pudo arrancar Immich.
-        echo      Revisa los logs con: docker compose logs
-        ping 127.0.0.1 -n 6 >nul
+        echo  [X] Error al arrancar contenedores.
+        echo [%DATE% %TIME%] ERROR FATAL: docker compose up fallo >> "%LOG_FILE%"
+        powershell -Command "Start-Sleep -Seconds 5"
         exit /b 1
     )
 )
 
-echo.
-echo  [OK] Contenedores levantados correctamente.
-
 :: =============================================
-::  HEALTH CHECK: ESPERAR A QUE IMMICH RESPONDA
+::  HEALTH CHECK
 :: =============================================
 echo  [~] Verificando que Immich responde...
-
 set /a health_tries=0
 :health_loop
-ping 127.0.0.1 -n 6 >nul
+powershell -Command "Start-Sleep -Seconds 3"
 
-:: Intentar una peticion HTTP al puerto de Immich
 curl -s -o nul -w "%%{http_code}" http://localhost:%IMMICH_PORT%/api/server/ping 2>nul | findstr "200" >nul 2>&1
 if not errorlevel 1 (
     echo  [OK] Immich responde correctamente.
+    echo [%DATE% %TIME%] Health check OK >> "%LOG_FILE%"
     goto mostrar_acceso
 )
 
 set /a health_tries+=1
 if !health_tries! GEQ %MAX_HEALTH_WAIT% (
-    echo  [!] Immich tarda en responder, pero los contenedores estan arriba.
-    echo      Puede necesitar unos minutos mas para cargar la base de datos.
+    echo  [!] Immich tarda en responder. Revisa manualmente.
+    echo [%DATE% %TIME%] Health check timeout (continuando) >> "%LOG_FILE%"
     goto mostrar_acceso
 )
 
-set /a hpct=!health_tries!*100/%MAX_HEALTH_WAIT%
-echo  [~] Immich iniciandose... (!hpct!%%)
+echo  [~] Immich iniciandose... (!health_tries!)
 goto health_loop
 
 :: =============================================
-::  MOSTRAR INFORMACION DE ACCESO
+::  RESULTADO
 :: =============================================
 :mostrar_acceso
-
-:: Obtener la IP local de la red
 for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /i "IPv4" ^| findstr /v "127.0.0"') do (
     set "LOCAL_IP=%%a"
     set "LOCAL_IP=!LOCAL_IP: =!"
-    :: Tomar solo la primera IP valida
-    if defined LOCAL_IP goto mostrar_url
+    if defined LOCAL_IP goto finalizado
 )
 
-:mostrar_url
+:finalizado
 echo.
 echo  ╔═══════════════════════════════════════╗
 echo  ║  ✅  Servidor Immich en linea!        ║
@@ -177,9 +148,7 @@ if defined LOCAL_IP (
 echo  ║  📱 Movil:  http://!LOCAL_IP!:%IMMICH_PORT%  ║
 )
 echo  ║  💻 Local:  http://localhost:%IMMICH_PORT%    ║
-echo  ╠═══════════════════════════════════════╣
-echo  ║  Para apagar: ejecuta cerrar_fotos    ║
 echo  ╚═══════════════════════════════════════╝
 echo.
-ping 127.0.0.1 -n 9 >nul
-exit /b 0
+powershell -Command "Start-Sleep -Seconds 5"
+exit /b 0

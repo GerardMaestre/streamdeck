@@ -875,11 +875,7 @@ initAudioMixer(io);
 initDiscordRPC(io);
 initAudioHost(); // Arrancar motor invisible de sonido
 
-const handleSocketError = (socket, eventName, error, ack) => {
-    Logger.error(`Socket [${eventName}]`, error);
-    emitErrorToFrontend(socket, eventName, error);
-    if (typeof ack === 'function') ack({ ok: false, message: getErrorMessage(error) });
-};
+// Helper functions move to line 949 section
 
 const REQUIRED_TUYA_KEYS = ['TUYA_ACCESS_KEY', 'TUYA_SECRET_KEY'];
 const REQUIRED_DISCORD_KEYS = ['DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'DISCORD_REDIRECT_URI'];
@@ -946,8 +942,41 @@ const ensureIntegrationCredentials = async (type) => {
     }
 };
 
+const handleSocketError = (socket, eventName, error, ack) => {
+    const correlationId = socket.handshake.auth?.correlationId || 'N/A';
+    Logger.error(`[Socket:${eventName}] Error`, {
+        message: error.message,
+        stack: error.stack,
+        correlationId
+    });
+    if (typeof ack === 'function') {
+        ack({ ok: false, error: 'Error interno del servidor' });
+    }
+};
+
 const runSafely = async (socket, eventName, action, ack) => {
-    try { return await action(); } catch (error) { handleSocketError(socket, eventName, error, ack); return null; }
+    try {
+        return await action();
+    } catch (error) {
+        handleSocketError(socket, eventName, error, ack);
+        return null;
+    }
+};
+
+const ackOkWhenDone = (promise, ack, mapper = (res) => ({ ok: !!res })) => {
+    if (promise instanceof Promise) {
+        promise.then((result) => {
+            if (typeof ack === 'function') {
+                ack(mapper(result));
+            }
+        }).catch(() => {
+            // Error ya manejado en runSafely
+        });
+    } else {
+        if (typeof ack === 'function') {
+            ack(mapper(promise));
+        }
+    }
 };
 
 const getAck = (p, ack) => typeof ack === 'function' ? ack : (typeof p === 'function' ? p : undefined);
@@ -986,36 +1015,45 @@ const validateResolutionPayload = (payload) => {
     return null;
 };
 
-const ackOkWhenDone = (promise, ack, mapper = () => ({ ok: true })) => {
-    promise.then((result) => {
-        if (result !== null && typeof ack === 'function') ack(mapper(result));
-    });
-};
+// ackOkWhenDone already defined above
 
 io.on('connection', (socket) => {
     log('[Socket] Conectado');
     socket.emit('server_version', { version: SERVER_START_TS });
 
-    socket.on('mixer_initial_state', (p, ack) => { const cb = getAck(p, ack); runSafely(socket, 'mixer_initial_state', () => sendInitialState(socket), cb); });
-    socket.on('mixer_bind_commands', (p, ack) => { const cb = getAck(p, ack); runSafely(socket, 'mixer_bind_commands', () => handleSocketCommands(socket), cb); });
+    socket.on('mixer_initial_state', (p, ack) => {
+        const cb = getAck(p, ack);
+        runSafely(socket, 'mixer_initial_state', () => sendInitialState(socket), cb);
+    });
+    socket.on('mixer_bind_commands', (p, ack) => {
+        const cb = getAck(p, ack);
+        runSafely(socket, 'mixer_bind_commands', () => handleSocketCommands(socket), cb);
+    });
     socket.on('discord_initial_state', (p, ack) => {
         const cb = getAck(p, ack);
-        if (getMissingEnvKeys(REQUIRED_DISCORD_KEYS).length) return cb && cb({ ok: false });
+        if (getMissingEnvKeys(REQUIRED_DISCORD_KEYS).length) {
+            if (cb) cb({ ok: false, error: 'Discord keys missing' });
+            return;
+        }
         runSafely(socket, 'discord_initial_state', () => requestInitialDiscordState(socket), cb);
     });
-    socket.on('abrir', (destino, ack) => ackOkWhenDone(runSafely(socket, 'abrir', () => abrirAplicacionOWeb(destino), ack), ack));
-    socket.on('macro', (tipo, ack) => ackOkWhenDone(runSafely(socket, 'macro', () => ejecutarMacro(tipo), ack), ack));
-    socket.on('multimedia', (accion, ack) => ackOkWhenDone(runSafely(socket, 'multimedia', () => controlMultimedia(accion), ack), ack));
-    socket.on('captura', (pantalla, ack) => ackOkWhenDone(runSafely(socket, 'captura', () => hacerCaptura(pantalla), ack), ack));
+    socket.on('abrir', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'abrir', () => abrirAplicacionOWeb(p), cb), cb); });
+    socket.on('macro', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'macro', () => ejecutarMacro(p), cb), cb); });
+    socket.on('multimedia', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'multimedia', () => controlMultimedia(p), cb), cb); });
+    socket.on('captura', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'captura', () => hacerCaptura(p), cb), cb); });
     
-    socket.on('ejecutar_script_dinamico', async (payload, ack) => {
-        if (!isPlainObject(payload)) return typeof ack === 'function' && ack({ ok: false, message: 'Payload de script invalido' });
+    socket.on('ejecutar_script_dinamico', async (p, ack) => {
+        const cb = getAck(p, ack);
+        const payload = isPlainObject(p) ? p : {};
+        
+        if (!isPlainObject(p)) return typeof cb === 'function' && cb({ ok: false, message: 'Payload de script invalido' });
+        
         if (payload.requiresParams && !payload.args && global.showPCPrompt) {
             const pcArgs = await global.showPCPrompt(payload.archivo || 'Script');
-            if (!pcArgs) return typeof ack === 'function' && ack({ ok: false });
+            if (!pcArgs) return typeof cb === 'function' && cb({ ok: false });
             payload.args = pcArgs;
         }
-        ackOkWhenDone(runSafely(socket, 'ejecutar_script_dinamico', () => ejecutarScriptDinamico(payload, socket), ack), ack);
+        ackOkWhenDone(runSafely(socket, 'ejecutar_script_dinamico', () => ejecutarScriptDinamico(payload, socket), cb), cb);
     });
 
     socket.on('discord_toggle_mute', async (p, ack) => {
@@ -1032,29 +1070,32 @@ io.on('connection', (socket) => {
         if (res !== null && cb) cb(res);
     });
 
-    socket.on('discord_set_user_volume', async (payload, ack) => {
-        if (!(await ensureIntegrationCredentials('discord')).ok) return typeof ack === 'function' && ack({ ok: false });
-        const { userId, volume } = payload || {};
-        const res = await runSafely(socket, 'discord_set_user_volume', () => discordSetUserVolume(userId, volume), ack);
-        if (res !== null && typeof ack === 'function') ack(res);
+    socket.on('discord_set_user_volume', async (p, ack) => {
+        const cb = getAck(p, ack);
+        if (!(await ensureIntegrationCredentials('discord')).ok) return cb && cb({ ok: false });
+        const { userId, volume } = isPlainObject(p) ? p : {};
+        const res = await runSafely(socket, 'discord_set_user_volume', () => discordSetUserVolume(userId, volume), cb);
+        if (res !== null && cb) cb(res);
     });
 
-    socket.on('tuya_command', async (payload, ack) => {
-        if (!(await ensureIntegrationCredentials('tuya')).ok) return typeof ack === 'function' && ack({ ok: false });
-        const payloadError = validateTuyaPayload(payload);
-        if (payloadError) return typeof ack === 'function' && ack({ ok: false, message: payloadError });
-        const { deviceId, deviceIds, code, value } = payload;
-        const result = await runSafely(socket, 'tuya_command', () => deviceIds ? controlMultipleDevices(deviceIds, code, value) : sendTuyaCommand(deviceId, code, value), ack);
-        if (typeof ack === 'function') ack({ ok: !!result });
+    socket.on('tuya_command', async (p, ack) => {
+        const cb = getAck(p, ack);
+        if (!(await ensureIntegrationCredentials('tuya')).ok) return cb && cb({ ok: false });
+        const payloadError = validateTuyaPayload(p);
+        if (payloadError) return cb && cb({ ok: false, message: payloadError });
+        const { deviceId, deviceIds, code, value } = p;
+        const result = await runSafely(socket, 'tuya_command', () => deviceIds ? controlMultipleDevices(deviceIds, code, value) : sendTuyaCommand(deviceId, code, value), cb);
+        if (cb) cb({ ok: !!result });
     });
 
     socket.on('minimizar_todo', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'minimizar_todo', () => minimizarTodo(), cb), cb); });
     socket.on('abrir_keep', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'abrir_keep', () => abrirAplicacionOWeb('google-keep'), cb), cb); });
     socket.on('abrir_calendario', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'abrir_calendario', () => abrirAplicacionOWeb('google-calendar'), cb), cb); });
     socket.on('cambiar_resolucion', (p, ack) => {
+        const cb = getAck(p, ack);
         const payloadError = validateResolutionPayload(p);
-        if (payloadError) return typeof ack === 'function' && ack({ ok: false, error: payloadError });
-        ackOkWhenDone(runSafely(socket, 'cambiar_resolucion', () => cambiarResolucion(p.width, p.height), ack), ack, (res) => res);
+        if (payloadError) return cb && cb({ ok: false, error: payloadError });
+        ackOkWhenDone(runSafely(socket, 'cambiar_resolucion', () => cambiarResolucion(p.width, p.height), cb), cb, (res) => res);
     });
     socket.on('apagar_pc', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'apagar_pc', () => apagarPC(), cb), cb); });
     socket.on('reiniciar_pc', (p, ack) => { const cb = getAck(p, ack); ackOkWhenDone(runSafely(socket, 'reiniciar_pc', () => reiniciarPC(), cb), cb); });
